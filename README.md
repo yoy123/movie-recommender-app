@@ -5,7 +5,7 @@ An Android application that uses **AI (OpenAI GPT)** to recommend movies based o
 ## Features
 
 - 🎬 **Genre Selection**: Choose from various movie genres
-- ❤️ **Dee's Favorites**: Custom collection for saving any movies across all genres
+- ❤️ **Custom Favorites**: Custom collection for saving any movies across all genres
 - 🔍 **Movie Search**: Search for movies within your selected genre (or any genre in Favorites)
 - ✅ **Movie Selection**: Select exactly 5 movies you've watched
 - 🤖 **AI-Powered Recommendations**: Uses OpenAI's GPT-4o-mini to analyze your taste and suggest movies
@@ -13,6 +13,8 @@ An Android application that uses **AI (OpenAI GPT)** to recommend movies based o
 - 🎯 **Hidden Gems**: Discovers lesser-known films that match your taste
 - 💾 **Local Storage**: Your selections and favorites are saved locally using Room database
 - 🌐 **TMDB Integration**: Powered by The Movie Database (TMDB) API for movie data
+- 🎬   In app trailers
+-      Movie recommendation preferences
 
 ## Tech Stack
 
