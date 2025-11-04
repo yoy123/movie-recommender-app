@@ -1,0 +1,4 @@
+{
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "emulator.emulatorPathLinux": "~/Android/Sdk/emulator"
+}

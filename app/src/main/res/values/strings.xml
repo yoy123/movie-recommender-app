@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">Movie Recommender</string>
+    <string name="genre_selection_title">Select a Genre</string>
+    <string name="movie_selection_title">Select 5 Movies</string>
+    <string name="recommendations_title">Recommended Movies</string>
+    <string name="search_hint">Search movies...</string>
+    <string name="movies_selected">%1$d/5 movies selected</string>
+    <string name="get_recommendations">Get Recommendations</string>
+    <string name="start_over">Start Over</string>
+    <string name="based_on_selection">Based on your selection:</string>
+    <string name="no_movies_found">No movies found</string>
+    <string name="no_recommendations">No recommendations available</string>
+    <string name="error_loading">Error loading data</string>
+    <string name="retry">Retry</string>
+</resources>

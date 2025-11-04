@@ -1,0 +1,14 @@
+## This file is an example. Copy it to local.properties and add your API keys.
+# DO NOT commit local.properties to version control!
+
+# Location of the Android SDK
+sdk.dir=/path/to/your/Android/Sdk
+
+# API Keys - Get these from:
+# TMDB: https://www.themoviedb.org/settings/api
+# OpenAI: https://platform.openai.com/api-keys
+# OMDB (optional): http://www.omdbapi.com/apikey.aspx
+
+TMDB_API_KEY=your_tmdb_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here
+OMDB_API_KEY=your_omdb_api_key_here_or_leave_empty

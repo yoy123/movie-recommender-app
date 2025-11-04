@@ -1,0 +1,59 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Assemble Debug (Gradle)",
+			"type": "shell",
+			"command": "./gradlew :app:assembleDebug",
+			"problemMatcher": [
+				"$gradle"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Assemble Debug (Gradle)",
+			"type": "shell",
+			"command": "./gradlew :app:assembleDebug",
+			"problemMatcher": [
+				"$gradle"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Assemble Debug (Gradle)",
+			"type": "shell",
+			"command": "./gradlew :app:assembleDebug",
+			"problemMatcher": [
+				"$gradle"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Assemble Debug (Gradle)",
+			"type": "shell",
+			"command": "./gradlew :app:assembleDebug --stacktrace",
+			"problemMatcher": [
+				"$gradle"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Assemble Debug (Gradle)",
+			"type": "shell",
+			"command": "./gradlew :app:assembleDebug",
+			"problemMatcher": [
+				"$gradle"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Assemble Debug (Gradle)",
+			"type": "shell",
+			"command": "./gradlew :app:assembleDebug --stacktrace",
+			"problemMatcher": [
+				"$gradle"
+			],
+			"group": "build"
+		}
+	]
+}
