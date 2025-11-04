@@ -35,3 +35,30 @@
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
+
+# Kotlin Serialization
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.AnnotationsKt
+
+# Keep data classes for JSON parsing
+-keep class com.movierecommender.app.data.model.** { *; }
+-keep class com.movierecommender.app.data.remote.** { *; }
+
+# Room
+-keep class * extends androidx.room.RoomDatabase
+-keep @androidx.room.Entity class *
+-dontwarn androidx.room.paging.**
+
+# Compose
+-keep class androidx.compose.** { *; }
+-dontwarn androidx.compose.**
+
+# Coroutines
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+-keepclassmembers class kotlinx.coroutines.** {
+    volatile <fields>;
+}
+
+# Keep BuildConfig
+-keep class com.movierecommender.app.BuildConfig { *; }
