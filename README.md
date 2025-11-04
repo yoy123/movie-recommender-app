@@ -4,17 +4,43 @@ An Android application that uses **AI (OpenAI GPT)** to recommend movies based o
 
 ## Features
 
-- 🎬 **Genre Selection**: Choose from various movie genres
-- ❤️ **Custom Favorites**: Custom collection for saving any movies across all genres
-- 🔍 **Movie Search**: Search for movies within your selected genre (or any genre in Favorites)
-- ✅ **Movie Selection**: Select exactly 5 movies you've watched
-- 🤖 **AI-Powered Recommendations**: Uses OpenAI's GPT-4o-mini to analyze your taste and suggest movies
-- 💡 **Smart Analysis**: Understands themes, mood, storytelling style - not just popularity
-- 🎯 **Hidden Gems**: Discovers lesser-known films that match your taste
-- 💾 **Local Storage**: Your selections and favorites are saved locally using Room database
-- 🌐 **TMDB Integration**: Powered by The Movie Database (TMDB) API for movie data
-- 🎬   In app trailers
--      Movie recommendation preferences
+### � Personalization
+- **Custom Name**: Personalize your experience with your own name
+- **Recommendation Preferences**: Customize how recommendations are generated
+  - Release Date Preference: Choose between Latest Releases, Mix of Old & New, or Classic Films
+  - Recommendation Style: Pick from Mainstream Popular, Mix of Popular & Indie, or Hidden Indie Gems
+
+### 🎬 Movie Discovery
+- **Genre Selection**: Browse and choose from 20+ movie genres including Action, Drama, Sci-Fi, Horror, and more
+- **Smart Search**: Search for any movie across all genres with instant results
+- **Movie Details**: View comprehensive movie information including ratings, release year, and descriptions
+- **TMDB Integration**: Powered by The Movie Database (TMDB) API with extensive movie data
+
+### ❤️ Favorites Management
+- **Custom Favorites Collection**: Build your personal "Dan's Favorites" (or your custom name) collection
+- **Cross-Genre Favorites**: Add any movie from any genre to your favorites
+- **Easy Management**: Add or remove movies from favorites with a single tap
+- **Persistent Storage**: Your favorites are saved locally and always accessible
+
+### 🤖 AI-Powered Recommendations
+- **GPT-4o-mini Integration**: Advanced AI analyzes your movie preferences
+- **Personalized Analysis**: Get insights into your taste based on your selected movies
+- **15 Custom Recommendations**: Receive tailored movie suggestions with explanations
+- **Smart Matching**: AI understands themes, mood, storytelling style, and pacing - not just popularity
+- **Hidden Gems**: Discover lesser-known films that match your preferences
+- **TMDB Ratings**: Each recommendation includes community ratings
+
+### 🎥 In-App Experience
+- **Trailer Viewing**: Watch movie trailers directly within the app
+- **Beautiful UI**: Modern Material Design 3 interface with smooth animations
+- **Dark Theme Support**: Optimized viewing experience
+- **Offline First**: All your data stored locally using Room database
+
+### 🔒 Privacy & Data
+- **No Account Required**: Start using immediately without registration
+- **Local Storage**: All data stays on your device
+- **Secure APIs**: HTTPS encrypted communications
+- **No Tracking**: Your privacy is respected
 
 ## Tech Stack
 
@@ -90,21 +116,84 @@ An Android application that uses **AI (OpenAI GPT)** to recommend movies based o
 
 ## How to Use
 
-### Getting Movie Recommendations:
-1. **Select a Genre**: On the first screen, choose a movie genre you're interested in
-2. **Select 5 Movies**: Browse or search for movies in that genre and select 5 movies you've already watched
-3. **Get Recommendations**: Once you've selected 5 movies, tap "Get Recommendations"
-4. **View AI Results**: Read personalized movie recommendations with explanations from the AI
-5. **Start Over**: Tap the refresh icon to clear selections and start again
+### 🎬 First Time Setup
+1. **Customize Your Experience**: Enter your name on the welcome screen to personalize the app
+2. **Set Preferences**: Tap the settings icon to configure:
+   - **Release Date Preference**: Choose Latest Releases, Mix of Old & New, or Classic Films
+   - **Recommendation Style**: Pick Mainstream Popular, Mix of Popular & Indie, or Hidden Indie Gems
+3. These preferences will be remembered and used for all future recommendations!
 
-### Using Dee's Favorites:
-1. **Open Favorites**: Select "Dee's Favorites" (heart icon) from the genre screen
-2. **Search Any Movie**: Use the search bar to find any movie from any genre
-3. **Add to Collection**: Tap a movie poster to add it to your favorites
-4. **Remove Movies**: Tap the ✕ button on any favorite to remove it
-5. **Build Your List**: Create your personal watchlist across all genres
+### 🎯 Getting AI-Powered Recommendations
 
-See [DEES_FAVORITES.md](DEES_FAVORITES.md) for detailed information about the favorites feature.
+#### Step 1: Choose Your Genre
+- Browse the genre selection screen
+- Tap on any genre to explore movies (Action, Drama, Sci-Fi, Horror, Comedy, etc.)
+
+#### Step 2: Select 5 Movies
+- Browse through the movie grid or use the search bar
+- Tap on movies you've watched and enjoyed
+- Selected movies show a checkmark
+- You must select exactly 5 movies to get recommendations
+
+#### Step 3: Get Recommendations
+- Once 5 movies are selected, tap the "Get Recommendations" button
+- The AI will analyze your taste based on:
+  - Themes and storytelling styles
+  - Mood and pacing
+  - Genre conventions and your preferences
+  - Your configured recommendation settings
+
+#### Step 4: Explore Recommendations
+- View your personalized analysis explaining your taste
+- Browse 15 custom movie recommendations
+- Each recommendation includes:
+  - Movie title and release year
+  - TMDB community rating
+  - Detailed explanation of why it matches your taste
+- Tap on any movie to:
+  - Add it to your favorites
+  - Watch the trailer
+  - Read more details
+
+### ❤️ Managing Your Favorites Collection
+
+#### Accessing Favorites
+1. From the genre screen, tap on "Your Custom Name's Favorites" (with heart icon)
+2. This is your personal collection of movies from all genres
+
+#### Adding to Favorites
+- **From any genre**: Tap the heart icon on any movie poster
+- **From search**: Search for any movie and tap the heart icon
+- **From recommendations**: Tap a recommended movie to view details, then add to favorites
+
+#### Organizing Favorites
+- View all your favorite movies in one place
+- Movies show with posters, titles, and ratings
+- Remove any movie by tapping the ✕ button
+- Search within your favorites
+
+#### Using Favorites for Recommendations
+- Select 5 movies from your favorites across different genres
+- Get recommendations based on your diverse taste
+- Perfect for when you want AI suggestions based on your all-time favorites
+
+### 🎥 Watching Trailers
+1. Tap on any movie (from search, recommendations, or favorites)
+2. Movie details appear with trailer option
+3. Tap "Watch Trailer" to view within the app
+4. Trailers play using YouTube integration
+
+### 🔄 Starting Fresh
+- Tap the refresh icon in any selection screen to clear your choices
+- Your preferences and favorites are always preserved
+- Only your current movie selections are cleared
+
+---
+
+**See also:**
+- [DEES_FAVORITES.md](DEES_FAVORITES.md) - Detailed favorites feature documentation
+- [LLM_INTEGRATION.md](LLM_INTEGRATION.md) - How the AI recommendation engine works
+- [PLAY_STORE_GUIDE.md](PLAY_STORE_GUIDE.md) - Complete Play Store submission guide
 
 ## Project Structure
 
