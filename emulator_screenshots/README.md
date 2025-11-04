@@ -4,29 +4,51 @@ This directory contains screenshots and assets for the Google Play Store listing
 
 ## Current Screenshots ✓
 
-We have the following screenshots ready:
-- ✅ `launch.png` - Genre selection screen
-- ✅ `step1.png` - Genre browsing
-- ✅ `step2.png` - Movie selection
-- ✅ `step3.png` - Selected movies
-- ✅ `recos_after_fix.png` - AI recommendations view
-- ✅ `recos_ui_verify.png` - Recommendations with analysis
+We have the following screenshots ready for Google Play Store:
+
+**User Journey Screens:**
+1. ✅ `Customize.png` - Welcome/Customization screen
+2. ✅ `GenreSelection.png` - Genre selection screen
+3. ✅ `MovieSelectionPlusAddtoFavorites.png` - Movie browsing and selection
+4. ✅ `CustomizedFavorites.png` - Favorites collection
+5. ✅ `preferences1.png` - App preferences (Release Preference)
+6. ✅ `preferences2.png` - App preferences (Recommendation Style)
+7. ✅ `analyzingtaste.png` - AI analyzing user taste
+8. ✅ `recommendations1.png` - AI recommendations with analysis
+9. ✅ `recommendations2.png` - Recommendations list
+10. ✅ `trailer.png` - Movie trailer screen
+11. ✅ `trailer2.png` - Trailer playing
+12. ✅ `trailer3.png` - Trailer with details
 
 ## Required for Play Store
 
 ### Screenshots (✓ Complete)
-- **Phone screenshots**: Need minimum 2 (we have 6) ✓
-- Format: PNG or JPEG
-- Dimensions: 320-3840px on longest side
-- Aspect ratio: 16:9 or 9:16
+- **Phone screenshots**: Need minimum 2 (we have 12!) ✓
+- Format: PNG or JPEG ✓
+- Dimensions: 320-3840px on longest side ✓
+- Aspect ratio: 16:9 or 9:16 ✓
 
-**Recommended order for Play Store:**
-1. `launch.png` - Shows app start (genre selection)
-2. `step2.png` - Movie browsing interface
-3. `step3.png` - Selected movies before recommendations
-4. `recos_after_fix.png` - Beautiful AI recommendations
-5. `recos_ui_verify.png` - Detailed recommendation view
-6. `step1.png` - Additional genre view
+**Recommended order for Play Store (choose best 8):**
+
+**Option 1: Full Journey (8 screenshots)**
+1. `Customize.png` - Personalized welcome screen
+2. `GenreSelection.png` - Browse by genre
+3. `MovieSelectionPlusAddtoFavorites.png` - Select movies & add to favorites
+4. `CustomizedFavorites.png` - Your personal collection
+5. `preferences1.png` OR `preferences2.png` - Customize preferences
+6. `recommendations1.png` - AI analysis and recommendations
+7. `recommendations2.png` - More recommendations
+8. `trailer2.png` - Watch trailers in-app
+
+**Option 2: Focus on Key Features (8 screenshots)**
+1. `Customize.png` - Welcome screen
+2. `GenreSelection.png` - Choose your genre
+3. `MovieSelectionPlusAddtoFavorites.png` - Select movies
+4. `analyzingtaste.png` - AI analyzing your taste
+5. `recommendations1.png` - Personalized recommendations with analysis
+6. `recommendations2.png` - Recommendation list
+7. `CustomizedFavorites.png` - Save favorites
+8. `trailer2.png` - Watch trailers
 
 ### Feature Graphic (⚠️ TODO)
 - **Status**: NEEDS TO BE CREATED
