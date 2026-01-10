@@ -136,11 +136,26 @@ fun FavoritesScreen(
                             containerColor = MaterialTheme.colorScheme.primaryContainer
                         )
                     ) {
-                        Text(
-                            text = "${uiState.selectedMovies.size} selected for recommendations",
-                            modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "${uiState.selectedMovies.size} selected for recommendations",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Button(
+                                onClick = {
+                                    viewModel.generateRecommendations()
+                                    onGenerateRecommendations()
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = "Generate")
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Get Recommendations")
+                            }
+                        }
                     }
                 }
                 

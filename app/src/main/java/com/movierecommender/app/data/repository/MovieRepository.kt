@@ -4,6 +4,7 @@ import com.movierecommender.app.data.local.MovieDao
 import com.movierecommender.app.data.model.Genre
 import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.MovieDetails
+import com.movierecommender.app.data.model.MovieResponse
 import com.movierecommender.app.data.remote.TmdbApiService
 import com.movierecommender.app.data.remote.OmdbApiService
 import com.movierecommender.app.data.remote.ImdbScraperService
@@ -11,6 +12,7 @@ import com.movierecommender.app.data.model.Video
 import com.movierecommender.app.data.remote.LlmRecommendationService
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -56,6 +58,20 @@ class MovieRepository(
             emit(Resource.Error(e.localizedMessage ?: "An error occurred"))
         }
     }
+
+    /**
+     * Paged genre discovery. Returns paging metadata (page/totalPages) so UI can implement infinite scroll.
+     * Kept separate from [getMoviesByGenre] to avoid changing existing call sites.
+     */
+    suspend fun getMoviesByGenreResponse(genreId: Int, page: Int = 1): Flow<Resource<MovieResponse>> = flow {
+        emit(Resource.Loading())
+        try {
+            val response = apiService.getMoviesByGenre(genreId = genreId, page = page)
+            emit(Resource.Success(response))
+        } catch (e: Exception) {
+            emit(Resource.Error(e.localizedMessage ?: "An error occurred"))
+        }
+    }
     
     suspend fun searchMovies(query: String): Flow<Resource<List<Movie>>> = flow {
         emit(Resource.Loading())
@@ -82,12 +98,32 @@ class MovieRepository(
         internationalPreference: Float,
         useInternationalPreference: Boolean,
         experimentalPreference: Float,
-        useExperimentalPreference: Boolean
+        useExperimentalPreference: Boolean,
+        /**
+         * Additional titles the model must NOT recommend.
+         * Used for in-session retries so the next result cannot repeat the same 15 titles.
+         */
+        additionalExcludedTitles: List<String> = emptyList()
     ): Flow<Resource<String>> = flow {
         emit(Resource.Loading())
         try {
+            // These should never appear in recommendations.
+            val favoriteMovies = movieDao.getFavoriteMovies().first()
+            val alreadyRecommendedMovies = movieDao.getRecommendedMovies().first()
+
             // Get movie titles for LLM
             val movieTitles = selectedMovies.map { "${it.title} (${it.releaseDate?.take(4) ?: ""})" }
+
+            val excludedTitles = (favoriteMovies + alreadyRecommendedMovies + selectedMovies)
+                .map { "${it.title} (${it.releaseDate?.take(4) ?: ""})" }
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
+
+            val allExcluded = (excludedTitles + additionalExcludedTitles)
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
             
             // Get recommendations from LLM
             val llmResult = withContext(Dispatchers.IO) {
@@ -107,7 +143,8 @@ class MovieRepository(
                     internationalPreference,
                     useInternationalPreference,
                     experimentalPreference,
-                    useExperimentalPreference
+                    useExperimentalPreference,
+                    excludedMovies = allExcluded
                 )
             }
             
@@ -125,7 +162,14 @@ class MovieRepository(
                 if (llmResult.isFailure) {
                     android.util.Log.e("MovieRepository", "LLM Error: ${llmResult.exceptionOrNull()?.message}")
                 }
-                buildFallbackRecommendations(selectedMovies)
+                buildFallbackRecommendations(
+                    selectedMovies = selectedMovies,
+                    favoriteMovies = favoriteMovies,
+                    alreadyRecommendedMovies = alreadyRecommendedMovies,
+                    releaseYearStart = releaseYearStart,
+                    releaseYearEnd = releaseYearEnd,
+                    useReleaseYearPreference = useReleaseYearPreference
+                )
             }
 
             if (recommendationText.isBlank()) {
@@ -139,7 +183,179 @@ class MovieRepository(
         }
     }
 
+    /**
+     * TMDB-only baseline recommendations for A/B comparison against the LLM.
+     *
+     * Uses TMDB similar/recommendations for the selected movies to build a candidate pool,
+     * then ranks candidates using available metadata and the user's enabled settings.
+     *
+     * Note: TMDB does not expose reliable metadata for tone/experimental in a strict sense.
+     * We use weak proxies from genre IDs for tone and omit hard enforcement beyond year range.
+     */
+    suspend fun getTmdbBaselineRecommendationsText(
+        selectedMovies: List<Movie>,
+        genreName: String,
+        indiePreference: Float,
+        useIndiePreference: Boolean,
+        popularityPreference: Float,
+        usePopularityPreference: Boolean,
+        releaseYearStart: Float,
+        releaseYearEnd: Float,
+        useReleaseYearPreference: Boolean,
+        tonePreference: Float,
+        useTonePreference: Boolean,
+        experimentalPreference: Float,
+        useExperimentalPreference: Boolean
+    ): Flow<Resource<String>> = flow {
+        emit(Resource.Loading())
+        try {
+            val favoriteMovies = movieDao.getFavoriteMovies().first()
+            val alreadyRecommendedMovies = movieDao.getRecommendedMovies().first()
+
+            val disallowedIds = (selectedMovies + favoriteMovies + alreadyRecommendedMovies).map { it.id }.toSet()
+            val minYear = releaseYearStart.toInt()
+            val maxYear = releaseYearEnd.toInt()
+
+            // 1) Build candidate pool from TMDB recs/similar
+            val pool = mutableMapOf<Int, Movie>()
+            for (m in selectedMovies) {
+                runCatching { apiService.getMovieRecommendations(m.id) }.onSuccess { resp ->
+                    resp.results.forEach { pool[it.id] = it }
+                }
+                runCatching { apiService.getSimilarMovies(m.id) }.onSuccess { resp ->
+                    resp.results.forEach { pool[it.id] = it }
+                }
+            }
+
+            val filtered = pool.values
+                .asSequence()
+                .filter { it.id !in disallowedIds }
+                .filter { movie ->
+                    if (!useReleaseYearPreference) return@filter true
+                    val year = movie.releaseDate?.take(4)?.toIntOrNull() ?: return@filter false
+                    year in minYear..maxYear
+                }
+                .distinctBy { it.id }
+                .toList()
+
+            if (filtered.isEmpty()) {
+                emit(Resource.Error("No baseline candidates available"))
+                return@flow
+            }
+
+            // 2) Compute normalization stats
+            fun minMax(values: List<Double>): Pair<Double, Double> {
+                val min = values.minOrNull() ?: 0.0
+                val max = values.maxOrNull() ?: 1.0
+                return min to max
+            }
+            fun norm(x: Double, min: Double, max: Double): Double {
+                if (max <= min) return 0.5
+                return ((x - min) / (max - min)).coerceIn(0.0, 1.0)
+            }
+
+            val (popMin, popMax) = minMax(filtered.map { it.popularity })
+            val (vcMin, vcMax) = minMax(filtered.map { it.voteCount.toDouble() })
+
+            // Weak proxies based on genre IDs for tone.
+            val darkGenreIds = setOf(27, 53, 80, 18, 9648, 10752)
+            val lightGenreIds = setOf(35, 16, 10751, 10402, 10749, 12, 14)
+            fun toneProxy(movie: Movie): Double {
+                val ids = movie.genreIds
+                if (ids.isEmpty()) return 0.5
+                val darkHits = ids.count { it in darkGenreIds }
+                val lightHits = ids.count { it in lightGenreIds }
+                val total = (darkHits + lightHits).coerceAtLeast(1)
+                // 0 = light leaning, 1 = dark leaning
+                return (darkHits.toDouble() / total.toDouble()).coerceIn(0.0, 1.0)
+            }
+
+            // 3) Score candidates
+            data class Scored(val movie: Movie, val score: Double, val whyBits: List<String>)
+
+            val scored = filtered.map { movie ->
+                val nPop = norm(movie.popularity, popMin, popMax)
+                val nVc = norm(movie.voteCount.toDouble(), vcMin, vcMax)
+
+                // Base quality signal.
+                var score = (movie.voteAverage * 2.0) + (nVc * 0.6) + (nPop * 0.4)
+                val why = mutableListOf<String>()
+
+                if (usePopularityPreference) {
+                    val match = 1.0 - kotlin.math.abs(nPop - popularityPreference.toDouble())
+                    score += match * 1.8
+                    why.add(if (popularityPreference < 0.45f) "cult-leaning" else if (popularityPreference > 0.55f) "mainstream-leaning" else "balanced popularity")
+                }
+
+                if (useIndiePreference) {
+                    // Indie proxy: low popularity and lower vote-count tend to correlate with "indie".
+                    val indieProxy = ((1.0 - nPop) * 0.7) + ((1.0 - nVc) * 0.3)
+                    val match = 1.0 - kotlin.math.abs(indieProxy - indiePreference.toDouble())
+                    score += match * 1.6
+                    why.add(if (indiePreference > 0.6f) "more indie" else if (indiePreference < 0.4f) "more blockbuster" else "mixed scale")
+                }
+
+                if (useTonePreference) {
+                    val tProxy = toneProxy(movie)
+                    val match = 1.0 - kotlin.math.abs(tProxy - tonePreference.toDouble())
+                    score += match * 0.9
+                    why.add(if (tonePreference > 0.6f) "darker tone" else if (tonePreference < 0.4f) "lighter tone" else "balanced tone")
+                }
+
+                if (useExperimentalPreference) {
+                    // TMDB doesn't provide a reliable experimentalness signal; keep this low-weight.
+                    score += (experimentalPreference.toDouble() * 0.05)
+                }
+
+                Scored(movie, score, why)
+            }
+
+            val top = scored
+                .sortedWith(compareByDescending<Scored> { it.score }
+                    .thenByDescending { it.movie.voteAverage }
+                    .thenByDescending { it.movie.popularity })
+                .take(15)
+
+            if (top.size < 15) {
+                emit(Resource.Error("Not enough baseline recommendations found"))
+                return@flow
+            }
+
+            // 4) Format comparable text (same structure as LLM output)
+            val analysis = buildString {
+                append("TMDB baseline (no LLM): built from TMDB Similar/Recommendations for your selections and ranked using available metadata. ")
+                append("Hard-enforced: exclusions + year range (if enabled). ")
+                append("Scored with proxies for indie/popularity and a light tone proxy from genre IDs.")
+            }
+
+            val sb = StringBuilder()
+            sb.append("Analysis:\n")
+            sb.append(analysis).append("\n\n")
+            sb.append("RECOMMENDATIONS:\n\n")
+            top.forEachIndexed { idx, s ->
+                val year = s.movie.releaseDate?.take(4)?.takeIf { it.length == 4 } ?: ""
+                val title = if (year.isNotBlank()) "${s.movie.title} ($year)" else s.movie.title
+                sb.append("${idx + 1}. $title\n")
+                val bits = s.whyBits.distinct().take(3)
+                val whyLine = if (bits.isNotEmpty()) {
+                    "Why this matches: ranked by metadata (${bits.joinToString(", ")}) from TMDB similar/recommended results."
+                } else {
+                    "Why this matches: ranked by TMDB metadata from similar/recommended results."
+                }
+                sb.append(whyLine).append("\n\n")
+            }
+
+            emit(Resource.Success(sb.toString().trim()))
+        } catch (e: Exception) {
+            emit(Resource.Error(e.localizedMessage ?: "An error occurred"))
+        }
+    }
+
     private fun isValidRecommendationStructure(text: String): Boolean {
+        // Require an analysis section (the UI depends on it for the top paragraph).
+        val hasAnalysis = text.lines().any { it.trim().equals("Analysis:", ignoreCase = true) }
+        if (!hasAnalysis) return false
+
         // Expect 15 numbered items (1-15) in the response
         // Match format: "1. Movie", "1 . Movie", "1 .Title" (LLM varies format despite instructions)
         val lines = text.lines()
@@ -162,7 +378,14 @@ class MovieRepository(
         return hasAllNumbers
     }
 
-    private suspend fun buildFallbackRecommendations(selectedMovies: List<Movie>): String {
+    private suspend fun buildFallbackRecommendations(
+        selectedMovies: List<Movie>,
+        favoriteMovies: List<Movie>,
+        alreadyRecommendedMovies: List<Movie>,
+        releaseYearStart: Float,
+        releaseYearEnd: Float,
+        useReleaseYearPreference: Boolean
+    ): String {
         return withContext(Dispatchers.IO) {
             try {
                 // Gather TMDB recommendations/similar for each selected movie
@@ -175,10 +398,17 @@ class MovieRepository(
                         resp.results.forEach { pool[it.id] = it }
                     }
                 }
-                // Remove any originally selected movies
-                val selectedIds = selectedMovies.map { it.id }.toSet()
+                // Remove any disallowed movies (selected, favorites, already recommended)
+                val disallowedIds = (selectedMovies + favoriteMovies + alreadyRecommendedMovies).map { it.id }.toSet()
+                val minYear = releaseYearStart.toInt()
+                val maxYear = releaseYearEnd.toInt()
                 val candidates = pool.values
-                    .filter { it.id !in selectedIds }
+                    .filter { it.id !in disallowedIds }
+                    .filter { movie ->
+                        if (!useReleaseYearPreference) return@filter true
+                        val year = movie.releaseDate?.take(4)?.toIntOrNull() ?: return@filter false
+                        year in minYear..maxYear
+                    }
                     .distinctBy { it.id }
                     .sortedWith(
                         compareByDescending<Movie> { it.voteAverage }
@@ -189,6 +419,9 @@ class MovieRepository(
                 if (candidates.isEmpty()) return@withContext ""
 
                 val sb = StringBuilder()
+                sb.append("Analysis:\n")
+                sb.append("Based on your selected films, here are 15 picks with a similar vibe and quality.")
+                sb.append("\n\n")
                 sb.append("RECOMMENDATIONS:\n\n")
                 candidates.forEachIndexed { idx, movie ->
                     val year = movie.releaseDate?.take(4)?.let { " ($it)" } ?: ""

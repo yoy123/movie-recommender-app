@@ -56,6 +56,17 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
     }
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("mobile") {
+            dimension = "distribution"
+        }
+        create("firestick") {
+            dimension = "distribution"
+            applicationIdSuffix = ".firestick"
+            versionNameSuffix = "-firestick"
+        }
+    }
     
     bundle {
         language {
@@ -102,6 +113,10 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    
+    // TV-specific Compose libraries for Firestick
+    implementation("androidx.tv:tv-foundation:1.0.0-alpha10")
+    implementation("androidx.tv:tv-material:1.0.0-alpha10")
     
     // Room dependencies
     implementation("androidx.room:room-runtime:2.6.1")

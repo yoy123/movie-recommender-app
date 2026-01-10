@@ -8,11 +8,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,6 +40,8 @@ import com.movierecommender.app.ui.viewmodel.MovieViewModel
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavController
 
+private enum class RecSource { LLM, TMDB }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecommendationsScreen(
@@ -45,6 +51,14 @@ fun RecommendationsScreen(
     onOpenTrailer: (title: String, youtubeKey: String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var source by remember { mutableStateOf(RecSource.LLM) }
+
+    LaunchedEffect(source) {
+        if (source == RecSource.TMDB && uiState.tmdbBaselineText == null && !uiState.isBaselineLoading) {
+            viewModel.generateTmdbBaselineRecommendations()
+        }
+    }
+
     // Auto-generate recommendations on first entry if we have selections and nothing yet
     LaunchedEffect(uiState.selectedMovies, uiState.recommendationText, uiState.isLoading) {
         if (!uiState.isLoading && uiState.recommendationText == null && uiState.selectedMovies.isNotEmpty()) {
@@ -62,6 +76,22 @@ fun RecommendationsScreen(
                     }
                 },
                 actions = {
+                    if (!uiState.isLoading && uiState.recommendationText != null) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(end = 4.dp)
+                        ) {
+                            IconButton(onClick = { viewModel.retryRecommendations() }) {
+                                Icon(Icons.Default.Autorenew, "Retry recommendations")
+                            }
+                            Text(
+                                text = "retry",
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontSize = 8.sp,
+                                modifier = Modifier.offset(y = (-8).dp)
+                            )
+                        }
+                    }
                     IconButton(
                         onClick = {
                             viewModel.clearSelections()
@@ -85,90 +115,150 @@ fun RecommendationsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            when {
-                uiState.isLoading -> {
-                    Column(
-                        modifier = Modifier.align(Alignment.Center),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        CircularProgressIndicator()
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Analyzing your taste...",
-                            style = MaterialTheme.typography.bodyMedium
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Source toggle
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = { source = RecSource.LLM },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (source == RecSource.LLM) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
                         )
-                    }
-                }
-                uiState.error != null -> {
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = uiState.error ?: "Unknown error",
-                            color = MaterialTheme.colorScheme.error,
-                            textAlign = TextAlign.Center
+                    ) { Text("LLM") }
+
+                    Button(
+                        onClick = { source = RecSource.TMDB },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (source == RecSource.TMDB) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(onClick = { viewModel.generateRecommendations() }) {
-                            Text("Retry")
-                        }
-                    }
+                    ) { Text("TMDB baseline") }
                 }
-                uiState.recommendationText == null -> {
-                    Text(
-                        text = "No recommendations yet",
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-                }
-                else -> {
-                    LazyColumn(
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        item {
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                                )
+
+                Box(modifier = Modifier.fillMaxSize()) {
+                    when {
+                        source == RecSource.LLM && uiState.isLoading -> {
+                            Column(
+                                modifier = Modifier.align(Alignment.Center),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(16.dp)
-                                ) {
-                                    Text(
-                                        text = "Based on your selection:",
-                                        style = MaterialTheme.typography.titleMedium
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    uiState.selectedMovies.forEach { movie ->
-                                        Column(modifier = Modifier.fillMaxWidth()) {
-                                            Text(
-                                                text = "• ${movie.title}",
-                                                style = MaterialTheme.typography.bodyMedium
-                                            )
-                                        }
-                                    }
+                                CircularProgressIndicator()
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "Analyzing your taste...",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        }
+                        source == RecSource.TMDB && uiState.isBaselineLoading -> {
+                            Column(
+                                modifier = Modifier.align(Alignment.Center),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                CircularProgressIndicator()
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "Building TMDB baseline...",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        }
+                        source == RecSource.LLM && uiState.error != null -> {
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = uiState.error ?: "Unknown error",
+                                    color = MaterialTheme.colorScheme.error,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(onClick = { viewModel.generateRecommendations() }) {
+                                    Text("Retry")
                                 }
                             }
                         }
-                        
-                        item {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = androidx.compose.ui.graphics.Color.White
-                                )
+                        source == RecSource.TMDB && uiState.baselineError != null -> {
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(16.dp)
+                                Text(
+                                    text = uiState.baselineError ?: "Unknown error",
+                                    color = MaterialTheme.colorScheme.error,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(onClick = { viewModel.generateTmdbBaselineRecommendations() }) {
+                                    Text("Retry baseline")
+                                }
+                            }
+                        }
+                        else -> {
+                            val displayText = if (source == RecSource.TMDB) uiState.tmdbBaselineText else uiState.recommendationText
+                            if (displayText == null) {
+                                Text(
+                                    text = if (source == RecSource.TMDB) "No baseline yet" else "No recommendations yet",
+                                    modifier = Modifier.align(Alignment.Center)
+                                )
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
-                                    ParsedRecommendationsList(
-                                        text = uiState.recommendationText ?: "",
-                                        viewModel = viewModel,
-                                        onOpenTrailer = onOpenTrailer
-                                    )
+                                    item {
+                                        Card(
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = MaterialTheme.colorScheme.primaryContainer
+                                            )
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(16.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Based on your selection:",
+                                                    style = MaterialTheme.typography.titleMedium
+                                                )
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                uiState.selectedMovies.forEach { movie ->
+                                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                                        Text(
+                                                            text = "• ${movie.title}",
+                                                            style = MaterialTheme.typography.bodyMedium
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    item {
+                                        Card(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = androidx.compose.ui.graphics.Color.White
+                                            )
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(16.dp)
+                                            ) {
+                                                ParsedRecommendationsList(
+                                                    text = displayText,
+                                                    viewModel = viewModel,
+                                                    onOpenTrailer = onOpenTrailer
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

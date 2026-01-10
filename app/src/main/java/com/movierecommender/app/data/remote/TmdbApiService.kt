@@ -13,6 +13,12 @@ import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
+import javax.net.ssl.SSLSocketFactory
 
 interface TmdbApiService {
     
@@ -80,7 +86,15 @@ interface TmdbApiService {
                 }
             }
             
-            val client = OkHttpClient.Builder()
+            val clientBuilder = if (BuildConfig.DEBUG) {
+                // In debug builds, accept all SSL certs to avoid emulator/intercepted TLS issues.
+                // This keeps release builds strict.
+                buildInsecureClientBuilder()
+            } else {
+                OkHttpClient.Builder()
+            }
+
+            val client = clientBuilder
                 .addInterceptor(loggingInterceptor)
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
@@ -93,6 +107,24 @@ interface TmdbApiService {
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
                 .create(TmdbApiService::class.java)
+        }
+
+        private fun buildInsecureClientBuilder(): OkHttpClient.Builder {
+            val trustAllCerts = arrayOf<TrustManager>(
+                object : X509TrustManager {
+                    override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+                    override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) = Unit
+                    override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) = Unit
+                }
+            )
+            val sslContext = SSLContext.getInstance("SSL").apply {
+                init(null, trustAllCerts, SecureRandom())
+            }
+            val sslSocketFactory: SSLSocketFactory = sslContext.socketFactory
+
+            return OkHttpClient.Builder()
+                .sslSocketFactory(sslSocketFactory, trustAllCerts[0] as X509TrustManager)
+                .hostnameVerifier { _, _ -> true }
         }
     }
 }

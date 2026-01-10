@@ -20,12 +20,21 @@ data class MovieUiState(
     val recommendedMovies: List<Movie> = emptyList(),
     val favoriteMovies: List<Movie> = emptyList(),
     val recommendationText: String? = null, // New: LLM text response
+    // TMDB metadata baseline (for comparison/testing)
+    val tmdbBaselineText: String? = null,
+    val isBaselineLoading: Boolean = false,
+    val baselineError: String? = null,
     val isLoading: Boolean = false,
     val error: String? = null,
     val selectedGenreId: Int? = null,
     val selectedGenreName: String? = null,
     val searchQuery: String = "",
     val isFavoritesMode: Boolean = false,
+    // Paging for genre discovery (infinite scroll)
+    val genrePage: Int = 1,
+    val genreTotalPages: Int = 1,
+    val canLoadMoreGenreMovies: Boolean = false,
+    val isLoadingMore: Boolean = false,
     // Recommendation preferences (ordered as per user spec)
     val indiePreference: Float = 0.5f, // 0.0 = blockbusters, 1.0 = indie films
     val useIndiePreference: Boolean = true,
@@ -52,6 +61,9 @@ class MovieViewModel(
     
     private val _uiState = MutableStateFlow(MovieUiState())
     val uiState: StateFlow<MovieUiState> = _uiState.asStateFlow()
+
+    // Tracks titles recommended during this ViewModel session so user-triggered retries never return the same list again.
+    private val sessionRecommendedTitles = mutableSetOf<String>()
     
     init {
         loadGenres()
@@ -176,39 +188,74 @@ class MovieViewModel(
         _uiState.value = _uiState.value.copy(
             selectedGenreId = genreId,
             selectedGenreName = genreName,
-            isFavoritesMode = isFavorites
+            isFavoritesMode = isFavorites,
+            // Important: selecting a new genre should exit any previous search mode.
+            // If `searchQuery` remains non-blank, paging is disabled and infinite scroll never triggers.
+            searchQuery = ""
         )
         
         if (!isFavorites) {
-            loadMoviesByGenre(genreId)
+            loadMoviesByGenre(genreId = genreId, reset = true)
         } else {
             // For favorites, we'll show search and favorites list
             _uiState.value = _uiState.value.copy(movies = emptyList())
         }
     }
     
-    fun loadMoviesByGenre(genreId: Int) {
+    fun loadMoviesByGenre(genreId: Int, reset: Boolean = false, pageOverride: Int? = null) {
         viewModelScope.launch {
-            repository.getMoviesByGenre(genreId).collect { resource ->
+            val page = pageOverride ?: if (reset) 1 else _uiState.value.genrePage
+            if (reset) {
+                _uiState.value = _uiState.value.copy(
+                    movies = emptyList(),
+                    error = null,
+                    isLoadingMore = false,
+                    genrePage = 1,
+                    genreTotalPages = 1,
+                    canLoadMoreGenreMovies = false
+                )
+            }
+
+            repository.getMoviesByGenreResponse(genreId = genreId, page = page).collect { resource ->
                 when (resource) {
                     is Resource.Loading -> {
-                        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+                        _uiState.value = if (page == 1) {
+                            _uiState.value.copy(isLoading = true, error = null)
+                        } else {
+                            _uiState.value.copy(isLoadingMore = true, error = null)
+                        }
                     }
                     is Resource.Success -> {
                         // Sync isFavorite flag with favorites list
                         val favoriteIds = _uiState.value.favoriteMovies.map { it.id }.toSet()
-                        val moviesWithFavorites = resource.data.map { movie ->
+                        val moviesWithFavorites = resource.data.results.map { movie ->
                             movie.copy(isFavorite = favoriteIds.contains(movie.id))
                         }
+                        val merged = if (page == 1) {
+                            moviesWithFavorites
+                        } else {
+                            // Append and dedupe by id to avoid repeats between pages.
+                            (_uiState.value.movies + moviesWithFavorites)
+                                .distinctBy { it.id }
+                        }
+
+                        val totalPages = resource.data.totalPages.coerceAtLeast(1)
+                        val canLoadMore = page < totalPages
                         _uiState.value = _uiState.value.copy(
-                            movies = moviesWithFavorites,
+                            movies = merged,
                             isLoading = false,
+                            isLoadingMore = false,
                             error = null
+                            ,
+                            genrePage = page,
+                            genreTotalPages = totalPages,
+                            canLoadMoreGenreMovies = canLoadMore
                         )
                     }
                     is Resource.Error -> {
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
+                            isLoadingMore = false,
                             error = resource.message
                         )
                     }
@@ -216,13 +263,28 @@ class MovieViewModel(
             }
         }
     }
+
+    fun loadNextGenreMoviesPage() {
+        val genreId = _uiState.value.selectedGenreId ?: return
+        if (_uiState.value.isFavoritesMode) return
+        if (_uiState.value.searchQuery.isNotBlank()) return
+        if (_uiState.value.isLoading || _uiState.value.isLoadingMore) return
+        if (!_uiState.value.canLoadMoreGenreMovies) return
+
+        val nextPage = (_uiState.value.genrePage + 1).coerceAtMost(_uiState.value.genreTotalPages)
+        // Avoid accidental re-entrancy.
+        _uiState.value = _uiState.value.copy(isLoadingMore = true)
+        loadMoviesByGenre(genreId = genreId, reset = false, pageOverride = nextPage)
+    }
     
     fun searchMovies(query: String) {
         _uiState.value = _uiState.value.copy(searchQuery = query)
         if (query.isBlank()) {
-            _uiState.value.selectedGenreId?.let { loadMoviesByGenre(it) }
+            _uiState.value.selectedGenreId?.let { loadMoviesByGenre(genreId = it, reset = true) }
             return
         }
+        // While searching, disable genre paging.
+        _uiState.value = _uiState.value.copy(canLoadMoreGenreMovies = false, isLoadingMore = false)
         
         viewModelScope.launch {
             repository.searchMovies(query).collect { resource ->
@@ -267,7 +329,29 @@ class MovieViewModel(
         }
     }
     
-    fun generateRecommendations() {
+    private fun extractRecommendedTitlesFromText(recommendationText: String): List<String> {
+        // Extract numbered titles like: "1. Movie Title (Year)". Keep the year if present.
+        val numbered = Regex("^\\s*(\\d{1,2})\\s*\\.\\s*")
+        return recommendationText
+            .replace("```json", "")
+            .replace("```", "")
+            .replace("**", "")
+            .lines()
+            .mapNotNull { line ->
+                if (!numbered.containsMatchIn(line)) return@mapNotNull null
+                line.replace(numbered, "").trim().takeIf { it.isNotBlank() }
+            }
+            .distinct()
+    }
+
+    fun retryRecommendations() {
+        // Only available after recommendations exist.
+        val current = _uiState.value.recommendationText ?: return
+        val additionalExcluded = extractRecommendedTitlesFromText(current)
+        generateRecommendations(additionalExcludedTitles = additionalExcluded)
+    }
+
+    fun generateRecommendations(additionalExcludedTitles: List<String> = emptyList()) {
         val selectedMovies = _uiState.value.selectedMovies
         val genreName = _uiState.value.selectedGenreName ?: "Movies"
         val state = _uiState.value
@@ -291,7 +375,8 @@ class MovieViewModel(
                 state.internationalPreference,
                 state.useInternationalPreference,
                 state.experimentalPreference,
-                state.useExperimentalPreference
+                state.useExperimentalPreference,
+                additionalExcludedTitles = (additionalExcludedTitles + sessionRecommendedTitles.toList()).distinct()
             ).collect { resource ->
                 when (resource) {
                     is Resource.Loading -> {
@@ -302,6 +387,8 @@ class MovieViewModel(
                         )
                     }
                     is Resource.Success -> {
+                        // Remember these titles so a subsequent retry can't return the same list.
+                        sessionRecommendedTitles.addAll(extractRecommendedTitlesFromText(resource.data))
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
                             error = null,
@@ -319,12 +406,67 @@ class MovieViewModel(
             }
         }
     }
+
+    fun generateTmdbBaselineRecommendations() {
+        val selectedMovies = _uiState.value.selectedMovies
+        val genreName = _uiState.value.selectedGenreName ?: "Movies"
+        val state = _uiState.value
+        if (selectedMovies.isEmpty() || selectedMovies.size > 5) return
+
+        viewModelScope.launch {
+            repository.getTmdbBaselineRecommendationsText(
+                selectedMovies = selectedMovies,
+                genreName = genreName,
+                indiePreference = state.indiePreference,
+                useIndiePreference = state.useIndiePreference,
+                popularityPreference = state.popularityPreference,
+                usePopularityPreference = state.usePopularityPreference,
+                releaseYearStart = state.releaseYearStart,
+                releaseYearEnd = state.releaseYearEnd,
+                useReleaseYearPreference = state.useReleaseYearPreference,
+                tonePreference = state.tonePreference,
+                useTonePreference = state.useTonePreference,
+                experimentalPreference = state.experimentalPreference,
+                useExperimentalPreference = state.useExperimentalPreference
+            ).collect { resource ->
+                when (resource) {
+                    is Resource.Loading -> {
+                        _uiState.value = _uiState.value.copy(
+                            isBaselineLoading = true,
+                            baselineError = null,
+                            tmdbBaselineText = null
+                        )
+                    }
+                    is Resource.Success -> {
+                        _uiState.value = _uiState.value.copy(
+                            isBaselineLoading = false,
+                            baselineError = null,
+                            tmdbBaselineText = resource.data
+                        )
+                    }
+                    is Resource.Error -> {
+                        _uiState.value = _uiState.value.copy(
+                            isBaselineLoading = false,
+                            baselineError = resource.message,
+                            tmdbBaselineText = null
+                        )
+                    }
+                }
+            }
+        }
+    }
     
     fun clearSelections() {
         viewModelScope.launch {
             repository.clearSelectedMovies()
             repository.clearRecommendedMovies()
-            _uiState.value = _uiState.value.copy(recommendationText = null)
+            sessionRecommendedTitles.clear()
+            _uiState.value = _uiState.value.copy(
+                recommendationText = null,
+                tmdbBaselineText = null,
+                isBaselineLoading = false,
+                baselineError = null
+            )
         }
     }
     

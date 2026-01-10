@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -18,11 +19,12 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -42,6 +44,29 @@ fun MovieSelectionScreen(
     val uiState by viewModel.uiState.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    val gridState = rememberLazyGridState()
+
+    val lastVisibleIndex by remember {
+        derivedStateOf {
+            gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+        }
+    }
+
+    LaunchedEffect(
+        lastVisibleIndex,
+        uiState.movies.size,
+        uiState.canLoadMoreGenreMovies,
+        uiState.isLoading,
+        uiState.isLoadingMore,
+        uiState.searchQuery
+    ) {
+        // Infinite scroll for genre browsing (disabled while searching).
+        val threshold = 6
+        val nearEnd = uiState.movies.isNotEmpty() && lastVisibleIndex >= (uiState.movies.size - threshold).coerceAtLeast(0)
+        if (nearEnd && uiState.canLoadMoreGenreMovies && !uiState.isLoading && !uiState.isLoadingMore && uiState.searchQuery.isBlank()) {
+            viewModel.loadNextGenreMoviesPage()
+        }
+    }
     
     Scaffold(
         topBar = {
@@ -61,7 +86,7 @@ fun MovieSelectionScreen(
                             ) {
                                 IconButton(onClick = { viewModel.clearSelections() }) {
                                     Icon(
-                                        Icons.Default.Autorenew,
+                                        Icons.Default.DeleteSweep,
                                         contentDescription = "Clear selections",
                                         tint = MaterialTheme.colorScheme.onPrimary
                                     )
@@ -159,6 +184,7 @@ fun MovieSelectionScreen(
                 }
                 else -> {
                     LazyVerticalGrid(
+                        state = gridState,
                         columns = GridCells.Fixed(2),
                         contentPadding = PaddingValues(
                             start = 16.dp,
