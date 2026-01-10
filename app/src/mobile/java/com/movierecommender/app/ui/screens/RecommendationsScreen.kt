@@ -40,24 +40,16 @@ import com.movierecommender.app.ui.viewmodel.MovieViewModel
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavController
 
-private enum class RecSource { LLM, TMDB }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecommendationsScreen(
     viewModel: MovieViewModel,
     onBackClick: () -> Unit,
     onStartOver: () -> Unit,
-    onOpenTrailer: (title: String, youtubeKey: String) -> Unit
+    onOpenTrailer: (title: String, youtubeKey: String) -> Unit,
+    onWatchNow: (title: String, magnetUrl: String) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var source by remember { mutableStateOf(RecSource.LLM) }
-
-    LaunchedEffect(source) {
-        if (source == RecSource.TMDB && uiState.tmdbBaselineText == null && !uiState.isBaselineLoading) {
-            viewModel.generateTmdbBaselineRecommendations()
-        }
-    }
 
     // Auto-generate recommendations on first entry if we have selections and nothing yet
     LaunchedEffect(uiState.selectedMovies, uiState.recommendationText, uiState.isLoading) {
@@ -115,32 +107,9 @@ fun RecommendationsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Source toggle
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Button(
-                        onClick = { source = RecSource.LLM },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (source == RecSource.LLM) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
-                        )
-                    ) { Text("LLM") }
-
-                    Button(
-                        onClick = { source = RecSource.TMDB },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (source == RecSource.TMDB) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
-                        )
-                    ) { Text("TMDB baseline") }
-                }
-
-                Box(modifier = Modifier.fillMaxSize()) {
-                    when {
-                        source == RecSource.LLM && uiState.isLoading -> {
+            Box(modifier = Modifier.fillMaxSize()) {
+                when {
+                    uiState.isLoading -> {
                             Column(
                                 modifier = Modifier.align(Alignment.Center),
                                 horizontalAlignment = Alignment.CenterHorizontally
@@ -152,21 +121,8 @@ fun RecommendationsScreen(
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
-                        }
-                        source == RecSource.TMDB && uiState.isBaselineLoading -> {
-                            Column(
-                                modifier = Modifier.align(Alignment.Center),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                CircularProgressIndicator()
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(
-                                    text = "Building TMDB baseline...",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
-                        }
-                        source == RecSource.LLM && uiState.error != null -> {
+                    }
+                    uiState.error != null -> {
                             Column(
                                 modifier = Modifier
                                     .align(Alignment.Center)
@@ -179,36 +135,18 @@ fun RecommendationsScreen(
                                     textAlign = TextAlign.Center
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
-                                Button(onClick = { viewModel.generateRecommendations() }) {
-                                    Text("Retry")
-                                }
+                            Button(onClick = { viewModel.generateRecommendations() }) {
+                                Text("Retry")
                             }
                         }
-                        source == RecSource.TMDB && uiState.baselineError != null -> {
-                            Column(
-                                modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .padding(16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = uiState.baselineError ?: "Unknown error",
-                                    color = MaterialTheme.colorScheme.error,
-                                    textAlign = TextAlign.Center
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Button(onClick = { viewModel.generateTmdbBaselineRecommendations() }) {
-                                    Text("Retry baseline")
-                                }
-                            }
-                        }
-                        else -> {
-                            val displayText = if (source == RecSource.TMDB) uiState.tmdbBaselineText else uiState.recommendationText
-                            if (displayText == null) {
-                                Text(
-                                    text = if (source == RecSource.TMDB) "No baseline yet" else "No recommendations yet",
-                                    modifier = Modifier.align(Alignment.Center)
-                                )
+                    }
+                    else -> {
+                        val displayText = uiState.recommendationText
+                        if (displayText == null) {
+                            Text(
+                                text = "No recommendations yet",
+                                modifier = Modifier.align(Alignment.Center)
+                            )
                             } else {
                                 LazyColumn(
                                     modifier = Modifier.fillMaxSize(),
@@ -254,13 +192,13 @@ fun RecommendationsScreen(
                                                 ParsedRecommendationsList(
                                                     text = displayText,
                                                     viewModel = viewModel,
-                                                    onOpenTrailer = onOpenTrailer
+                                                    onOpenTrailer = onOpenTrailer,
+                                                    onWatchNow = onWatchNow
                                                 )
                                             }
                                         }
                                     }
                                 }
-                            }
                         }
                     }
                 }
@@ -493,7 +431,8 @@ private data class RecItem(
 private fun ParsedRecommendationsList(
     text: String,
     viewModel: MovieViewModel,
-    onOpenTrailer: (title: String, youtubeKey: String) -> Unit
+    onOpenTrailer: (title: String, youtubeKey: String) -> Unit,
+    onWatchNow: (title: String, magnetUrl: String) -> Unit
 ) {
     val cleaned = text
         .replace("```json", "")
@@ -556,7 +495,7 @@ private fun ParsedRecommendationsList(
             )
             Spacer(modifier = Modifier.height(8.dp))
             items.forEach { item ->
-                RecommendationRow(item = item, viewModel = viewModel, onOpenTrailer = onOpenTrailer)
+                RecommendationRow(item = item, viewModel = viewModel, onOpenTrailer = onOpenTrailer, onWatchNow = onWatchNow)
             }
         }
     }
@@ -566,7 +505,8 @@ private fun ParsedRecommendationsList(
 private fun RecommendationRow(
     item: RecItem,
     viewModel: MovieViewModel,
-    onOpenTrailer: (title: String, youtubeKey: String) -> Unit
+    onOpenTrailer: (title: String, youtubeKey: String) -> Unit,
+    onWatchNow: (title: String, magnetUrl: String) -> Unit
 ) {
     val context = LocalContext.current
     val rating by produceState<String?>(initialValue = null, key1 = item.title, key2 = item.year) {
@@ -574,6 +514,9 @@ private fun RecommendationRow(
     }
     val trailerUrl by produceState<String?>(initialValue = null, key1 = item.title, key2 = item.year) {
         value = try { viewModel.getImdbTrailerUrlByTitle(item.title, item.year) } catch (e: Exception) { null }
+    }
+    val torrentMagnet by produceState<String?>(initialValue = null, key1 = item.title, key2 = item.year) {
+        value = try { viewModel.getTorrentMagnetUrl(item.title, item.year) } catch (e: Exception) { null }
     }
     Column {
         val displayTitle = if (!item.year.isNullOrBlank()) {
@@ -614,21 +557,37 @@ private fun RecommendationRow(
             )
         }
         Spacer(modifier = Modifier.height(6.dp))
-        TextButton(onClick = {
-            val url = trailerUrl
-            android.util.Log.d("RecommendationsScreen", "Trailer button clicked: title=${item.title}, url=$url")
-            if (url != null && url.isNotBlank()) {
-                // IMDB returns direct video URLs, pass the whole URL
-                android.util.Log.d("RecommendationsScreen", "Calling onOpenTrailer with URL length: ${url.length}")
-                onOpenTrailer(item.title, url)
-                android.util.Log.d("RecommendationsScreen", "onOpenTrailer called successfully")
-            } else {
-                // No trailer URL from IMDB - show toast instead of navigating
-                android.util.Log.w("RecommendationsScreen", "No trailer URL available")
-                Toast.makeText(context, "No trailer available for this movie", Toast.LENGTH_SHORT).show()
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = {
+                val url = trailerUrl
+                android.util.Log.d("RecommendationsScreen", "Trailer button clicked: title=${item.title}, url=$url")
+                if (url != null && url.isNotBlank()) {
+                    // IMDB returns direct video URLs, pass the whole URL
+                    android.util.Log.d("RecommendationsScreen", "Calling onOpenTrailer with URL length: ${url.length}")
+                    onOpenTrailer(item.title, url)
+                    android.util.Log.d("RecommendationsScreen", "onOpenTrailer called successfully")
+                } else {
+                    // No trailer URL from IMDB - show toast instead of navigating
+                    android.util.Log.w("RecommendationsScreen", "No trailer URL available")
+                    Toast.makeText(context, "No trailer available for this movie", Toast.LENGTH_SHORT).show()
+                }
+            }) {
+                Text("Watch Trailer")
             }
-        }) {
-            Text("Watch Trailer")
+            
+            TextButton(onClick = {
+                val magnet = torrentMagnet
+                android.util.Log.d("RecommendationsScreen", "Watch Now button clicked: title=${item.title}")
+                if (magnet != null && magnet.isNotBlank()) {
+                    android.util.Log.d("RecommendationsScreen", "Calling onWatchNow with magnet")
+                    onWatchNow(item.title, magnet)
+                } else {
+                    android.util.Log.w("RecommendationsScreen", "No streaming source available")
+                    Toast.makeText(context, "No streaming source available", Toast.LENGTH_SHORT).show()
+                }
+            }) {
+                Text("Watch Now")
+            }
         }
     }
 }

@@ -71,10 +71,22 @@ class LlmRecommendationService {
                     extraInstructions = ""
                 ),
                 OpenAiAttempt(
-                    temperature = 0.55,
+                    temperature = 0.45,
                     frequencyPenalty = 2.0,
                     presencePenalty = 2.0,
-                    extraInstructions = "\n\nSTRICT RETRY (YOU MUST COMPLY):\n- Include an ANALYSIS paragraph BEFORE the RECOMMENDATIONS header.\n- Every title MUST include a 4-digit year in parentheses: Title (Year).\n- If year filtering is enabled, EVERY movie MUST be within the year range.\n- NEVER include any excluded title (favorites/selected/already recommended).\n- Output EXACTLY 15 unique items and stop."
+                    extraInstructions = "\n\n🚨🚨🚨 STRICT RETRY - FINAL ATTEMPT 🚨🚨🚨\n" +
+                        "The previous response violated requirements. You MUST:\n" +
+                        "✓ Start with a UNIQUE, SPECIFIC analysis paragraph (3-4 sentences)\n" +
+                        "  - NO generic phrases like 'complex characters' or 'compelling storytelling'\n" +
+                        "  - Name CONCRETE filmmaking elements, techniques, or patterns\n" +
+                        "  - Reference actual aspects of their selected films\n" +
+                        "✓ Every title MUST include a 4-digit year: Title (Year)\n" +
+                        "✓ STRICTLY follow ALL user preferences (if it says avoid X, DO NOT include X)\n" +
+                        "✓ If year filtering is enabled, EVERY movie MUST be within that exact range\n" +
+                        "✓ NEVER include any excluded title (favorites/selected/already recommended)\n" +
+                        "✓ Output EXACTLY 15 unique items and stop\n" +
+                        "✓ Each recommendation must match the user's preference settings\n" +
+                        "Failure to comply will make the output completely unusable."
                 )
             )
 
@@ -150,68 +162,68 @@ class LlmRecommendationService {
         // 1. Production Style (Indie vs Blockbuster)
         if (useIndiePreference) {
             val styleGuidance = when {
-                indiePreference < 0.4f -> "STRONGLY favor mainstream blockbusters, big-budget studio films, and widely distributed theatrical releases. Avoid indie films."
-                indiePreference < 0.45f -> "Lean heavily towards blockbusters and popular studio films."
-                indiePreference < 0.55f -> "Balance between mainstream hits and indie films."
-                indiePreference < 0.6f -> "Lean towards indie films, art house cinema, and smaller productions."
-                else -> "STRONGLY favor indie films, art house cinema, hidden gems, and lesser-known titles. Avoid mainstream blockbusters."
+                indiePreference <= 0.3f -> "STRONGLY favor mainstream blockbusters, big-budget studio films, and widely distributed theatrical releases. Avoid indie films completely."
+                indiePreference <= 0.45f -> "Lean heavily towards blockbusters and popular studio films. Minimize indie films."
+                indiePreference in 0.46f..0.54f -> "Balance between mainstream hits and indie films equally."
+                indiePreference <= 0.7f -> "Favor indie films, art house cinema, and smaller productions. Include some mainstream films."
+                else -> "STRONGLY favor indie films, art house cinema, and lesser-known titles. Avoid mainstream blockbusters completely."
             }
-            activePreferences.add("Production Style: $styleGuidance")
+            activePreferences.add("**Production Style**: $styleGuidance")
         }
         
         // 2. Popularity Level (Cult vs Mainstream)
         if (usePopularityPreference) {
             val popularityGuidance = when {
-                popularityPreference < 0.4f -> "STRONGLY emphasize cult classics, obscure gems, and lesser-known films with niche followings. Avoid widely popular films."
-                popularityPreference < 0.45f -> "Favor cult classics and hidden gems over mainstream hits."
-                popularityPreference < 0.55f -> "Mix popular mainstream films with lesser-known quality titles."
-                popularityPreference < 0.6f -> "Favor well-known, widely recognized films."
-                else -> "STRONGLY focus on blockbuster hits, universally known films, and mainstream favorites. Avoid obscure titles."
+                popularityPreference <= 0.3f -> "STRONGLY emphasize cult classics, obscure gems, and lesser-known films with niche followings. Avoid widely popular films completely."
+                popularityPreference <= 0.45f -> "Favor cult classics and hidden gems over mainstream hits. Minimize popular films."
+                popularityPreference in 0.46f..0.54f -> "Mix popular mainstream films with lesser-known quality titles equally."
+                popularityPreference <= 0.7f -> "Favor well-known, widely recognized films. Include some cult classics."
+                else -> "STRONGLY focus on blockbuster hits, universally known films, and mainstream favorites. Avoid obscure titles completely."
             }
-            activePreferences.add("Popularity Level: $popularityGuidance")
+            activePreferences.add("**Popularity Level**: $popularityGuidance")
         }
         
         // 3. Release Year Range
         if (useReleaseYearPreference) {
             val startYear = releaseYearStart.toInt()
             val endYear = releaseYearEnd.toInt()
-            activePreferences.add("Release Year: Only recommend films released between $startYear and $endYear.")
+            activePreferences.add("**Release Year**: MANDATORY - Every single recommendation MUST be released between $startYear and $endYear inclusive. Do NOT recommend films outside this range.")
         }
         
         // 4. Tone/Mood
         if (useTonePreference) {
             val toneGuidance = when {
-                tonePreference < 0.4f -> "STRONGLY favor uplifting, feel-good films with lighter themes, comedy, and positive outcomes. Avoid dark content."
-                tonePreference < 0.45f -> "Lean towards lighter, more uplifting films."
-                tonePreference < 0.55f -> "Balance between light-hearted entertainment and serious dramatic fare."
-                tonePreference < 0.6f -> "Lean towards more serious, dramatic films."
-                else -> "STRONGLY favor dark, intense, thought-provoking films with serious themes and complex subject matter. Avoid lighthearted content."
+                tonePreference <= 0.3f -> "STRONGLY favor uplifting, feel-good films with lighter themes, comedy, and positive outcomes. Avoid dark content completely."
+                tonePreference <= 0.45f -> "Lean towards lighter, more uplifting films. Minimize dark themes."
+                tonePreference in 0.46f..0.54f -> "Balance between light-hearted entertainment and serious dramatic fare equally."
+                tonePreference <= 0.7f -> "Favor more serious, dramatic films. Include some lighter content."
+                else -> "STRONGLY favor dark, intense, thought-provoking films with serious themes and complex subject matter. Avoid lighthearted content completely."
             }
-            activePreferences.add("Tone/Mood: $toneGuidance")
+            activePreferences.add("**Tone/Mood**: $toneGuidance")
         }
         
         // 5. International vs Domestic
         if (useInternationalPreference) {
             val internationalGuidance = when {
-                internationalPreference < 0.4f -> "ONLY recommend American and English-language films. Completely avoid foreign language films."
-                internationalPreference < 0.45f -> "Primarily recommend American/English films with rare international exceptions."
-                internationalPreference < 0.55f -> "Include both Hollywood productions and notable international films."
-                internationalPreference < 0.6f -> "Favor international cinema with some Hollywood films."
-                else -> "STRONGLY prioritize international cinema, foreign language films, and world cinema from diverse countries. Minimize Hollywood films."
+                internationalPreference <= 0.3f -> "ONLY recommend American and English-language films. Completely avoid foreign language films."
+                internationalPreference <= 0.45f -> "Primarily American/English films with occasional international exceptions."
+                internationalPreference in 0.46f..0.54f -> "Include both Hollywood productions and international films equally."
+                internationalPreference <= 0.7f -> "Favor international cinema with some Hollywood films."
+                else -> "STRONGLY prioritize international cinema, foreign language films, and world cinema. Minimize Hollywood/English-language films."
             }
-            activePreferences.add("Geographic Focus: $internationalGuidance")
+            activePreferences.add("**Geographic Focus**: $internationalGuidance")
         }
         
         // 6. Experimental vs Traditional
         if (useExperimentalPreference) {
             val experimentalGuidance = when {
-                experimentalPreference < 0.4f -> "ONLY recommend traditional narrative structures with conventional filmmaking. Completely avoid experimental films."
-                experimentalPreference < 0.45f -> "Strongly favor traditional storytelling and conventional approaches."
-                experimentalPreference < 0.55f -> "Mix traditional storytelling with some innovative and creative filmmaking."
-                experimentalPreference < 0.6f -> "Favor creative, innovative films with unique approaches."
-                else -> "STRONGLY prioritize avant-garde, unconventional films with experimental techniques and non-traditional storytelling. Avoid conventional narratives."
+                experimentalPreference <= 0.3f -> "ONLY recommend traditional narrative structures with conventional filmmaking. Completely avoid experimental films."
+                experimentalPreference <= 0.45f -> "Strongly favor traditional storytelling and conventional approaches. Minimize experimental content."
+                experimentalPreference in 0.46f..0.54f -> "Mix traditional storytelling with innovative creative filmmaking equally."
+                experimentalPreference <= 0.7f -> "Favor creative, innovative films with unique approaches. Include some traditional films."
+                else -> "STRONGLY prioritize avant-garde, unconventional films with experimental techniques. Avoid conventional narratives completely."
             }
-            activePreferences.add("Storytelling Style: $experimentalGuidance")
+            activePreferences.add("**Storytelling Style**: $experimentalGuidance")
         }
 
         // Help the model self-check: include the raw slider values and which toggles are enabled.
@@ -226,8 +238,16 @@ class LlmRecommendationService {
         ).joinToString("\n")
         
         val preferencesSection = if (activePreferences.size > 0) {
-            "\n\nUSER PREFERENCES (STRICTLY FOLLOW THESE):\n" + activePreferences.joinToString("\n") { "- $it" } + 
-            "\n\n⚠️ IMPORTANT: These preferences are CRITICAL. Every recommendation MUST align with these settings. Do NOT suggest films that contradict these preferences."
+            "\n\n═══════════════════════════════════════════════════════════\n" +
+            "🎬 USER PREFERENCES - MANDATORY COMPLIANCE REQUIRED 🎬\n" +
+            "═══════════════════════════════════════════════════════════\n\n" +
+            activePreferences.joinToString("\n\n") { "• $it" } + 
+            "\n\n⚠️⚠️⚠️ CRITICAL RULES ⚠️⚠️⚠️\n" +
+            "• Every single recommendation MUST strictly align with ALL preferences above\n" +
+            "• Do NOT recommend films that contradict any preference setting\n" +
+            "• If a preference says 'avoid X' or 'completely avoid X', you MUST NOT include X\n" +
+            "• These are hard requirements, not suggestions - violating them makes the output unusable\n" +
+            "═══════════════════════════════════════════════════════════"
         } else {
             ""
         }
@@ -238,9 +258,19 @@ class LlmRecommendationService {
             .take(60)
             .takeIf { it.isNotEmpty() }
             ?.let { list ->
-                "\n\nEXCLUSION LIST (NEVER RECOMMEND ANY OF THESE TITLES):\n" +
-                    list.joinToString("\n") { "- $it" } +
-                    "\n\n⚠️ IMPORTANT: This list includes movies already in Favorites, already Selected, and already Recommended. Do NOT include ANY of them."
+                "\n\n" +
+                "═══════════════════════════════════════════════════════════\n" +
+                "🚫 EXCLUSION LIST - FORBIDDEN RECOMMENDATIONS 🚫\n" +
+                "═══════════════════════════════════════════════════════════\n\n" +
+                "The following ${list.size} movies are COMPLETELY FORBIDDEN from recommendations:\n" +
+                "(This includes user's Favorites, already Selected movies, and previously Recommended titles)\n\n" +
+                list.joinToString("\n") { "❌ $it" } +
+                "\n\n⚠️⚠️⚠️ CRITICAL ⚠️⚠️⚠️\n" +
+                "• DO NOT recommend ANY movie from this list\n" +
+                "• DO NOT recommend movies with similar titles from this list\n" +
+                "• The user has already seen, selected, or favorited these movies\n" +
+                "• Including ANY of these will make your response COMPLETELY UNUSABLE\n" +
+                "═══════════════════════════════════════════════════════════"
             }
             ?: ""
         
@@ -249,16 +279,26 @@ You are an elite film curator with encyclopedic knowledge of cinema. The user lo
 
 ${selectedMovies.mapIndexed { index, title -> "${index + 1}. $title" }.joinToString("\n")}
 
-YOUR TASK: Analyze WHY they love these specific films, then recommend 15 films that capture the SAME qualities.$settingsSnapshot$preferencesSection$excludedSection$extraInstructions
+═══════════════════════════════════════════════════════════
+YOUR TASK
+═══════════════════════════════════════════════════════════
+Analyze WHY they love these specific films, then recommend 15 films that:
+1. Capture the SAME qualities as their selections
+2. STRICTLY follow ALL user preferences below
+3. Match the specific aesthetic, themes, and style of their choices$settingsSnapshot$preferencesSection$excludedSection$extraInstructions
 
-ANALYSIS APPROACH:
-First, identify the common threads: What themes, directorial styles, narrative structures, visual aesthetics, emotional tones, or specific elements unite their choices? Consider:
-- Pacing and atmosphere
-- Character complexity and development
-- Thematic depth (isolation, redemption, moral ambiguity, etc.)
-- Visual/cinematographic style
-- Era and cultural context
-- Emotional impact and tone
+ANALYSIS REQUIREMENTS:
+You MUST start with a unique, insightful analysis paragraph that:
+1. Identifies SPECIFIC patterns across their selections (not generic themes like "complex characters")
+2. Names concrete elements: specific directorial techniques, cinematography styles, narrative devices, or thematic motifs
+3. References actual aspects of THE FILMS THEY SELECTED - analyze what they chose, not hypothetical examples
+4. Is 3-4 sentences long with substantive observations
+5. AVOIDS generic phrases like:
+   ❌ "These films explore complex characters"
+   ❌ "Share themes of redemption"
+   ❌ "Feature compelling storytelling"
+   ❌ "Have strong character development"
+   ✓ Instead: Be SPECIFIC about what makes THEIR taste unique based on THEIR selections
 
 RECOMMENDATION QUALITY STANDARDS:
 - Each film must share SPECIFIC qualities with their selections (not just genre)
@@ -270,7 +310,7 @@ RECOMMENDATION QUALITY STANDARDS:
 
 FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
 
-[2-3 sentences analyzing the specific qualities and themes that connect their favorite films]
+[A unique 3-4 sentence analysis that specifically identifies what unites their taste. Name concrete filmmaking elements, techniques, or thematic patterns. Reference actual aspects of their selected films. DO NOT use generic phrases.]
 
 RECOMMENDATIONS:
 

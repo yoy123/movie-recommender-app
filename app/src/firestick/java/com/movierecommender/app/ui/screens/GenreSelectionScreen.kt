@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -64,8 +65,43 @@ fun GenreSelectionScreen(
                     ) 
                 },
                 actions = {
-                    val interactionSource = remember { MutableInteractionSource() }
-                    val isFocused by interactionSource.collectIsFocusedAsState()
+                    if (uiState.selectedMovies.isNotEmpty()) {
+                        // Clear selections button with focus indicator
+                        val clearInteraction = remember { MutableInteractionSource() }
+                        val clearFocused by clearInteraction.collectIsFocusedAsState()
+                        
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(end = 4.dp)
+                        ) {
+                            Surface(
+                                shape = MaterialTheme.shapes.small,
+                                color = if (clearFocused) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+                                border = if (clearFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
+                            ) {
+                                IconButton(
+                                    onClick = { viewModel.clearSelections() },
+                                    interactionSource = clearInteraction
+                                ) {
+                                    Icon(
+                                        Icons.Default.DeleteSweep,
+                                        contentDescription = "Clear selections",
+                                        tint = if (clearFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(if (clearFocused) 32.dp else 24.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "clear selections",
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontSize = 8.sp,
+                                modifier = Modifier.offset(y = (-8).dp)
+                            )
+                        }
+                    }
+                    
+                    val settingsInteraction = remember { MutableInteractionSource() }
+                    val settingsFocused by settingsInteraction.collectIsFocusedAsState()
 
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -74,18 +110,18 @@ fun GenreSelectionScreen(
                         Surface(
                             modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
                             shape = MaterialTheme.shapes.small,
-                            color = if (isFocused) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
-                            border = if (isFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
+                            color = if (settingsFocused) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+                            border = if (settingsFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
                         ) {
                             IconButton(
                                 onClick = { showSettingsDialog = true },
-                                interactionSource = interactionSource
+                                interactionSource = settingsInteraction
                             ) {
                                 Icon(
                                     Icons.Default.Settings,
                                     contentDescription = "Settings",
-                                    tint = if (isFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(if (isFocused) 32.dp else 24.dp)
+                                    tint = if (settingsFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(if (settingsFocused) 32.dp else 24.dp)
                                 )
                             }
                         }
@@ -398,7 +434,7 @@ fun PreferenceSettingsDialog(
     useIndiePreference: Boolean = true,
     usePopularityPreference: Boolean = true,
     releaseYearStart: Float = 1980f,
-    releaseYearEnd: Float = 2025f,
+    releaseYearEnd: Float = 2026f,
     useReleaseYearPreference: Boolean = true,
     tonePreference: Float = 0.5f,
     useTonePreference: Boolean = true,
@@ -757,7 +793,7 @@ fun ReleaseYearRangeSlider(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "2025",
+                    text = "2026",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -793,7 +829,7 @@ fun ReleaseYearRangeSlider(
                 },
                 modifier = Modifier.fillMaxWidth(),
                 minValue = 1951f,
-                maxValue = 2025f,
+                maxValue = 2026f,
                 step = 5f
             )
         }

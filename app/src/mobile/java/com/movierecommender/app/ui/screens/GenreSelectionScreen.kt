@@ -547,7 +547,7 @@ fun ReleaseYearRangeSlider(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "2025",
+                    text = "2026",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -568,8 +568,8 @@ fun ReleaseYearRangeSlider(
                         onStartYearChange(newStart)
                     }
                 },
-                valueRange = 1950f..2025f,
-                steps = 74, // 75 years total
+                valueRange = 1950f..2026f,
+                steps = 75, // 76 years total
                 modifier = Modifier.fillMaxWidth(),
                 colors = SliderDefaults.colors(
                     thumbColor = MaterialTheme.colorScheme.secondary,
@@ -592,8 +592,8 @@ fun ReleaseYearRangeSlider(
                         onEndYearChange(newEnd)
                     }
                 },
-                valueRange = 1950f..2025f,
-                steps = 74, // 75 years total
+                valueRange = 1950f..2026f,
+                steps = 75, // 76 years total
                 modifier = Modifier.fillMaxWidth(),
                 colors = SliderDefaults.colors(
                     thumbColor = MaterialTheme.colorScheme.tertiary,

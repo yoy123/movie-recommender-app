@@ -19,11 +19,7 @@ data class MovieUiState(
     val selectedMovies: List<Movie> = emptyList(),
     val recommendedMovies: List<Movie> = emptyList(),
     val favoriteMovies: List<Movie> = emptyList(),
-    val recommendationText: String? = null, // New: LLM text response
-    // TMDB metadata baseline (for comparison/testing)
-    val tmdbBaselineText: String? = null,
-    val isBaselineLoading: Boolean = false,
-    val baselineError: String? = null,
+    val recommendationText: String? = null, // LLM text response (TMDB fallback on failure)
     val isLoading: Boolean = false,
     val error: String? = null,
     val selectedGenreId: Int? = null,
@@ -407,55 +403,6 @@ class MovieViewModel(
             }
         }
     }
-
-    fun generateTmdbBaselineRecommendations() {
-        val selectedMovies = _uiState.value.selectedMovies
-        val genreName = _uiState.value.selectedGenreName ?: "Movies"
-        val state = _uiState.value
-        if (selectedMovies.isEmpty() || selectedMovies.size > 5) return
-
-        viewModelScope.launch {
-            repository.getTmdbBaselineRecommendationsText(
-                selectedMovies = selectedMovies,
-                genreName = genreName,
-                indiePreference = state.indiePreference,
-                useIndiePreference = state.useIndiePreference,
-                popularityPreference = state.popularityPreference,
-                usePopularityPreference = state.usePopularityPreference,
-                releaseYearStart = state.releaseYearStart,
-                releaseYearEnd = state.releaseYearEnd,
-                useReleaseYearPreference = state.useReleaseYearPreference,
-                tonePreference = state.tonePreference,
-                useTonePreference = state.useTonePreference,
-                experimentalPreference = state.experimentalPreference,
-                useExperimentalPreference = state.useExperimentalPreference
-            ).collect { resource ->
-                when (resource) {
-                    is Resource.Loading -> {
-                        _uiState.value = _uiState.value.copy(
-                            isBaselineLoading = true,
-                            baselineError = null,
-                            tmdbBaselineText = null
-                        )
-                    }
-                    is Resource.Success -> {
-                        _uiState.value = _uiState.value.copy(
-                            isBaselineLoading = false,
-                            baselineError = null,
-                            tmdbBaselineText = resource.data
-                        )
-                    }
-                    is Resource.Error -> {
-                        _uiState.value = _uiState.value.copy(
-                            isBaselineLoading = false,
-                            baselineError = resource.message,
-                            tmdbBaselineText = null
-                        )
-                    }
-                }
-            }
-        }
-    }
     
     fun clearSelections() {
         viewModelScope.launch {
@@ -463,10 +410,7 @@ class MovieViewModel(
             repository.clearRecommendedMovies()
             sessionRecommendedTitles.clear()
             _uiState.value = _uiState.value.copy(
-                recommendationText = null,
-                tmdbBaselineText = null,
-                isBaselineLoading = false,
-                baselineError = null
+                recommendationText = null
             )
         }
     }
@@ -583,6 +527,13 @@ class MovieViewModel(
 
     suspend fun getTmdbRatingByTitleYear(title: String, year: String?): String? {
         return repository.getTmdbRatingByTitleYear(title, year)
+    }
+
+    /**
+     * Get torrent magnet URL for a movie to enable streaming playback.
+     */
+    suspend fun getTorrentMagnetUrl(title: String, year: String?): String? {
+        return repository.getTorrentInfo(title, year)?.magnetUrl
     }
 }
 

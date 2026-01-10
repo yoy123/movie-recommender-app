@@ -43,7 +43,7 @@ class SettingsRepository(private val context: Context) {
     val popularityPreference: Flow<Float> = context.dataStore.data.map { it[Keys.POPULARITY_PREFERENCE] ?: 0.5f }
     val usePopularity: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_POPULARITY] ?: true }
     val releaseYearStart: Flow<Float> = context.dataStore.data.map { it[Keys.RELEASE_YEAR_START] ?: 1950f }
-    val releaseYearEnd: Flow<Float> = context.dataStore.data.map { it[Keys.RELEASE_YEAR_END] ?: 2025f }
+    val releaseYearEnd: Flow<Float> = context.dataStore.data.map { it[Keys.RELEASE_YEAR_END] ?: 2026f }
     val useReleaseYear: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_RELEASE_YEAR] ?: true }
     val tonePreference: Flow<Float> = context.dataStore.data.map { it[Keys.TONE_PREFERENCE] ?: 0.5f }
     val useTone: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_TONE] ?: true }

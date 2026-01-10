@@ -147,6 +147,14 @@ dependencies {
     // Gson
     implementation("com.google.code.gson:gson:2.13.2")
 
+    // Torrent Streaming
+    implementation("com.github.TorrentStream:TorrentStream-Android:3.0.0")
+    
+    // Media3 ExoPlayer for video playback
+    implementation("androidx.media3:media3-exoplayer:1.2.1")
+    implementation("androidx.media3:media3-ui:1.2.1")
+    implementation("androidx.media3:media3-common:1.2.1")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

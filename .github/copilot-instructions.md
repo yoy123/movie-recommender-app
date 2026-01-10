@@ -1,48 +1,85 @@
-<!-- Use this file to provide workspace-specific custom instructions to Copilot. For more details, visit https://code.visualstudio.com/docs/copilot/copilot-customization -->
-- [x] Verify that the copilot-instructions.md file in the .github directory is created.
+# Movie Recommender App - AI Agent Instructions
 
-- [x] Clarify Project Requirements
-  * Android app for movie recommendations based on 5 selected movies from a genre
-  * Uses TMDB API for movie data
-  * Built with Kotlin, Jetpack Compose, MVVM architecture
+## Architecture Overview
 
-- [x] Scaffold the Project
-  * Created complete Android project structure
-  * Gradle configuration files
-  * Android manifest and build files
-  * All source files organized by architecture layers
+Android app (Kotlin + Jetpack Compose) using MVVM with OpenAI GPT-4o-mini for movie recommendations.
 
-- [x] Customize the Project
-  * Implemented data layer (Room database, API service, repository)
-  * Implemented UI layer (Compose screens, navigation, theme)
-  * Implemented ViewModel layer with state management
-  * Recommendation algorithm based on TMDB similar/recommended endpoints
-  * Replaced algorithm with OpenAI GPT-4o-mini for intelligent recommendations
-  * Added "Dee's Favorites" custom genre for cross-genre movie collection
-  * Implemented favorites management (add/remove movies from any genre)
+### Layer Structure
+```
+UI (Compose Screens) → ViewModel (StateFlow) → Repository → Data Sources (Room + Retrofit)
+```
 
-- [x] Install Required Extensions
-  * No specific extensions required (Android Studio handles Kotlin/Android)
+### Product Flavors
+Two build variants share core logic but have distinct UI implementations:
+- **mobile** (`app/src/mobile/`) - Standard Android phone/tablet UI
+- **firestick** (`app/src/firestick/`) - TV/D-pad navigation with `androidx.tv` libraries
 
-- [ ] Compile the Project
-  * Open project in Android Studio
-  * Configure TMDB API key in app/build.gradle.kts
-  * Sync Gradle files
-  * Build project
+Shared code lives in `app/src/main/` (data layer, models, repository).
 
-- [ ] Create and Run Task
-  * Use Android Studio's built-in run configuration
-  * Or use Gradle tasks: `./gradlew build` and `./gradlew installDebug`
+## Key Patterns
 
-- [ ] Launch the Project
-  * Connect Android device or start emulator
-  * Click Run button in Android Studio
-  * Or use: `./gradlew installDebug && adb shell am start -n com.movierecommender.app/.MainActivity`
+### State Management
+All UI state flows through `MovieUiState` data class in `MovieViewModel`. Never mutate state directly:
+```kotlin
+_uiState.value = _uiState.value.copy(isLoading = true)
+```
 
-- [x] Ensure Documentation is Complete
-  * README.md created with full project overview
-  * GETTING_STARTED.md created with setup instructions
-  * LLM_INTEGRATION.md created with AI recommendation details
-  * DEES_FAVORITES.md created with favorites feature guide
-  * ALGORITHM.md for original algorithmic approach
-  * Code comments added for key components
+### Resource Wrapper
+API/DB operations return `Flow<Resource<T>>` with `Success`, `Error`, `Loading` states. Always handle all three in UI.
+
+### Favorites System
+"[Name]'s Favorites" uses `genreId = -1` pseudo-genre. Check `isFavoritesMode` in ViewModel before navigation.
+
+### LLM Integration
+`LlmRecommendationService` makes two API attempts (creative → strict) with different temperatures. Response must pass `isValidRecommendationStructure()` or falls back to TMDB-based `buildFallbackRecommendations()` algorithm.
+
+## Build & Run
+
+```bash
+# API keys required in local.properties (NOT committed):
+TMDB_API_KEY=your_key
+OPENAI_API_KEY=sk-proj-...
+
+# Build
+./gradlew :app:assembleDebug          # Both flavors
+./gradlew :app:assembleMobileDebug    # Mobile only
+./gradlew :app:assembleFirestickDebug # Firestick only
+
+# Install
+./gradlew installMobileDebug
+```
+
+## Code Conventions
+
+- **Compose**: Use `remember` + `LaunchedEffect` for side effects; collect StateFlow with `collectAsState()`
+- **Navigation**: Routes defined in `Screen` sealed class; URL params encoded with Base64 (see `AppNavigation.kt`)
+- **Settings**: User preferences persisted via `DataStore` in `SettingsRepository`
+- **Database**: Room with `fallbackToDestructiveMigration()` - bump version in `AppDatabase` for schema changes
+
+## Critical Files
+
+| Purpose | File |
+|---------|------|
+| Data models | `data/model/Movie.kt` |
+| API interface | `data/remote/TmdbApiService.kt` |
+| LLM logic | `data/remote/LlmRecommendationService.kt` |
+| Business logic | `data/repository/MovieRepository.kt` |
+| State container | `ui/viewmodel/MovieViewModel.kt` |
+| Navigation | `ui/navigation/AppNavigation.kt` |
+| User prefs | `data/settings/SettingsRepository.kt` |
+
+## Recommendation Preferences
+
+Six user-configurable sliders passed to LLM (each has `use*` boolean toggle):
+- `indiePreference` (0=blockbuster, 1=indie)
+- `popularityPreference` (0=cult, 1=mainstream)
+- `releaseYearStart/End` (1950-current)
+- `tonePreference` (0=light, 1=dark)
+- `internationalPreference` (0=domestic, 1=international)
+- `experimentalPreference` (0=traditional, 1=experimental)
+
+## Testing Notes
+
+- Debug builds use insecure SSL for emulator compatibility (see `TmdbApiService.buildInsecureClientBuilder()`)
+- Session retries track `sessionRecommendedTitles` to prevent duplicate recommendations
+- `excludedMovies` list passed to LLM includes favorites + selected + already-recommended

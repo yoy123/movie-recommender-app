@@ -12,6 +12,7 @@ import com.movierecommender.app.ui.screens.MovieSelectionScreen
 import com.movierecommender.app.ui.screens.RecommendationsScreen
 import com.movierecommender.app.ui.screens.FavoritesScreen
 import com.movierecommender.app.ui.screens.TrailerScreen
+import com.movierecommender.app.ui.screens.StreamingPlayerScreen
 import com.movierecommender.app.ui.viewmodel.MovieViewModel
 import com.movierecommender.app.ui.viewmodel.MovieViewModelFactory
 import com.movierecommender.app.data.settings.SettingsRepository
@@ -25,6 +26,7 @@ sealed class Screen(val route: String) {
     object Recommendations : Screen("recommendations")
     object Favorites : Screen("favorites")
     object Trailer : Screen("trailer/{title}/{videoUrl}")
+    object StreamingPlayer : Screen("streaming/{title}/{magnetUrl}")
 }
 
 @Composable
@@ -98,6 +100,22 @@ fun AppNavigation(
                     } catch (e: Exception) {
                         android.util.Log.e("AppNavigation", "Navigation failed", e)
                     }
+                },
+                onWatchNow = { title: String, magnetUrl: String ->
+                    android.util.Log.d("AppNavigation", "onWatchNow called: title=$title")
+                    val encodedTitle = Uri.encode(title)
+                    val encodedMagnet = android.util.Base64.encodeToString(
+                        magnetUrl.toByteArray(),
+                        android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP
+                    )
+                    val route = "streaming/$encodedTitle/$encodedMagnet"
+                    android.util.Log.d("AppNavigation", "Navigating to streaming route")
+                    try {
+                        navController.navigate(route)
+                        android.util.Log.d("AppNavigation", "Streaming navigation successful")
+                    } catch (e: Exception) {
+                        android.util.Log.e("AppNavigation", "Streaming navigation failed", e)
+                    }
                 }
             )
         }
@@ -126,6 +144,22 @@ fun AppNavigation(
             TrailerScreen(
                 title = Uri.decode(title),
                 videoUrl = videoUrl,
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+        
+        composable(Screen.StreamingPlayer.route) { backStackEntry ->
+            val title = backStackEntry.arguments?.getString("title") ?: "Movie"
+            val encodedMagnet = backStackEntry.arguments?.getString("magnetUrl") ?: ""
+            // Decode Base64 magnet URL
+            val magnetUrl = try {
+                String(android.util.Base64.decode(encodedMagnet, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP))
+            } catch (e: Exception) {
+                encodedMagnet
+            }
+            StreamingPlayerScreen(
+                movieTitle = Uri.decode(title),
+                magnetUrl = magnetUrl,
                 onBackClick = { navController.popBackStack() }
             )
         }

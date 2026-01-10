@@ -8,6 +8,9 @@ import com.movierecommender.app.data.model.MovieResponse
 import com.movierecommender.app.data.remote.TmdbApiService
 import com.movierecommender.app.data.remote.OmdbApiService
 import com.movierecommender.app.data.remote.ImdbScraperService
+import com.movierecommender.app.data.remote.PopcornApiService
+import com.movierecommender.app.data.remote.YtsApiService
+import com.movierecommender.app.data.remote.TorrentInfo
 import com.movierecommender.app.data.model.Video
 import com.movierecommender.app.data.remote.LlmRecommendationService
 import kotlinx.coroutines.flow.Flow
@@ -27,7 +30,9 @@ class MovieRepository(
     private val apiService: TmdbApiService,
     private val llmService: LlmRecommendationService = LlmRecommendationService(),
     private val omdbService: OmdbApiService = OmdbApiService.create(),
-    private val imdbScraper: ImdbScraperService = ImdbScraperService.create()
+    private val imdbScraper: ImdbScraperService = ImdbScraperService.create(),
+    private val popcornApi: PopcornApiService = PopcornApiService(),
+    private val ytsApi: YtsApiService = YtsApiService()
 ) {
     
     // OpenAI API key from BuildConfig
@@ -107,43 +112,53 @@ class MovieRepository(
     ): Flow<Resource<String>> = flow {
         emit(Resource.Loading())
         try {
-            // These should never appear in recommendations.
+            // Fetch all movies that should NEVER be recommended
             val favoriteMovies = movieDao.getFavoriteMovies().first()
             val alreadyRecommendedMovies = movieDao.getRecommendedMovies().first()
 
-            // Get movie titles for LLM
+            // Format movie titles for LLM with year
             val movieTitles = selectedMovies.map { "${it.title} (${it.releaseDate?.take(4) ?: ""})" }
 
-            val excludedTitles = (favoriteMovies + alreadyRecommendedMovies + selectedMovies)
-                .map { "${it.title} (${it.releaseDate?.take(4) ?: ""})" }
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-                .distinct()
+            // Build comprehensive exclusion list
+            val formattedFavorites = formatExcludedMovies(favoriteMovies)
+            val formattedRecommended = formatExcludedMovies(alreadyRecommendedMovies)
+            val formattedSelected = formatExcludedMovies(selectedMovies)
 
-            val allExcluded = (excludedTitles + additionalExcludedTitles)
+            val allExcluded = (formattedFavorites + formattedRecommended + formattedSelected + additionalExcludedTitles)
                 .map { it.trim() }
                 .filter { it.isNotBlank() }
                 .distinct()
             
-            // Get recommendations from LLM
+            // Log exclusion details for debugging
+            android.util.Log.d("MovieRepository", "Exclusion Stats:")
+            android.util.Log.d("MovieRepository", "  - Favorites: ${formattedFavorites.size} movies")
+            android.util.Log.d("MovieRepository", "  - Already Recommended: ${formattedRecommended.size} movies")
+            android.util.Log.d("MovieRepository", "  - Currently Selected: ${formattedSelected.size} movies")
+            android.util.Log.d("MovieRepository", "  - Session Excluded: ${additionalExcludedTitles.size} movies")
+            android.util.Log.d("MovieRepository", "  - Total Excluded: ${allExcluded.size} movies")
+            if (formattedFavorites.isNotEmpty()) {
+                android.util.Log.d("MovieRepository", "Favorites being excluded: ${formattedFavorites.take(5).joinToString(", ")}${if (formattedFavorites.size > 5) "..." else ""}")
+            }
+            
+            // Get recommendations from LLM with comprehensive exclusion list
             val llmResult = withContext(Dispatchers.IO) {
                 llmService.getRecommendationsFromLlm(
-                    movieTitles, 
-                    genreName, 
-                    openAiApiKey, 
-                    indiePreference,
-                    useIndiePreference,
-                    popularityPreference,
-                    usePopularityPreference,
-                    releaseYearStart,
-                    releaseYearEnd,
-                    useReleaseYearPreference,
-                    tonePreference,
-                    useTonePreference,
-                    internationalPreference,
-                    useInternationalPreference,
-                    experimentalPreference,
-                    useExperimentalPreference,
+                    selectedMovies = movieTitles,
+                    genre = genreName, 
+                    apiKey = openAiApiKey, 
+                    indiePreference = indiePreference,
+                    useIndiePreference = useIndiePreference,
+                    popularityPreference = popularityPreference,
+                    usePopularityPreference = usePopularityPreference,
+                    releaseYearStart = releaseYearStart,
+                    releaseYearEnd = releaseYearEnd,
+                    useReleaseYearPreference = useReleaseYearPreference,
+                    tonePreference = tonePreference,
+                    useTonePreference = useTonePreference,
+                    internationalPreference = internationalPreference,
+                    useInternationalPreference = useInternationalPreference,
+                    experimentalPreference = experimentalPreference,
+                    useExperimentalPreference = useExperimentalPreference,
                     excludedMovies = allExcluded
                 )
             }
@@ -551,5 +566,58 @@ class MovieRepository(
             }
         }
         null
+    }
+
+    /**
+     * Get torrent information for a movie by title and year.
+     * Tries multiple sources (YTS, Popcorn API) with fallback.
+     * Prefers smallest file size for faster streaming.
+     */
+    suspend fun getTorrentInfo(title: String, year: String?): TorrentInfo? = withContext(Dispatchers.IO) {
+        android.util.Log.d("MovieRepository", "Searching torrent for: $title ($year)")
+        
+        // Try YTS first (generally smaller files, better for streaming)
+        try {
+            val ytsMovie = ytsApi.searchMovie(title, year)
+            if (ytsMovie != null) {
+                val torrent = ytsApi.getSmallestTorrent(ytsMovie)
+                if (torrent != null && (torrent.seeds ?: 0) > 0) {
+                    android.util.Log.d("MovieRepository", "Found YTS torrent: ${torrent.quality} (${torrent.size}) with ${torrent.seeds} seeds")
+                    return@withContext torrent
+                }
+            }
+            android.util.Log.d("MovieRepository", "No YTS torrent found, trying Popcorn API...")
+        } catch (e: Exception) {
+            android.util.Log.w("MovieRepository", "YTS search failed: ${e.message}")
+        }
+        
+        // Fallback to Popcorn API
+        try {
+            val popcornMovie = popcornApi.searchMovie(title, year)
+            if (popcornMovie != null) {
+                val torrent = popcornApi.getSmallestTorrent(popcornMovie)
+                if (torrent != null) {
+                    android.util.Log.d("MovieRepository", "Found Popcorn torrent: ${torrent.quality} (${torrent.size}) with ${torrent.seeds} seeds")
+                    return@withContext torrent
+                }
+            }
+            android.util.Log.d("MovieRepository", "No Popcorn API torrent found")
+        } catch (e: Exception) {
+            android.util.Log.w("MovieRepository", "Popcorn API search failed: ${e.message}")
+        }
+        
+        android.util.Log.w("MovieRepository", "No torrent source found for: $title")
+        null
+    }
+    
+    /**
+     * Format a list of movies for LLM exclusion.
+     * Includes title and year for accurate matching.
+     */
+    private fun formatExcludedMovies(movies: List<Movie>): List<String> {
+        return movies.map { movie ->
+            val year = movie.releaseDate?.take(4) ?: ""
+            "${movie.title}${if (year.isNotBlank()) " ($year)" else ""}".trim()
+        }.filter { it.isNotBlank() }
     }
 }
