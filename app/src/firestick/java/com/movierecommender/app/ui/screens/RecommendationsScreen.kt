@@ -25,7 +25,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,29 +48,20 @@ import com.movierecommender.app.ui.viewmodel.MovieViewModel
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavController
 
-private enum class RecSource { LLM, TMDB }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecommendationsScreen(
     viewModel: MovieViewModel,
     onBackClick: () -> Unit,
     onStartOver: () -> Unit,
-    onOpenTrailer: (title: String, youtubeKey: String) -> Unit
+    onOpenTrailer: (title: String, youtubeKey: String) -> Unit,
+    onWatchNow: (title: String, magnetUrl: String) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsState()
     // Auto-generate recommendations on first entry if we have selections and nothing yet
     LaunchedEffect(uiState.selectedMovies, uiState.recommendationText, uiState.isLoading) {
         if (!uiState.isLoading && uiState.recommendationText == null && uiState.selectedMovies.isNotEmpty()) {
             viewModel.generateRecommendations()
-        }
-    }
-    var source by remember { mutableStateOf(RecSource.LLM) }
-
-    // When switching to TMDB baseline, generate it once.
-    LaunchedEffect(source) {
-        if (source == RecSource.TMDB && uiState.tmdbBaselineText == null && !uiState.isBaselineLoading) {
-            viewModel.generateTmdbBaselineRecommendations()
         }
     }
     
@@ -181,39 +174,9 @@ fun RecommendationsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Source toggle row (TV-friendly)
             Column(modifier = Modifier.fillMaxSize()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 64.dp, vertical = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    val llmInteraction = remember { MutableInteractionSource() }
-                    val llmFocused by llmInteraction.collectIsFocusedAsState()
-                    Button(
-                        onClick = { source = RecSource.LLM },
-                        interactionSource = llmInteraction,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (source == RecSource.LLM) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
-                        ),
-                        border = if (llmFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null
-                    ) { Text("LLM") }
-
-                    val tmdbInteraction = remember { MutableInteractionSource() }
-                    val tmdbFocused by tmdbInteraction.collectIsFocusedAsState()
-                    Button(
-                        onClick = { source = RecSource.TMDB },
-                        interactionSource = tmdbInteraction,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (source == RecSource.TMDB) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
-                        ),
-                        border = if (tmdbFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null
-                    ) { Text("TMDB baseline") }
-                }
-
                 when {
-                    source == RecSource.LLM && uiState.isLoading -> {
+                    uiState.isLoading -> {
                         Column(
                             modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 96.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
@@ -226,20 +189,7 @@ fun RecommendationsScreen(
                             )
                         }
                     }
-                    source == RecSource.TMDB && uiState.isBaselineLoading -> {
-                        Column(
-                            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 96.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Building TMDB baseline...",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-                    }
-                    source == RecSource.LLM && uiState.error != null -> {
+                    uiState.error != null -> {
                         Column(
                             modifier = Modifier
                                 .align(Alignment.CenterHorizontally)
@@ -272,41 +222,11 @@ fun RecommendationsScreen(
                             }
                         }
                     }
-                    source == RecSource.TMDB && uiState.baselineError != null -> {
-                        Column(
-                            modifier = Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .padding(48.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = uiState.baselineError ?: "Unknown error",
-                                color = MaterialTheme.colorScheme.error,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            val retryInteraction = remember { MutableInteractionSource() }
-                            val retryFocused by retryInteraction.collectIsFocusedAsState()
-                            Button(
-                                onClick = { viewModel.generateTmdbBaselineRecommendations() },
-                                interactionSource = retryInteraction,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (retryFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
-                                ),
-                                border = if (retryFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null
-                            ) {
-                                Text(
-                                    "Retry baseline",
-                                    color = if (retryFocused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                        }
-                    }
                     else -> {
-                        val displayText = if (source == RecSource.TMDB) uiState.tmdbBaselineText else uiState.recommendationText
+                        val displayText = uiState.recommendationText
                         if (displayText == null) {
                             Text(
-                                text = if (source == RecSource.TMDB) "No baseline yet" else "No recommendations yet",
+                                text = "No recommendations yet",
                                 modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 96.dp)
                             )
                         } else {
@@ -401,7 +321,8 @@ fun RecommendationsScreen(
                                         RecommendationCard(
                                             item = item,
                                             viewModel = viewModel,
-                                            onOpenTrailer = onOpenTrailer
+                                            onOpenTrailer = onOpenTrailer,
+                                            onWatchNow = onWatchNow
                                         )
                                     }
                                 }
@@ -660,9 +581,12 @@ private fun FocusableCard(
 private fun RecommendationCard(
     item: RecItem,
     viewModel: MovieViewModel,
-    onOpenTrailer: (title: String, youtubeKey: String) -> Unit
+    onOpenTrailer: (title: String, youtubeKey: String) -> Unit,
+    onWatchNow: (title: String, magnetUrl: String) -> Unit
 ) {
     val context = LocalContext.current
+    var magnetUrl by remember { mutableStateOf<String?>(null) }
+    var isLoadingMagnet by remember { mutableStateOf(false) }
     val cardInteraction = remember { MutableInteractionSource() }
     val cardFocused by cardInteraction.collectIsFocusedAsState()
     
@@ -730,26 +654,83 @@ private fun RecommendationCard(
             val trailerInteraction = remember { MutableInteractionSource() }
             val trailerFocused by trailerInteraction.collectIsFocusedAsState()
             
-            Button(
-                onClick = {
-                    val url = trailerUrl
-                    if (url != null && url.isNotBlank()) {
-                        onOpenTrailer(item.title, url)
-                    } else {
-                        Toast.makeText(context, "No trailer available", Toast.LENGTH_SHORT).show()
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                    onClick = {
+                        val url = trailerUrl
+                        if (url != null && url.isNotBlank()) {
+                            onOpenTrailer(item.title, url)
+                        } else {
+                            Toast.makeText(context, "No trailer available", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    interactionSource = trailerInteraction,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (trailerFocused) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+                    ),
+                    border = if (trailerFocused) BorderStroke(2.dp, Color.White) else null,
+                    modifier = Modifier.focusable(interactionSource = trailerInteraction)
+                ) {
+                    Text(
+                        "Watch Trailer",
+                        fontSize = 16.sp
+                    )
+                }
+                
+                // Watch Now button
+                val watchNowInteraction = remember { MutableInteractionSource() }
+                val watchNowFocused by watchNowInteraction.collectIsFocusedAsState()
+                val coroutineScope = rememberCoroutineScope()
+                
+                Button(
+                    onClick = {
+                        if (magnetUrl != null) {
+                            onWatchNow(item.title, magnetUrl!!)
+                        } else if (!isLoadingMagnet) {
+                            isLoadingMagnet = true
+                            coroutineScope.launch {
+                                try {
+                                    val displayTitle = if (!item.year.isNullOrBlank()) {
+                                        "${item.title} (${item.year})"
+                                    } else {
+                                        item.title
+                                    }
+                                    val magnet = viewModel.getTorrentMagnetUrl(item.title, item.year)
+                                    if (magnet != null) {
+                                        magnetUrl = magnet
+                                        onWatchNow(item.title, magnet)
+                                    } else {
+                                        Toast.makeText(context, "No streaming source found", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Error finding source", Toast.LENGTH_SHORT).show()
+                                } finally {
+                                    isLoadingMagnet = false
+                                }
+                            }
+                        }
+                    },
+                    interactionSource = watchNowInteraction,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (watchNowFocused) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary
+                    ),
+                    border = if (watchNowFocused) BorderStroke(2.dp, Color.White) else null,
+                    modifier = Modifier.focusable(interactionSource = watchNowInteraction),
+                    enabled = !isLoadingMagnet
+                ) {
+                    if (isLoadingMagnet) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                     }
-                },
-                interactionSource = trailerInteraction,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (trailerFocused) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
-                ),
-                border = if (trailerFocused) BorderStroke(2.dp, Color.White) else null,
-                modifier = Modifier.focusable(interactionSource = trailerInteraction)
-            ) {
-                Text(
-                    "Watch Trailer",
-                    fontSize = 16.sp
-                )
+                    Text(
+                        if (isLoadingMagnet) "Finding..." else "Watch Now",
+                        fontSize = 16.sp
+                    )
+                }
             }
         }
     }

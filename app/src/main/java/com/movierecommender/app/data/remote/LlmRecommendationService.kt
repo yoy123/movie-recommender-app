@@ -65,28 +65,26 @@ class LlmRecommendationService {
             // Two attempts: first is creative, second is more strict/compliant.
             val attempts = listOf(
                 OpenAiAttempt(
-                    temperature = 0.75,
-                    frequencyPenalty = 2.0,
-                    presencePenalty = 2.0,
+                    // gpt-4o-mini tends to comply better with moderate temperature and penalties.
+                    // Very high penalties can cause strange phrasing and format drift.
+                    temperature = 0.6,
+                    frequencyPenalty = 1.0,
+                    presencePenalty = 0.6,
                     extraInstructions = ""
                 ),
                 OpenAiAttempt(
-                    temperature = 0.45,
-                    frequencyPenalty = 2.0,
-                    presencePenalty = 2.0,
-                    extraInstructions = "\n\n🚨🚨🚨 STRICT RETRY - FINAL ATTEMPT 🚨🚨🚨\n" +
-                        "The previous response violated requirements. You MUST:\n" +
-                        "✓ Start with a UNIQUE, SPECIFIC analysis paragraph (3-4 sentences)\n" +
-                        "  - NO generic phrases like 'complex characters' or 'compelling storytelling'\n" +
-                        "  - Name CONCRETE filmmaking elements, techniques, or patterns\n" +
-                        "  - Reference actual aspects of their selected films\n" +
-                        "✓ Every title MUST include a 4-digit year: Title (Year)\n" +
-                        "✓ STRICTLY follow ALL user preferences (if it says avoid X, DO NOT include X)\n" +
-                        "✓ If year filtering is enabled, EVERY movie MUST be within that exact range\n" +
-                        "✓ NEVER include any excluded title (favorites/selected/already recommended)\n" +
-                        "✓ Output EXACTLY 15 unique items and stop\n" +
-                        "✓ Each recommendation must match the user's preference settings\n" +
-                        "Failure to comply will make the output completely unusable."
+                    temperature = 0.3,
+                    frequencyPenalty = 1.0,
+                    presencePenalty = 0.6,
+                    extraInstructions = "\n\nSTRICT RETRY (FINAL):\n" +
+                        "The previous response failed validation. Follow the rules exactly:\n" +
+                        "- Start with a 3-sentence analysis that references the selected titles\n" +
+                        "- Then output EXACTLY 15 recommendations, numbered 1..15\n" +
+                        "- Every recommendation MUST be in the specified GENRE - no exceptions\n" +
+                        "- Every title MUST be formatted: Movie Title (YYYY)\n" +
+                        "- Do NOT include any excluded/selected title\n" +
+                        "- If year filtering is enabled, every year MUST be within range\n" +
+                        "- Stop after item 15 (no extra text)"
                 )
             )
 
@@ -121,7 +119,8 @@ class LlmRecommendationService {
                     useReleaseYearPreference = useReleaseYearPreference,
                     temperature = attempt.temperature,
                     frequencyPenalty = attempt.frequencyPenalty,
-                    presencePenalty = attempt.presencePenalty
+                    presencePenalty = attempt.presencePenalty,
+                    allowedCandidateTitles = null
                 )
 
                 if (processed.isNotBlank()) {
@@ -131,6 +130,106 @@ class LlmRecommendationService {
             }
 
             // Signal failure so caller can fall back.
+            Result.success("")
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Candidate-constrained recommendations.
+     *
+     * Instead of asking the model to invent titles, we provide a bounded candidate list (usually TMDB-derived)
+     * and require it to select exactly 15 items from that list. This greatly reduces hallucinations and
+     * improves relevance.
+     */
+    suspend fun getRecommendationsFromLlmCandidates(
+        selectedMovies: List<String>,
+        candidates: List<String>,
+        genre: String,
+        apiKey: String,
+        indiePreference: Float = 0.5f,
+        useIndiePreference: Boolean = true,
+        popularityPreference: Float = 0.5f,
+        usePopularityPreference: Boolean = true,
+        releaseYearStart: Float = 1950f,
+        releaseYearEnd: Float = 2025f,
+        useReleaseYearPreference: Boolean = true,
+        tonePreference: Float = 0.5f,
+        useTonePreference: Boolean = true,
+        internationalPreference: Float = 0.5f,
+        useInternationalPreference: Boolean = true,
+        experimentalPreference: Float = 0.5f,
+        useExperimentalPreference: Boolean = true,
+        excludedMovies: List<String> = emptyList()
+    ): Result<String> {
+        if (candidates.isEmpty()) return Result.success("")
+
+        return try {
+            val attempts = listOf(
+                OpenAiAttempt(
+                    temperature = 0.4,
+                    frequencyPenalty = 1.0,
+                    presencePenalty = 0.6,
+                    extraInstructions = ""
+                ),
+                OpenAiAttempt(
+                    temperature = 0.2,
+                    frequencyPenalty = 1.0,
+                    presencePenalty = 0.6,
+                    extraInstructions = "\n\nSTRICT RETRY (FINAL):\n" +
+                        "Your previous response failed validation. Follow the rules exactly:\n" +
+                        "- Start with a 3-sentence analysis that references the selected titles\n" +
+                        "- Then output EXACTLY 15 recommendations, numbered 1..15\n" +
+                        "- Every recommendation MUST be copied EXACTLY from the candidate list (same title and year)\n" +
+                        "- Do NOT include any excluded/selected title\n" +
+                        "- If year filtering is enabled, every year MUST be within range\n" +
+                        "- Stop after item 15 (no extra text)"
+                )
+            )
+
+            for ((idx, attempt) in attempts.withIndex()) {
+                val prompt = buildCandidateRerankPrompt(
+                    selectedMovies = selectedMovies,
+                    excludedMovies = excludedMovies,
+                    candidates = candidates,
+                    genre = genre,
+                    indiePreference = indiePreference,
+                    useIndiePreference = useIndiePreference,
+                    popularityPreference = popularityPreference,
+                    usePopularityPreference = usePopularityPreference,
+                    releaseYearStart = releaseYearStart,
+                    releaseYearEnd = releaseYearEnd,
+                    useReleaseYearPreference = useReleaseYearPreference,
+                    tonePreference = tonePreference,
+                    useTonePreference = useTonePreference,
+                    internationalPreference = internationalPreference,
+                    useInternationalPreference = useInternationalPreference,
+                    experimentalPreference = experimentalPreference,
+                    useExperimentalPreference = useExperimentalPreference,
+                    extraInstructions = attempt.extraInstructions
+                )
+
+                val processed = callOpenAI(
+                    prompt = prompt,
+                    apiKey = apiKey,
+                    selectedTitles = selectedMovies,
+                    excludedTitles = excludedMovies,
+                    releaseYearStart = releaseYearStart,
+                    releaseYearEnd = releaseYearEnd,
+                    useReleaseYearPreference = useReleaseYearPreference,
+                    temperature = attempt.temperature,
+                    frequencyPenalty = attempt.frequencyPenalty,
+                    presencePenalty = attempt.presencePenalty,
+                    allowedCandidateTitles = candidates
+                )
+
+                if (processed.isNotBlank()) {
+                    if (idx > 0) Log.i(TAG, "LLM candidate rerank needed retry to satisfy strict rules")
+                    return Result.success(processed)
+                }
+            }
+
             Result.success("")
         } catch (e: Exception) {
             Result.failure(e)
@@ -156,6 +255,10 @@ class LlmRecommendationService {
         useExperimentalPreference: Boolean,
         extraInstructions: String
     ): String {
+        val analysisMustReferenceCount = if (selectedMovies.size >= 2) 2 else 1
+
+        Log.d(TAG, "buildPrompt: genre='$genre' selectedCount=${selectedMovies.size} excludedCount=${excludedMovies.size}")
+
         // Build active preferences list
         val activePreferences = mutableListOf<String>()
         
@@ -228,26 +331,21 @@ class LlmRecommendationService {
 
         // Help the model self-check: include the raw slider values and which toggles are enabled.
         // This improves adherence without changing the UI-visible output.
-        val settingsSnapshot = "\n\nSETTINGS SNAPSHOT (FOR COMPLIANCE):\n" + listOf(
-            "- Indie vs Blockbuster: value=${String.format("%.2f", indiePreference)} enabled=$useIndiePreference",
-            "- Cult vs Mainstream: value=${String.format("%.2f", popularityPreference)} enabled=$usePopularityPreference",
-            "- Release Year Range: ${releaseYearStart.toInt()}-${releaseYearEnd.toInt()} enabled=$useReleaseYearPreference",
-            "- Tone (Light→Dark): value=${String.format("%.2f", tonePreference)} enabled=$useTonePreference",
-            "- International: value=${String.format("%.2f", internationalPreference)} enabled=$useInternationalPreference",
-            "- Experimental: value=${String.format("%.2f", experimentalPreference)} enabled=$useExperimentalPreference"
+        val settingsSnapshot = "\nSETTINGS (for compliance):\n" + listOf(
+            "- indie=${String.format("%.2f", indiePreference)} enabled=$useIndiePreference",
+            "- popularity=${String.format("%.2f", popularityPreference)} enabled=$usePopularityPreference",
+            "- year_range=${releaseYearStart.toInt()}-${releaseYearEnd.toInt()} enabled=$useReleaseYearPreference",
+            "- tone=${String.format("%.2f", tonePreference)} enabled=$useTonePreference",
+            "- international=${String.format("%.2f", internationalPreference)} enabled=$useInternationalPreference",
+            "- experimental=${String.format("%.2f", experimentalPreference)} enabled=$useExperimentalPreference"
         ).joinToString("\n")
         
-        val preferencesSection = if (activePreferences.size > 0) {
-            "\n\n═══════════════════════════════════════════════════════════\n" +
-            "🎬 USER PREFERENCES - MANDATORY COMPLIANCE REQUIRED 🎬\n" +
-            "═══════════════════════════════════════════════════════════\n\n" +
-            activePreferences.joinToString("\n\n") { "• $it" } + 
-            "\n\n⚠️⚠️⚠️ CRITICAL RULES ⚠️⚠️⚠️\n" +
-            "• Every single recommendation MUST strictly align with ALL preferences above\n" +
-            "• Do NOT recommend films that contradict any preference setting\n" +
-            "• If a preference says 'avoid X' or 'completely avoid X', you MUST NOT include X\n" +
-            "• These are hard requirements, not suggestions - violating them makes the output unusable\n" +
-            "═══════════════════════════════════════════════════════════"
+        val preferencesSection = if (activePreferences.isNotEmpty()) {
+            "\n\nPREFERENCES (mandatory):\n" +
+                activePreferences.joinToString("\n\n") { "- $it" } +
+                "\n\nHard rules:\n" +
+                "- Every recommendation MUST satisfy every enabled preference\n" +
+                "- If a preference says avoid X, do not include X"
         } else {
             ""
         }
@@ -258,84 +356,79 @@ class LlmRecommendationService {
             .take(60)
             .takeIf { it.isNotEmpty() }
             ?.let { list ->
-                "\n\n" +
-                "═══════════════════════════════════════════════════════════\n" +
-                "🚫 EXCLUSION LIST - FORBIDDEN RECOMMENDATIONS 🚫\n" +
-                "═══════════════════════════════════════════════════════════\n\n" +
-                "The following ${list.size} movies are COMPLETELY FORBIDDEN from recommendations:\n" +
-                "(This includes user's Favorites, already Selected movies, and previously Recommended titles)\n\n" +
-                list.joinToString("\n") { "❌ $it" } +
-                "\n\n⚠️⚠️⚠️ CRITICAL ⚠️⚠️⚠️\n" +
-                "• DO NOT recommend ANY movie from this list\n" +
-                "• DO NOT recommend movies with similar titles from this list\n" +
-                "• The user has already seen, selected, or favorited these movies\n" +
-                "• Including ANY of these will make your response COMPLETELY UNUSABLE\n" +
-                "═══════════════════════════════════════════════════════════"
+                "\n\nEXCLUDE TITLES (forbidden):\n" +
+                    list.joinToString("\n") { "- $it" } +
+                    "\n\nHard rule: Do NOT recommend any excluded title."
             }
             ?: ""
+
+        // Detect if this is favorites mode (genre name contains "Favorites")
+        val isFavoritesMode = genre.contains("Favorites", ignoreCase = true)
+        Log.d(TAG, "buildPrompt: isFavoritesMode=$isFavoritesMode")
+        
+        val genreSection = if (isFavoritesMode) {
+            // In favorites mode, infer genres from selected movies rather than enforcing one genre
+            """
+MODE: User's Favorites (mixed genres)
+Infer the genres and themes from the selected titles below. Match the dominant genres/themes of those selections.
+            """.trimIndent()
+        } else {
+            // Normal genre mode - enforce the genre strictly
+            """
+GENRE (MANDATORY): $genre
+ALL recommendations MUST be $genre films. Do NOT recommend movies from other genres.
+            """.trimIndent()
+        }
+
+        val genreConstraintRule = if (isFavoritesMode) {
+            "- GENRE: Match the genres/themes of the selected titles. If they selected Horror, recommend Horror. If mixed, recommend similar mixes."
+        } else {
+            "- GENRE CONSTRAINT: Every recommendation MUST belong to the $genre genre. Do NOT recommend movies from other genres, even if they share thematic elements."
+        }
+
+        Log.d(TAG, "buildPrompt: genreConstraintRule='${genreConstraintRule.take(140)}'")
         
     return """
-You are an elite film curator with encyclopedic knowledge of cinema. The user loves the $genre genre and has selected these films as their favorites:
+You are a film curator. Generate personalized recommendations in plain text.
 
+$genreSection
+
+SELECTED TITLES (user taste signals):
 ${selectedMovies.mapIndexed { index, title -> "${index + 1}. $title" }.joinToString("\n")}
+$settingsSnapshot$preferencesSection$excludedSection$extraInstructions
 
-═══════════════════════════════════════════════════════════
-YOUR TASK
-═══════════════════════════════════════════════════════════
-Analyze WHY they love these specific films, then recommend 15 films that:
-1. Capture the SAME qualities as their selections
-2. STRICTLY follow ALL user preferences below
-3. Match the specific aesthetic, themes, and style of their choices$settingsSnapshot$preferencesSection$excludedSection$extraInstructions
+TASK:
+1) Write a short analysis of why these specific selections work for the user.
+2) Recommend exactly 15 movies that match the same underlying qualities.
 
-ANALYSIS REQUIREMENTS:
-You MUST start with a unique, insightful analysis paragraph that:
-1. Identifies SPECIFIC patterns across their selections (not generic themes like "complex characters")
-2. Names concrete elements: specific directorial techniques, cinematography styles, narrative devices, or thematic motifs
-3. References actual aspects of THE FILMS THEY SELECTED - analyze what they chose, not hypothetical examples
-4. Is 3-4 sentences long with substantive observations
-5. AVOIDS generic phrases like:
-   ❌ "These films explore complex characters"
-   ❌ "Share themes of redemption"
-   ❌ "Feature compelling storytelling"
-   ❌ "Have strong character development"
-   ✓ Instead: Be SPECIFIC about what makes THEIR taste unique based on THEIR selections
+ANALYSIS RULES (validation-critical):
+- Exactly 3 sentences.
+- Must explicitly mention at least $analysisMustReferenceCount of the selected titles by name.
+- Be specific: reference concrete filmmaking elements (e.g., pacing, structure, cinematography approach, tone balance, editing rhythm, sound design, performance style, narrative devices).
+- Avoid generic filler like "compelling storytelling" or "complex characters".
 
-RECOMMENDATION QUALITY STANDARDS:
-- Each film must share SPECIFIC qualities with their selections (not just genre)
-- Prioritize films that match multiple aspects of their taste
-- Include a mix of well-known and lesser-known films they likely haven't seen
-- AVOID generic popular films that don't truly match their taste profile
-- AVOID recommending sequels or films from the same franchise
-- Each recommendation must be DISTINCT - no thematically repetitive picks
+RECOMMENDATION RULES (validation-critical):
+- Output EXACTLY 15 unique movies.
+$genreConstraintRule
+- Do NOT include any selected title.
+- Do NOT include any excluded title.
+- If year range is enabled, every recommendation MUST be within range.
+- Prefer strong matches over obvious genre staples.
+- Avoid sequels/spin-offs/franchise entries unless they are truly essential AND still satisfy preferences.
 
-FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
+OUTPUT FORMAT (must match exactly):
 
-[A unique 3-4 sentence analysis that specifically identifies what unites their taste. Name concrete filmmaking elements, techniques, or thematic patterns. Reference actual aspects of their selected films. DO NOT use generic phrases.]
+[3-sentence analysis paragraph]
 
 RECOMMENDATIONS:
 
-1. Movie Title (Year)
-Why this specifically matches: [1-2 sentences connecting to their taste]
+1. Movie Title (YYYY)
+Why: one sentence connecting to the user's selected titles and preferences.
 
-2. Another Movie Title (Year)
-Why this specifically matches: [1-2 sentences connecting to their taste]
+2. Movie Title (YYYY)
+Why: one sentence.
 
-[Continue for all 15 movies]
-
-CRITICAL FORMATTING RULES:
-- Recommend EXACTLY 15 unique movies
-- NUMBERING: Use "1. " (number, period, space) - no colons
-- Title format: "Movie Title (Year)" with 4-digit year
-- Each title on its OWN LINE, description on NEXT LINE
-- Keep descriptions ≤ 50 words
-
-STRICT RULES:
-- Do NOT include any of their selected films
-- Do NOT include any film from the EXCLUSION LIST
-- Do NOT repeat any movie in the list
-- Do NOT recommend obvious/generic choices that don't match their specific taste
-- Each recommendation must have a UNIQUE reason - avoid repetitive descriptions
-- Stop after recommendation 15, no extra text
+(Continue until 15; stop immediately after item 15.)
         """.trimIndent()
     }
     
@@ -345,6 +438,174 @@ STRICT RULES:
         val presencePenalty: Double,
         val extraInstructions: String
     )
+
+    private fun buildCandidateRerankPrompt(
+        selectedMovies: List<String>,
+        excludedMovies: List<String>,
+        candidates: List<String>,
+        genre: String,
+        indiePreference: Float,
+        useIndiePreference: Boolean,
+        popularityPreference: Float,
+        usePopularityPreference: Boolean,
+        releaseYearStart: Float,
+        releaseYearEnd: Float,
+        useReleaseYearPreference: Boolean,
+        tonePreference: Float,
+        useTonePreference: Boolean,
+        internationalPreference: Float,
+        useInternationalPreference: Boolean,
+        experimentalPreference: Float,
+        useExperimentalPreference: Boolean,
+        extraInstructions: String
+    ): String {
+        val analysisMustReferenceCount = if (selectedMovies.size >= 2) 2 else 1
+
+        Log.d(TAG, "buildCandidateRerankPrompt: genre='$genre' selectedCount=${selectedMovies.size} excludedCount=${excludedMovies.size} candidates=${candidates.size}")
+
+        // Reuse the existing preference wording by calling buildPrompt and then overriding the task section.
+        // However, to avoid prompt bloat and accidental conflicts, we rebuild a slim prompt here.
+
+        val activePreferences = mutableListOf<String>()
+
+        if (useIndiePreference) {
+            val styleGuidance = when {
+                indiePreference <= 0.3f -> "STRONGLY favor mainstream blockbusters. Avoid indie films completely."
+                indiePreference <= 0.45f -> "Lean towards blockbusters and popular studio films. Minimize indie films."
+                indiePreference in 0.46f..0.54f -> "Balance mainstream hits and indie films equally."
+                indiePreference <= 0.7f -> "Favor indie films and smaller productions. Include some mainstream films."
+                else -> "STRONGLY favor indie films and lesser-known titles. Avoid mainstream blockbusters completely."
+            }
+            activePreferences.add("Production Style: $styleGuidance")
+        }
+
+        if (usePopularityPreference) {
+            val popularityGuidance = when {
+                popularityPreference <= 0.3f -> "STRONGLY emphasize cult classics and obscure gems. Avoid widely popular films completely."
+                popularityPreference <= 0.45f -> "Favor cult classics and hidden gems. Minimize popular films."
+                popularityPreference in 0.46f..0.54f -> "Mix mainstream and lesser-known titles equally."
+                popularityPreference <= 0.7f -> "Favor well-known, widely recognized films. Include some hidden gems."
+                else -> "STRONGLY focus on mainstream favorites. Avoid obscure titles completely."
+            }
+            activePreferences.add("Popularity: $popularityGuidance")
+        }
+
+        if (useReleaseYearPreference) {
+            val startYear = releaseYearStart.toInt()
+            val endYear = releaseYearEnd.toInt()
+            activePreferences.add("Release Year: MANDATORY - every recommendation MUST be between $startYear and $endYear inclusive.")
+        }
+
+        if (useTonePreference) {
+            val toneGuidance = when {
+                tonePreference <= 0.3f -> "STRONGLY favor uplifting, lighter films. Avoid dark content completely."
+                tonePreference <= 0.45f -> "Lean towards lighter films. Minimize dark themes."
+                tonePreference in 0.46f..0.54f -> "Balance light and serious films equally."
+                tonePreference <= 0.7f -> "Favor more serious, dramatic films. Include some lighter content."
+                else -> "STRONGLY favor dark, intense films. Avoid lighthearted content completely."
+            }
+            activePreferences.add("Tone/Mood: $toneGuidance")
+        }
+
+        if (useInternationalPreference) {
+            val internationalGuidance = when {
+                internationalPreference <= 0.3f -> "ONLY recommend American/English-language films. Avoid foreign language films."
+                internationalPreference <= 0.45f -> "Primarily American/English with occasional international picks."
+                internationalPreference in 0.46f..0.54f -> "Include both Hollywood and international films equally."
+                internationalPreference <= 0.7f -> "Favor international cinema with some Hollywood films."
+                else -> "STRONGLY prioritize international cinema. Minimize Hollywood/English-language films."
+            }
+            activePreferences.add("Geographic: $internationalGuidance")
+        }
+
+        if (useExperimentalPreference) {
+            val experimentalGuidance = when {
+                experimentalPreference <= 0.3f -> "ONLY traditional narrative structures. Avoid experimental films."
+                experimentalPreference <= 0.45f -> "Strongly favor conventional storytelling. Minimize experimental content."
+                experimentalPreference in 0.46f..0.54f -> "Mix conventional and innovative films equally."
+                experimentalPreference <= 0.7f -> "Favor innovative films. Include some traditional ones."
+                else -> "STRONGLY prioritize unconventional/experimental films. Avoid conventional narratives completely."
+            }
+            activePreferences.add("Experimental: $experimentalGuidance")
+        }
+
+        val excludedSection = excludedMovies
+            .mapNotNull { it.trim().takeIf { t -> t.isNotBlank() } }
+            .distinct()
+            .take(60)
+            .takeIf { it.isNotEmpty() }
+            ?.let { list ->
+                "\n\nEXCLUDE TITLES (forbidden):\n" +
+                    list.joinToString("\n") { "- $it" } +
+                    "\n\nHard rule: Do NOT recommend any excluded title."
+            }
+            ?: ""
+
+        val isFavoritesMode = genre.contains("Favorites", ignoreCase = true)
+        val genreSection = if (isFavoritesMode) {
+            "MODE: User's Favorites (mixed genres)\nInfer the dominant genres/themes from the selected titles below."
+        } else {
+            "GENRE (MANDATORY): $genre\nALL recommendations MUST be $genre films."
+        }
+
+        val preferenceSection = if (activePreferences.isNotEmpty()) {
+            "\n\nPREFERENCES (mandatory):\n" + activePreferences.joinToString("\n") { "- $it" }
+        } else {
+            ""
+        }
+
+        val candidatesSection = candidates
+            .mapNotNull { it.trim().takeIf { t -> t.isNotBlank() } }
+            .distinct()
+            .take(90)
+            .takeIf { it.isNotEmpty() }
+            ?.let { list ->
+                "\n\nCANDIDATES (you MUST choose ONLY from this list):\n" +
+                    list.joinToString("\n") { "- $it" }
+            }
+            ?: ""
+
+        return """
+You are a film curator. Generate personalized recommendations in plain text.
+
+$genreSection
+
+SELECTED TITLES (user taste signals):
+${selectedMovies.mapIndexed { index, title -> "${index + 1}. $title" }.joinToString("\n")}
+$preferenceSection$excludedSection$candidatesSection$extraInstructions
+
+TASK:
+1) Write a short analysis of why these specific selections work for the user.
+2) Recommend exactly 15 movies, selected ONLY from the CANDIDATES list.
+
+ANALYSIS RULES (validation-critical):
+- Exactly 3 sentences.
+- Must explicitly mention at least $analysisMustReferenceCount of the selected titles by name.
+- Be specific (pacing, structure, tone balance, cinematography, editing rhythm, sound design, performance style, narrative devices).
+
+RECOMMENDATION RULES (validation-critical):
+- Output EXACTLY 15 unique movies.
+- Every recommendation MUST be copied EXACTLY from the CANDIDATES list (same title and year).
+- Do NOT include any selected title.
+- Do NOT include any excluded title.
+- If year range is enabled, every recommendation MUST be within range.
+- Stop after item 15. No extra text.
+
+OUTPUT FORMAT (must match exactly):
+
+[3-sentence analysis paragraph]
+
+RECOMMENDATIONS:
+
+1. Movie Title (YYYY)
+Why: one sentence connecting to the user's selected titles and preferences.
+
+2. Movie Title (YYYY)
+Why: one sentence.
+
+(Continue until 15; stop immediately after item 15.)
+        """.trimIndent()
+    }
 
     private fun callOpenAI(
         prompt: String,
@@ -356,10 +617,12 @@ STRICT RULES:
         useReleaseYearPreference: Boolean,
         temperature: Double,
         frequencyPenalty: Double,
-        presencePenalty: Double
+        presencePenalty: Double,
+        allowedCandidateTitles: List<String>?
     ): String {
         Log.d(TAG, "Starting OpenAI API call")
         Log.d(TAG, "API Key length: ${apiKey.length}, starts with: ${apiKey.take(10)}...")
+        Log.d(TAG, "Prompt preview (first 900 chars): ${prompt.take(900)}")
         
         val json = JSONObject().apply {
             put("model", "gpt-4o-mini")
@@ -422,7 +685,8 @@ STRICT RULES:
                 excludedTitles = excludedTitles,
                 releaseYearStart = releaseYearStart,
                 releaseYearEnd = releaseYearEnd,
-                useReleaseYearPreference = useReleaseYearPreference
+                useReleaseYearPreference = useReleaseYearPreference,
+                allowedCandidateTitles = allowedCandidateTitles
             )
             Log.d(TAG, "Post-processed content length: ${processed.length}")
             if (processed.isEmpty()) {
@@ -451,7 +715,8 @@ STRICT RULES:
         excludedTitles: List<String>,
         releaseYearStart: Float,
         releaseYearEnd: Float,
-        useReleaseYearPreference: Boolean
+        useReleaseYearPreference: Boolean,
+        allowedCandidateTitles: List<String>?
     ): String {
         val lines = content.lines()
         // Format: number, optional space, period, optional space (handles "1.", "1 .", "1 .Title")
@@ -464,9 +729,17 @@ STRICT RULES:
             return ""
         }
         val items = mutableListOf<Pair<String, String>>()
-        val seen = mutableSetOf<String>()
+        val seenKeys = mutableSetOf<String>()
         val selectedNorm = selectedTitles.map { normalizeTitle(it) }.toSet()
         val excludedNorm = excludedTitles.map { normalizeTitle(it) }.toSet()
+
+        val allowedKeys: Set<String>? = allowedCandidateTitles
+            ?.mapNotNull { t ->
+                val y = Regex("\\((\\d{4})\\)").find(t)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                if (y == null) return@mapNotNull null
+                normalizeTitle(t) + y.toString()
+            }
+            ?.toSet()
 
         val yearInParens = Regex("\\((\\d{4})\\)")
         val yearAtEnd = Regex("(\\d{4})\\s*$")
@@ -496,8 +769,15 @@ STRICT RULES:
                 continue
             }
             val norm = normalizeTitle(title)
+            val key = norm + year.toString()
+
+            if (allowedKeys != null && key !in allowedKeys) {
+                i++
+                continue
+            }
+
             // Exclude duplicates and exclude any of the user's selected titles
-            if (norm in seen || norm in selectedNorm || norm in excludedNorm) {
+            if (key in seenKeys || norm in selectedNorm || norm in excludedNorm) {
                 // Skip this title and continue scanning
                 var jSkip = i + 1
                 while (jSkip < lines.size) {
@@ -521,7 +801,7 @@ STRICT RULES:
             }
             if (desc.isBlank()) desc = "A strong match for your taste."
             desc = truncateWords(desc, 75)
-            seen.add(norm)
+            seenKeys.add(key)
             items.add(title to desc)
             i = j
         }

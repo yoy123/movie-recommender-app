@@ -1,13 +1,22 @@
 #!/bin/bash
 # Fire TV Stick D-pad Navigation Test Script
 
+# Prefer the SDK adb when available to avoid "no devices" issues caused by mismatched adb installs.
+SDK_ADB="$HOME/Android/Sdk/platform-tools/adb"
+if [[ -x "$SDK_ADB" ]]; then
+    ADB="$SDK_ADB"
+else
+    ADB="adb"
+fi
+
 echo "🎮 Fire TV Stick D-pad Navigation Test"
 echo "========================================"
 echo ""
 
 # Check if emulator is running
-if ! adb devices | grep -q emulator; then
+if ! "$ADB" devices | grep -q "^emulator-"; then
     echo "❌ No emulator detected. Please start the Android TV emulator first."
+    echo "   Tip: ./run_tv_emulator.sh FlickPick_TV_New"
     exit 1
 fi
 
@@ -19,13 +28,13 @@ send_key() {
     local key=$1
     local description=$2
     echo "$description"
-    adb shell input keyevent $key
+    "$ADB" shell input keyevent $key
     sleep 0.8
 }
 
 # Launch the app
 echo "📱 Launching FlickPick..."
-adb shell am start -n com.movierecommender.app.firestick/com.movierecommender.app.MainActivity
+"$ADB" shell am start -n com.movierecommender.app.firestick/com.movierecommender.app.MainActivity
 sleep 3
 
 echo ""
@@ -61,14 +70,14 @@ sleep 10
 
 # Take screenshot
 echo "📸 Taking screenshot..."
-adb shell screencap -p > /tmp/firestick_recommendations.png
+"$ADB" shell screencap -p > /tmp/firestick_recommendations.png
 
 echo ""
 echo "✅ Navigation test complete!"
 echo "Screenshot saved to: /tmp/firestick_recommendations.png"
 echo ""
 echo "📊 Quick Stats:"
-adb shell dumpsys activity activities | grep -A 5 "movierecommender" | head -10
+"$ADB" shell dumpsys activity activities | grep -A 5 "movierecommender" | head -10
 
 echo ""
 echo "💡 Manual Controls:"

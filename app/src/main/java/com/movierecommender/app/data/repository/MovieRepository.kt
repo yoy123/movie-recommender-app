@@ -1,5 +1,6 @@
 package com.movierecommender.app.data.repository
 
+import com.movierecommender.app.BuildConfig
 import com.movierecommender.app.data.local.MovieDao
 import com.movierecommender.app.data.model.Genre
 import com.movierecommender.app.data.model.Movie
@@ -19,6 +20,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+import kotlin.math.abs
+
 sealed class Resource<T> {
     data class Success<T>(val data: T) : Resource<T>()
     data class Error<T>(val message: String) : Resource<T>()
@@ -36,7 +39,29 @@ class MovieRepository(
 ) {
     
     // OpenAI API key from BuildConfig
-    private val openAiApiKey = com.movierecommender.app.BuildConfig.OPENAI_API_KEY
+    private val openAiApiKey = BuildConfig.OPENAI_API_KEY
+
+    private val tmdbGenreIdToName: Map<Int, String> = mapOf(
+        28 to "Action",
+        12 to "Adventure",
+        16 to "Animation",
+        35 to "Comedy",
+        80 to "Crime",
+        99 to "Documentary",
+        18 to "Drama",
+        10751 to "Family",
+        14 to "Fantasy",
+        36 to "History",
+        27 to "Horror",
+        10402 to "Music",
+        9648 to "Mystery",
+        10749 to "Romance",
+        878 to "Science Fiction",
+        10770 to "TV Movie",
+        53 to "Thriller",
+        10752 to "War",
+        37 to "Western"
+    )
     
     fun getSelectedMovies(): Flow<List<Movie>> = movieDao.getSelectedMovies()
     
@@ -90,7 +115,17 @@ class MovieRepository(
     
     suspend fun getRecommendations(
         selectedMovies: List<Movie>, 
-        genreName: String, 
+        genreName: String,
+        /**
+         * TMDB genre id selected in the UI. If provided (and not favorites), we can validate
+         * that LLM recommendations actually belong to this genre.
+         */
+        genreId: Int? = null,
+        /**
+         * Favorites mode is a pseudo-genre (id = -1) and may be mixed-genre.
+         * In this mode we do NOT hard-enforce a single genre constraint.
+         */
+        isFavoritesMode: Boolean = false,
         indiePreference: Float,
         useIndiePreference: Boolean,
         popularityPreference: Float,
@@ -112,6 +147,22 @@ class MovieRepository(
     ): Flow<Resource<String>> = flow {
         emit(Resource.Loading())
         try {
+            // If the user is in Favorites mode, infer the dominant genre from the selected movies.
+            // This prevents passing a pseudo-genre like "Dee's Favorites" to the LLM.
+            val inferredGenreId = if (isFavoritesMode) inferDominantGenreId(selectedMovies) else null
+            val effectiveGenreId = if (!isFavoritesMode) genreId else inferredGenreId
+            val effectiveGenreName = if (!isFavoritesMode) {
+                genreName
+            } else {
+                inferredGenreId?.let { tmdbGenreIdToName[it] } ?: genreName
+            }
+            val effectiveFavoritesMode = isFavoritesMode && inferredGenreId == null
+
+            android.util.Log.d(
+                "MovieRepository",
+                "LLM genre context: uiGenreName='$genreName' uiGenreId=$genreId isFavoritesMode=$isFavoritesMode inferredGenreId=$inferredGenreId effectiveGenreName='$effectiveGenreName' effectiveGenreId=$effectiveGenreId"
+            )
+
             // Fetch all movies that should NEVER be recommended
             val favoriteMovies = movieDao.getFavoriteMovies().first()
             val alreadyRecommendedMovies = movieDao.getRecommendedMovies().first()
@@ -139,34 +190,115 @@ class MovieRepository(
             if (formattedFavorites.isNotEmpty()) {
                 android.util.Log.d("MovieRepository", "Favorites being excluded: ${formattedFavorites.take(5).joinToString(", ")}${if (formattedFavorites.size > 5) "..." else ""}")
             }
-            
-            // Get recommendations from LLM with comprehensive exclusion list
+
+            // Candidate generation (TMDB) -> LLM rerank from bounded candidate list.
+            // This prevents hallucinated titles and improves genre adherence.
+            val candidateTitles = buildTmdbCandidateTitlesForRerank(
+                selectedMovies = selectedMovies,
+                favoriteMovies = favoriteMovies,
+                alreadyRecommendedMovies = alreadyRecommendedMovies,
+                genreId = effectiveGenreId,
+                enforceGenre = !effectiveFavoritesMode,
+                releaseYearStart = releaseYearStart,
+                releaseYearEnd = releaseYearEnd,
+                useReleaseYearPreference = useReleaseYearPreference,
+                indiePreference = indiePreference,
+                useIndiePreference = useIndiePreference,
+                popularityPreference = popularityPreference,
+                usePopularityPreference = usePopularityPreference,
+                tonePreference = tonePreference,
+                useTonePreference = useTonePreference
+            )
+
+            android.util.Log.d(
+                "MovieRepository",
+                "TMDB candidate pool for LLM rerank: size=${candidateTitles.size} (first 10)=${candidateTitles.take(10)}"
+            )
+
+            val shouldUseCandidateRerank = candidateTitles.size >= 25
+
+            // Get recommendations from LLM with comprehensive exclusion list.
+            // If we have enough candidates, force the model to choose only from them.
             val llmResult = withContext(Dispatchers.IO) {
-                llmService.getRecommendationsFromLlm(
-                    selectedMovies = movieTitles,
-                    genre = genreName, 
-                    apiKey = openAiApiKey, 
-                    indiePreference = indiePreference,
-                    useIndiePreference = useIndiePreference,
-                    popularityPreference = popularityPreference,
-                    usePopularityPreference = usePopularityPreference,
-                    releaseYearStart = releaseYearStart,
-                    releaseYearEnd = releaseYearEnd,
-                    useReleaseYearPreference = useReleaseYearPreference,
-                    tonePreference = tonePreference,
-                    useTonePreference = useTonePreference,
-                    internationalPreference = internationalPreference,
-                    useInternationalPreference = useInternationalPreference,
-                    experimentalPreference = experimentalPreference,
-                    useExperimentalPreference = useExperimentalPreference,
-                    excludedMovies = allExcluded
-                )
+                if (shouldUseCandidateRerank) {
+                    llmService.getRecommendationsFromLlmCandidates(
+                        selectedMovies = movieTitles,
+                        candidates = candidateTitles,
+                        genre = effectiveGenreName,
+                        apiKey = openAiApiKey,
+                        indiePreference = indiePreference,
+                        useIndiePreference = useIndiePreference,
+                        popularityPreference = popularityPreference,
+                        usePopularityPreference = usePopularityPreference,
+                        releaseYearStart = releaseYearStart,
+                        releaseYearEnd = releaseYearEnd,
+                        useReleaseYearPreference = useReleaseYearPreference,
+                        tonePreference = tonePreference,
+                        useTonePreference = useTonePreference,
+                        internationalPreference = internationalPreference,
+                        useInternationalPreference = useInternationalPreference,
+                        experimentalPreference = experimentalPreference,
+                        useExperimentalPreference = useExperimentalPreference,
+                        excludedMovies = allExcluded
+                    )
+                } else {
+                    llmService.getRecommendationsFromLlm(
+                        selectedMovies = movieTitles,
+                        genre = effectiveGenreName,
+                        apiKey = openAiApiKey,
+                        indiePreference = indiePreference,
+                        useIndiePreference = useIndiePreference,
+                        popularityPreference = popularityPreference,
+                        usePopularityPreference = usePopularityPreference,
+                        releaseYearStart = releaseYearStart,
+                        releaseYearEnd = releaseYearEnd,
+                        useReleaseYearPreference = useReleaseYearPreference,
+                        tonePreference = tonePreference,
+                        useTonePreference = useTonePreference,
+                        internationalPreference = internationalPreference,
+                        useInternationalPreference = useInternationalPreference,
+                        experimentalPreference = experimentalPreference,
+                        useExperimentalPreference = useExperimentalPreference,
+                        excludedMovies = allExcluded
+                    )
+                }
             }
             
             val llmResponse = llmResult.getOrNull()
             android.util.Log.d("MovieRepository", "LLM Response received: ${llmResponse?.take(200)}")
-            
-            val isValid = llmResponse?.isNotBlank() == true && isValidRecommendationStructure(llmResponse)
+
+            val parsed = llmResponse?.let { parseNumberedRecommendations(it) }.orEmpty()
+            if (parsed.isNotEmpty()) {
+                android.util.Log.d(
+                    "MovieRepository",
+                    "Parsed ${parsed.size} numbered recs (first 5): ${parsed.take(5).joinToString { r -> "${r.number}. ${r.title}${r.year?.let { y -> " ($y)" } ?: ""}" }}"
+                )
+            }
+
+            val structureOk = llmResponse?.isNotBlank() == true && isValidRecommendationStructure(llmResponse)
+
+            val candidateOk = if (shouldUseCandidateRerank && parsed.isNotEmpty()) {
+                passesCandidateConstraint(recs = parsed, allowedTitles = candidateTitles)
+            } else {
+                true
+            }
+
+            val genreOk = if (!effectiveFavoritesMode && effectiveGenreId != null && effectiveGenreId > 0 && parsed.isNotEmpty()) {
+                // If we used candidate rerank and the candidate pool itself was genre-filtered,
+                // skip the expensive TMDB search-based genre check.
+                if (shouldUseCandidateRerank) {
+                    true
+                } else {
+                    passesGenreConstraint(
+                        recs = parsed,
+                        requiredGenreId = effectiveGenreId
+                    )
+                }
+            } else {
+                true
+            }
+
+            val isValid = structureOk && candidateOk && genreOk
             android.util.Log.d("MovieRepository", "LLM Response valid: $isValid")
             
             val recommendationText = if (isValid) {
@@ -183,7 +315,8 @@ class MovieRepository(
                     alreadyRecommendedMovies = alreadyRecommendedMovies,
                     releaseYearStart = releaseYearStart,
                     releaseYearEnd = releaseYearEnd,
-                    useReleaseYearPreference = useReleaseYearPreference
+                    useReleaseYearPreference = useReleaseYearPreference,
+                    genreId = if (!effectiveFavoritesMode) effectiveGenreId else null
                 )
             }
 
@@ -339,6 +472,7 @@ class MovieRepository(
             // 4) Format comparable text (same structure as LLM output)
             val analysis = buildString {
                 append("TMDB baseline (no LLM): built from TMDB Similar/Recommendations for your selections and ranked using available metadata. ")
+                append("Genre context: $genreName. ")
                 append("Hard-enforced: exclusions + year range (if enabled). ")
                 append("Scored with proxies for indie/popularity and a light tone proxy from genre IDs.")
             }
@@ -393,13 +527,179 @@ class MovieRepository(
         return hasAllNumbers
     }
 
+    private data class ParsedRec(
+        val number: Int,
+        val title: String,
+        val year: Int?
+    )
+
+    /**
+     * Extract numbered recommendation items (e.g. "1. Movie Title (2020)") from the LLM output.
+     * We only parse the numbered title line (not the Why lines).
+     */
+    private fun parseNumberedRecommendations(text: String): List<ParsedRec> {
+        val numbered = Regex("^\\s*(\\d{1,2})\\s*\\.\\s*(.+?)\\s*$")
+        val yearSuffix = Regex("^(.*?)(?:\\s*\\((\\d{4})\\))\\s*$")
+
+        return text
+            .lines()
+            .mapNotNull { line ->
+                val match = numbered.find(line) ?: return@mapNotNull null
+                val number = match.groupValues.getOrNull(1)?.toIntOrNull() ?: return@mapNotNull null
+                val raw = match.groupValues.getOrNull(2)?.trim().orEmpty()
+                if (raw.isBlank()) return@mapNotNull null
+
+                val y = yearSuffix.find(raw)
+                val title = (y?.groupValues?.getOrNull(1) ?: raw).trim()
+                val year = y?.groupValues?.getOrNull(2)?.toIntOrNull()
+
+                if (title.isBlank()) return@mapNotNull null
+                ParsedRec(number = number, title = title, year = year)
+            }
+            .distinctBy { it.number }
+            .sortedBy { it.number }
+    }
+
+    /**
+     * Validate that the LLM's recommended titles belong to the selected TMDB genre.
+     *
+     * We use TMDB search results (which include genre_ids). If a year is present, we prefer
+     * a match with the same release year.
+     */
+    private suspend fun passesGenreConstraint(
+        recs: List<ParsedRec>,
+        requiredGenreId: Int
+    ): Boolean = withContext(Dispatchers.IO) {
+        // Be strict but allow a couple of misses due to search ambiguity.
+        val maxAllowedMisses = 2
+        var misses = 0
+        val missTitles = mutableListOf<String>()
+
+        for (rec in recs.take(15)) {
+            val candidate = runCatching { apiService.searchMovies(query = rec.title) }
+                .getOrNull()
+                ?.results
+                .orEmpty()
+                .let { results ->
+                    if (rec.year != null) {
+                        results.firstOrNull { it.releaseDate?.take(4)?.toIntOrNull() == rec.year }
+                            ?: results.firstOrNull()
+                    } else {
+                        results.firstOrNull()
+                    }
+                }
+
+            val inGenre = if (candidate == null) {
+                false
+            } else if (candidate.genreIds.isNotEmpty()) {
+                candidate.genreIds.contains(requiredGenreId)
+            } else {
+                // Fallback to details if genre_ids are absent
+                runCatching { apiService.getMovieDetails(candidate.id) }
+                    .getOrNull()
+                    ?.genres
+                    ?.any { it.id == requiredGenreId }
+                    ?: false
+            }
+
+            if (!inGenre) {
+                misses += 1
+                missTitles.add("${rec.title}${rec.year?.let { y -> " ($y)" } ?: ""}")
+                if (misses > maxAllowedMisses) break
+            }
+        }
+
+        android.util.Log.d(
+            "MovieRepository",
+            "Genre check requiredGenreId=$requiredGenreId misses=$misses (allowed=$maxAllowedMisses) missSamples=${missTitles.take(5)}"
+        )
+
+        misses <= maxAllowedMisses
+    }
+
+    /**
+     * Validate that every recommended title appears in the TMDB candidate list we provided to the LLM.
+     * This blocks hallucinations and prevents drift.
+     */
+    private fun passesCandidateConstraint(
+        recs: List<ParsedRec>,
+        allowedTitles: List<String>
+    ): Boolean {
+        if (allowedTitles.isEmpty()) return true
+
+        val allowedKeys: Set<String> = allowedTitles.mapNotNull { t ->
+            val y = Regex("\\((\\d{4})\\)").find(t)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            if (y == null) return@mapNotNull null
+            normalizeCandidateTitle(t) + y.toString()
+        }.toSet()
+
+        val missing = mutableListOf<String>()
+        for (rec in recs.take(15)) {
+            val y = rec.year
+            if (y == null) {
+                missing.add(rec.title)
+                continue
+            }
+            val key = normalizeCandidateTitle(rec.title) + y.toString()
+            if (key !in allowedKeys) {
+                missing.add("${rec.title} ($y)")
+            }
+        }
+
+        android.util.Log.d(
+            "MovieRepository",
+            "Candidate check: allowed=${allowedTitles.size} missing=${missing.size} missingSamples=${missing.take(5)}"
+        )
+
+        return missing.isEmpty()
+    }
+
+    /**
+     * Normalize title text for robust matching across sources.
+     *
+     * - lowercases
+     * - removes year in parentheses if present
+     * - removes leading articles
+     * - strips non-alphanumerics
+     */
+    private fun normalizeCandidateTitle(title: String): String {
+        return title
+            .lowercase()
+            .replace(Regex("\\(\\d{4}\\)"), "")
+            .replace(Regex("^(the|a|an)\\s+"), "")
+            .replace(Regex("[^a-z0-9]+"), "")
+            .trim()
+    }
+
+    /**
+     * Infer the dominant genre id from the selected movies' TMDB genre_ids.
+     * Returns null if there is no clear dominant genre.
+     */
+    private fun inferDominantGenreId(selectedMovies: List<Movie>): Int? {
+        if (selectedMovies.isEmpty()) return null
+
+        val counts = mutableMapOf<Int, Int>()
+        selectedMovies.forEach { m ->
+            m.genreIds.forEach { gid ->
+                counts[gid] = (counts[gid] ?: 0) + 1
+            }
+        }
+
+        val best = counts.maxByOrNull { it.value } ?: return null
+
+        // Require the dominant genre to appear in at least 60% of selected movies.
+        val threshold = kotlin.math.ceil(selectedMovies.size * 0.6).toInt().coerceAtLeast(1)
+        return if (best.value >= threshold) best.key else null
+    }
+
     private suspend fun buildFallbackRecommendations(
         selectedMovies: List<Movie>,
         favoriteMovies: List<Movie>,
         alreadyRecommendedMovies: List<Movie>,
         releaseYearStart: Float,
         releaseYearEnd: Float,
-        useReleaseYearPreference: Boolean
+        useReleaseYearPreference: Boolean,
+        genreId: Int? = null
     ): String {
         return withContext(Dispatchers.IO) {
             try {
@@ -419,6 +719,10 @@ class MovieRepository(
                 val maxYear = releaseYearEnd.toInt()
                 val candidates = pool.values
                     .filter { it.id !in disallowedIds }
+                    .filter { movie ->
+                        if (genreId == null || genreId <= 0) return@filter true
+                        movie.genreIds.contains(genreId)
+                    }
                     .filter { movie ->
                         if (!useReleaseYearPreference) return@filter true
                         val year = movie.releaseDate?.take(4)?.toIntOrNull() ?: return@filter false
@@ -452,6 +756,165 @@ class MovieRepository(
                 ""
             }
         }
+    }
+
+    /**
+     * Build a high-quality, bounded list of candidate titles from TMDB to give the LLM a constrained
+     * selection set. Titles are formatted as "Title (YYYY)".
+     */
+    private suspend fun buildTmdbCandidateTitlesForRerank(
+        selectedMovies: List<Movie>,
+        favoriteMovies: List<Movie>,
+        alreadyRecommendedMovies: List<Movie>,
+        genreId: Int?,
+        enforceGenre: Boolean,
+        releaseYearStart: Float,
+        releaseYearEnd: Float,
+        useReleaseYearPreference: Boolean,
+        indiePreference: Float,
+        useIndiePreference: Boolean,
+        popularityPreference: Float,
+        usePopularityPreference: Boolean,
+        tonePreference: Float,
+        useTonePreference: Boolean
+    ): List<String> = withContext(Dispatchers.IO) {
+        try {
+            val disallowedIds = (selectedMovies + favoriteMovies + alreadyRecommendedMovies).map { it.id }.toSet()
+            val minYear = releaseYearStart.toInt()
+            val maxYear = releaseYearEnd.toInt()
+
+            val pool = mutableMapOf<Int, Movie>()
+
+            // 1) Similar + Recommendations from selected movies
+            for (m in selectedMovies) {
+                runCatching { apiService.getMovieRecommendations(m.id, page = 1) }.onSuccess { resp ->
+                    resp.results.forEach { pool[it.id] = it }
+                }
+                runCatching { apiService.getSimilarMovies(m.id, page = 1) }.onSuccess { resp ->
+                    resp.results.forEach { pool[it.id] = it }
+                }
+            }
+
+            // 2) Genre discovery if applicable (helps when selected movies are niche)
+            if (enforceGenre && genreId != null && genreId > 0) {
+                runCatching { apiService.getMoviesByGenre(genreId = genreId, sortBy = "vote_average.desc", page = 1) }
+                    .onSuccess { resp -> resp.results.forEach { pool[it.id] = it } }
+                runCatching { apiService.getMoviesByGenre(genreId = genreId, sortBy = "popularity.desc", page = 1) }
+                    .onSuccess { resp -> resp.results.forEach { pool[it.id] = it } }
+            }
+
+            val filtered = pool.values
+                .asSequence()
+                .filter { it.id !in disallowedIds }
+                .filter { m ->
+                    // Require a year for stable "Title (YYYY)" formatting.
+                    m.releaseDate?.take(4)?.toIntOrNull() != null
+                }
+                .filter { m ->
+                    if (!useReleaseYearPreference) return@filter true
+                    val y = m.releaseDate?.take(4)?.toIntOrNull() ?: return@filter false
+                    y in minYear..maxYear
+                }
+                .filter { m ->
+                    if (!enforceGenre || genreId == null || genreId <= 0) return@filter true
+                    m.genreIds.contains(genreId)
+                }
+                .distinctBy { it.id }
+                .toList()
+
+            if (filtered.isEmpty()) return@withContext emptyList()
+
+            val ranked = rankCandidatesForRerank(
+                candidates = filtered,
+                indiePreference = indiePreference,
+                useIndiePreference = useIndiePreference,
+                popularityPreference = popularityPreference,
+                usePopularityPreference = usePopularityPreference,
+                tonePreference = tonePreference,
+                useTonePreference = useTonePreference
+            )
+
+            // Keep prompt size under control.
+            ranked
+                .take(80)
+                .mapNotNull { m ->
+                    val year = m.releaseDate?.take(4)?.toIntOrNull() ?: return@mapNotNull null
+                    "${m.title} ($year)"
+                }
+                .distinct()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun rankCandidatesForRerank(
+        candidates: List<Movie>,
+        indiePreference: Float,
+        useIndiePreference: Boolean,
+        popularityPreference: Float,
+        usePopularityPreference: Boolean,
+        tonePreference: Float,
+        useTonePreference: Boolean
+    ): List<Movie> {
+        if (candidates.isEmpty()) return emptyList()
+
+        fun minMax(values: List<Double>): Pair<Double, Double> {
+            val min = values.minOrNull() ?: 0.0
+            val max = values.maxOrNull() ?: 1.0
+            return min to max
+        }
+        fun norm(x: Double, min: Double, max: Double): Double {
+            if (max <= min) return 0.5
+            return ((x - min) / (max - min)).coerceIn(0.0, 1.0)
+        }
+
+        val (popMin, popMax) = minMax(candidates.map { it.popularity })
+        val (vcMin, vcMax) = minMax(candidates.map { it.voteCount.toDouble() })
+
+        val darkGenreIds = setOf(27, 53, 80, 18, 9648, 10752)
+        val lightGenreIds = setOf(35, 16, 10751, 10402, 10749, 12, 14)
+        fun toneProxy(movie: Movie): Double {
+            val ids = movie.genreIds
+            if (ids.isEmpty()) return 0.5
+            val darkHits = ids.count { it in darkGenreIds }
+            val lightHits = ids.count { it in lightGenreIds }
+            val total = (darkHits + lightHits).coerceAtLeast(1)
+            return (darkHits.toDouble() / total.toDouble()).coerceIn(0.0, 1.0)
+        }
+
+        data class Scored(val movie: Movie, val score: Double)
+        val scored = candidates.map { movie ->
+            val nPop = norm(movie.popularity, popMin, popMax)
+            val nVc = norm(movie.voteCount.toDouble(), vcMin, vcMax)
+
+            var score = (movie.voteAverage * 2.0) + (nVc * 0.7) + (nPop * 0.3)
+
+            if (usePopularityPreference) {
+                val match = 1.0 - abs(nPop - popularityPreference.toDouble())
+                score += match * 1.2
+            }
+
+            if (useIndiePreference) {
+                val indieProxy = ((1.0 - nPop) * 0.7) + ((1.0 - nVc) * 0.3)
+                val match = 1.0 - abs(indieProxy - indiePreference.toDouble())
+                score += match * 1.0
+            }
+
+            if (useTonePreference) {
+                val tProxy = toneProxy(movie)
+                val match = 1.0 - abs(tProxy - tonePreference.toDouble())
+                score += match * 0.4
+            }
+
+            Scored(movie, score)
+        }
+
+        return scored
+            .sortedWith(compareByDescending<Scored> { it.score }
+                .thenByDescending { it.movie.voteAverage }
+                .thenByDescending { it.movie.voteCount }
+                .thenByDescending { it.movie.popularity })
+            .map { it.movie }
     }
 
     private fun truncateWords(text: String, maxWords: Int): String {

@@ -351,6 +351,8 @@ class MovieViewModel(
     fun generateRecommendations(additionalExcludedTitles: List<String> = emptyList()) {
         val selectedMovies = _uiState.value.selectedMovies
         val genreName = _uiState.value.selectedGenreName ?: "Movies"
+        val genreId = _uiState.value.selectedGenreId
+        val isFavoritesMode = _uiState.value.isFavoritesMode
         val state = _uiState.value
         
         // Allow 1-5 movies
@@ -360,6 +362,8 @@ class MovieViewModel(
             repository.getRecommendations(
                 selectedMovies, 
                 genreName, 
+                genreId = genreId,
+                isFavoritesMode = isFavoritesMode,
                 state.indiePreference,
                 state.useIndiePreference,
                 state.popularityPreference,
