@@ -7,7 +7,6 @@ import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.MovieDetails
 import com.movierecommender.app.data.model.MovieResponse
 import com.movierecommender.app.data.remote.TmdbApiService
-import com.movierecommender.app.data.remote.OmdbApiService
 import com.movierecommender.app.data.remote.ImdbScraperService
 import com.movierecommender.app.data.remote.PopcornApiService
 import com.movierecommender.app.data.remote.YtsApiService
@@ -32,7 +31,6 @@ class MovieRepository(
     private val movieDao: MovieDao,
     private val apiService: TmdbApiService,
     private val llmService: LlmRecommendationService = LlmRecommendationService(),
-    private val omdbService: OmdbApiService = OmdbApiService.create(),
     private val imdbScraper: ImdbScraperService = ImdbScraperService.create(),
     private val popcornApi: PopcornApiService = PopcornApiService(),
     private val ytsApi: YtsApiService = YtsApiService()
@@ -143,7 +141,12 @@ class MovieRepository(
          * Additional titles the model must NOT recommend.
          * Used for in-session retries so the next result cannot repeat the same 15 titles.
          */
-        additionalExcludedTitles: List<String> = emptyList()
+        additionalExcludedTitles: List<String> = emptyList(),
+        /**
+         * Whether to use LLM for recommendations. If false, falls back to TMDB-only algorithm.
+         * Set to false when user has declined LLM consent for GDPR/CCPA compliance.
+         */
+        useLlm: Boolean = true
     ): Flow<Resource<String>> = flow {
         emit(Resource.Loading())
         try {
@@ -216,6 +219,22 @@ class MovieRepository(
             )
 
             val shouldUseCandidateRerank = candidateTitles.size >= 25
+
+            // If user has not given LLM consent, skip LLM entirely and use fallback
+            if (!useLlm) {
+                android.util.Log.d("MovieRepository", "LLM consent not given – using TMDB-only fallback")
+                val fallbackResponse = buildFallbackRecommendations(
+                    selectedMovies = selectedMovies,
+                    favoriteMovies = favoriteMovies,
+                    alreadyRecommendedMovies = alreadyRecommendedMovies,
+                    releaseYearStart = releaseYearStart,
+                    releaseYearEnd = releaseYearEnd,
+                    useReleaseYearPreference = useReleaseYearPreference,
+                    genreId = effectiveGenreId
+                )
+                emit(Resource.Success(fallbackResponse))
+                return@flow
+            }
 
             // Get recommendations from LLM with comprehensive exclusion list.
             // If we have enough candidates, force the model to choose only from them.

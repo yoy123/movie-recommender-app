@@ -19,6 +19,13 @@ class SettingsRepository(private val context: Context) {
         val USER_NAME = stringPreferencesKey("user_name")
         val IS_FIRST_RUN = booleanPreferencesKey("is_first_run")
         val DARK_MODE = booleanPreferencesKey("dark_mode")
+        
+        // LLM Consent - GDPR/CCPA compliance
+        // When true, user has consented to sending movie selections to OpenAI
+        // When false, app uses TMDB-only fallback recommendations
+        val LLM_CONSENT_GIVEN = booleanPreferencesKey("llm_consent_given")
+        val LLM_CONSENT_ASKED = booleanPreferencesKey("llm_consent_asked")
+        
         val INDIE_PREFERENCE = floatPreferencesKey("indie_preference")
         val USE_INDIE = booleanPreferencesKey("use_indie")
         val POPULARITY_PREFERENCE = floatPreferencesKey("popularity_preference")
@@ -37,6 +44,10 @@ class SettingsRepository(private val context: Context) {
     val userName: Flow<String> = context.dataStore.data.map { it[Keys.USER_NAME] ?: "" }
     val isFirstRun: Flow<Boolean> = context.dataStore.data.map { it[Keys.IS_FIRST_RUN] ?: true }
     val darkMode: Flow<Boolean> = context.dataStore.data.map { it[Keys.DARK_MODE] ?: true }
+    
+    // LLM consent flows - false by default (opt-in required for GDPR)
+    val llmConsentGiven: Flow<Boolean> = context.dataStore.data.map { it[Keys.LLM_CONSENT_GIVEN] ?: false }
+    val llmConsentAsked: Flow<Boolean> = context.dataStore.data.map { it[Keys.LLM_CONSENT_ASKED] ?: false }
 
     val indiePreference: Flow<Float> = context.dataStore.data.map { it[Keys.INDIE_PREFERENCE] ?: 0.5f }
     val useIndie: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_INDIE] ?: true }
@@ -52,10 +63,37 @@ class SettingsRepository(private val context: Context) {
     val experimentalPreference: Flow<Float> = context.dataStore.data.map { it[Keys.EXPERIMENTAL_PREFERENCE] ?: 0.5f }
     val useExperimental: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_EXPERIMENTAL] ?: true }
 
-    suspend fun setUserName(name: String) {
-        context.dataStore.edit { prefs ->
-            prefs[Keys.USER_NAME] = name
+    companion object {
+        /** Maximum allowed length for user name */
+        const val MAX_USER_NAME_LENGTH = 50
+        
+        /**
+         * Sanitize user name input:
+         * - Trim leading/trailing whitespace
+         * - Collapse multiple spaces to single space
+         * - Limit to MAX_USER_NAME_LENGTH characters
+         * - Remove control characters and most special characters (allow letters, numbers, spaces, apostrophe, hyphen)
+         */
+        fun sanitizeUserName(input: String): String {
+            return input
+                .trim()
+                .replace(Regex("\\s+"), " ") // collapse multiple spaces
+                .replace(Regex("[^\\p{L}\\p{N} '-]"), "") // only allow letters, numbers, space, apostrophe, hyphen
+                .take(MAX_USER_NAME_LENGTH)
         }
+    }
+
+    /**
+     * Set user name with validation and sanitization.
+     * @param name The raw user input
+     * @return The sanitized name that was actually stored
+     */
+    suspend fun setUserName(name: String): String {
+        val sanitized = sanitizeUserName(name)
+        context.dataStore.edit { prefs ->
+            prefs[Keys.USER_NAME] = sanitized
+        }
+        return sanitized
     }
 
     suspend fun setFirstRunDone() {
@@ -64,6 +102,17 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setDarkMode(isDark: Boolean) {
         context.dataStore.edit { it[Keys.DARK_MODE] = isDark }
+    }
+    
+    /**
+     * Record user's LLM consent decision.
+     * @param consented true if user accepts sending data to OpenAI, false if declined
+     */
+    suspend fun setLlmConsent(consented: Boolean) {
+        context.dataStore.edit { 
+            it[Keys.LLM_CONSENT_GIVEN] = consented
+            it[Keys.LLM_CONSENT_ASKED] = true
+        }
     }
 
     suspend fun setIndiePreference(value: Float) {

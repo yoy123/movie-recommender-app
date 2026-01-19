@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.ui.viewmodel.MovieViewModel
+import com.movierecommender.app.ui.dialogs.LlmConsentDialog
 
 @Composable
 fun MovieSelectionScreen(
@@ -152,8 +153,13 @@ fun MovieSelectionScreen(
             if (uiState.selectedMovies.isNotEmpty()) {
                 ExtendedFloatingActionButton(
                     onClick = {
-                        viewModel.generateRecommendations()
-                        onGenerateRecommendations()
+                        // Check if consent is needed before generating recommendations
+                        if (!uiState.llmConsentAsked) {
+                            viewModel.checkAndShowLlmConsentIfNeeded()
+                        } else {
+                            viewModel.generateRecommendations()
+                            onGenerateRecommendations()
+                        }
                     },
                     icon = { Icon(Icons.Default.Check, "Generate") },
                     text = { Text("Get Recommendations") }
@@ -253,6 +259,27 @@ fun MovieSelectionScreen(
             isDarkMode = uiState.isDarkMode,
             onDarkModeChange = { viewModel.updateDarkMode(it) },
             onDismiss = { showSettingsDialog = false }
+        )
+    }
+    
+    // LLM Consent Dialog (GDPR/CCPA compliance)
+    if (uiState.showLlmConsentDialog) {
+        LlmConsentDialog(
+            onAccept = {
+                viewModel.onLlmConsentResponse(consented = true)
+                // After consent, proceed to generate recommendations
+                viewModel.generateRecommendations()
+                onGenerateRecommendations()
+            },
+            onDecline = {
+                viewModel.onLlmConsentResponse(consented = false)
+                // Still generate recommendations, but will use TMDB fallback
+                viewModel.generateRecommendations()
+                onGenerateRecommendations()
+            },
+            onDismiss = {
+                viewModel.dismissLlmConsentDialog()
+            }
         )
     }
 }

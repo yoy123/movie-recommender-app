@@ -6,6 +6,11 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// Room schema export location for migration testing
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "com.movierecommender.app"
     compileSdk = 34
@@ -32,7 +37,7 @@ android {
         buildConfigField("String", "TMDB_API_KEY", "\"${localProperties.getProperty("TMDB_API_KEY", "")}\"")
         buildConfigField("String", "TMDB_BASE_URL", "\"https://api.themoviedb.org/3/\"")
         buildConfigField("String", "OPENAI_API_KEY", "\"${localProperties.getProperty("OPENAI_API_KEY", "")}\"")
-        buildConfigField("String", "OMDB_API_KEY", "\"${localProperties.getProperty("OMDB_API_KEY", "")}\"")
+        // OMDB_API_KEY removed - OmdbApiService was dead code (never called)
     }
 
     signingConfigs {
@@ -162,6 +167,10 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation(platform("androidx.compose:compose-bom:2023.10.01"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    
+    // Room migration testing
+    androidTestImplementation("androidx.room:room-testing:2.6.1")
+    
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

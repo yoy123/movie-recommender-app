@@ -188,7 +188,7 @@ class MovieRecommenderApplication : Application() {
     val repository by lazy { 
         MovieRepository(
             movieDao = database.movieDao(),
-            apiService = TmdbApiService.create()
+            apiService = TmdbApiService.create(this)  // Context for HTTP cache
         ) 
     }
 }

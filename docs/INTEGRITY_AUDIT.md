@@ -165,7 +165,7 @@ app/src/firestick/res/drawable-nodpi/ic_tv_banner.png
 **Code Evidence:**
 ```kotlin
 // build.gradle.kts:47
-flavorDimensions += "platform"
+flavorDimensions += "distribution"
 productFlavors {
     create("mobile") { dimension = "platform" }
     create("firestick") { dimension = "platform" }

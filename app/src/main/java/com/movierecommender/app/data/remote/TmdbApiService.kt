@@ -1,10 +1,12 @@
 package com.movierecommender.app.data.remote
 
+import android.content.Context
 import com.movierecommender.app.BuildConfig
 import com.movierecommender.app.data.model.GenreResponse
 import com.movierecommender.app.data.model.MovieDetails
 import com.movierecommender.app.data.model.MovieResponse
 import com.movierecommender.app.data.model.VideoResponse
+import okhttp3.Cache
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -12,13 +14,8 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.Query
+import java.io.File
 import java.util.concurrent.TimeUnit
-import java.security.SecureRandom
-import java.security.cert.X509Certificate
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
-import javax.net.ssl.SSLSocketFactory
 
 interface TmdbApiService {
     
@@ -77,7 +74,14 @@ interface TmdbApiService {
     ): VideoResponse
     
     companion object {
-        fun create(): TmdbApiService {
+        /** HTTP cache size: 10 MB */
+        private const val CACHE_SIZE_BYTES = 10L * 1024 * 1024
+        
+        /**
+         * Create TmdbApiService with HTTP caching.
+         * @param context Application context for cache directory
+         */
+        fun create(context: Context): TmdbApiService {
             val loggingInterceptor = HttpLoggingInterceptor().apply {
                 level = if (BuildConfig.DEBUG) {
                     HttpLoggingInterceptor.Level.BODY
@@ -86,15 +90,24 @@ interface TmdbApiService {
                 }
             }
             
-            val clientBuilder = if (BuildConfig.DEBUG) {
-                // In debug builds, accept all SSL certs to avoid emulator/intercepted TLS issues.
-                // This keeps release builds strict.
-                buildInsecureClientBuilder()
-            } else {
-                OkHttpClient.Builder()
-            }
+            // Rate limit interceptor handles TMDB 429 responses with exponential backoff
+            val rateLimitInterceptor = RateLimitInterceptor()
+            
+            // HTTP cache for TMDB responses (genre lists, movie lists rarely change)
+            // TMDB responses include Cache-Control headers, OkHttp will respect them
+            val cache = Cache(
+                directory = File(context.cacheDir, "tmdb_http_cache"),
+                maxSize = CACHE_SIZE_BYTES
+            )
 
-            val client = clientBuilder
+            // SECURITY: Using standard OkHttpClient for all builds.
+            // Debug SSL handling is now done via network_security_config.xml which:
+            // - Allows user-installed certs in debug builds (for proxy debugging)
+            // - Only trusts system certs in release builds
+            // This replaces the dangerous buildInsecureClientBuilder() that trusted ALL certs.
+            val client = OkHttpClient.Builder()
+                .cache(cache)  // Enable HTTP caching
+                .addInterceptor(rateLimitInterceptor)  // Add rate limit handling first
                 .addInterceptor(loggingInterceptor)
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
@@ -107,24 +120,6 @@ interface TmdbApiService {
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
                 .create(TmdbApiService::class.java)
-        }
-
-        private fun buildInsecureClientBuilder(): OkHttpClient.Builder {
-            val trustAllCerts = arrayOf<TrustManager>(
-                object : X509TrustManager {
-                    override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-                    override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) = Unit
-                    override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) = Unit
-                }
-            )
-            val sslContext = SSLContext.getInstance("SSL").apply {
-                init(null, trustAllCerts, SecureRandom())
-            }
-            val sslSocketFactory: SSLSocketFactory = sslContext.socketFactory
-
-            return OkHttpClient.Builder()
-                .sslSocketFactory(sslSocketFactory, trustAllCerts[0] as X509TrustManager)
-                .hostnameVerifier { _, _ -> true }
         }
     }
 }

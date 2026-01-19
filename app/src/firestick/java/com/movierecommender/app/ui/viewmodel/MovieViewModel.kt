@@ -47,7 +47,11 @@ data class MovieUiState(
     val useExperimentalPreference: Boolean = true,
     val userName: String = "", // User's name for personalized favorites
     val isFirstRun: Boolean = true, // Show welcome dialog on first run
-    val isDarkMode: Boolean = true // Dark mode preference (default: dark)
+    val isDarkMode: Boolean = true, // Dark mode preference (default: dark)
+    // LLM consent for GDPR/CCPA compliance
+    val llmConsentGiven: Boolean = false, // User consented to send data to OpenAI
+    val llmConsentAsked: Boolean = false, // Consent dialog has been shown
+    val showLlmConsentDialog: Boolean = false // Show consent dialog now
 )
 
 class MovieViewModel(
@@ -118,6 +122,13 @@ class MovieViewModel(
         viewModelScope.launch {
             settings.useExperimental.collect { _uiState.value = _uiState.value.copy(useExperimentalPreference = it) }
         }
+        // LLM consent observers
+        viewModelScope.launch {
+            settings.llmConsentGiven.collect { _uiState.value = _uiState.value.copy(llmConsentGiven = it) }
+        }
+        viewModelScope.launch {
+            settings.llmConsentAsked.collect { _uiState.value = _uiState.value.copy(llmConsentAsked = it) }
+        }
     }
     
     private fun observeSelectedMovies() {
@@ -150,6 +161,40 @@ class MovieViewModel(
                 )
             }
         }
+    }
+    
+    // ─────────────────────────────────────────────────────────────────────────────
+    // LLM Consent (GDPR/CCPA compliance)
+    // ─────────────────────────────────────────────────────────────────────────────
+    
+    /**
+     * Show the LLM consent dialog if user hasn't been asked yet.
+     * Call this before first LLM recommendation generation.
+     */
+    fun checkAndShowLlmConsentIfNeeded() {
+        val state = _uiState.value
+        if (!state.llmConsentAsked) {
+            _uiState.value = state.copy(showLlmConsentDialog = true)
+        }
+    }
+    
+    /**
+     * User responded to LLM consent dialog.
+     * @param consented true if user accepts AI recommendations, false if declined
+     */
+    fun onLlmConsentResponse(consented: Boolean) {
+        _uiState.value = _uiState.value.copy(showLlmConsentDialog = false)
+        viewModelScope.launch {
+            settings.setLlmConsent(consented)
+        }
+    }
+    
+    /**
+     * Dismiss consent dialog without recording a decision (user tapped outside).
+     * They will be asked again next time.
+     */
+    fun dismissLlmConsentDialog() {
+        _uiState.value = _uiState.value.copy(showLlmConsentDialog = false)
     }
     
     fun loadGenres() {
@@ -376,7 +421,8 @@ class MovieViewModel(
                 state.useInternationalPreference,
                 state.experimentalPreference,
                 state.useExperimentalPreference,
-                additionalExcludedTitles = (additionalExcludedTitles + sessionRecommendedTitles.toList()).distinct()
+                additionalExcludedTitles = (additionalExcludedTitles + sessionRecommendedTitles.toList()).distinct(),
+                useLlm = state.llmConsentGiven // Only use LLM if user has consented
             ).collect { resource ->
                 when (resource) {
                     is Resource.Loading -> {

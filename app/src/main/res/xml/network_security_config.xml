@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Network Security Configuration
+    
+    This configuration:
+    - In DEBUG builds: Allows user-installed certificates (for debugging proxies like Charles)
+    - In RELEASE builds: Only trusts system certificates (secure by default)
+    
+    This replaces the dangerous buildInsecureClientBuilder() that trusted ALL certificates.
+-->
+<network-security-config>
+    <!-- Base configuration for all connections -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    
+    <!-- Debug overrides - allows debugging with proxy tools -->
+    <debug-overrides>
+        <trust-anchors>
+            <!-- Trust system certificates -->
+            <certificates src="system" />
+            <!-- Trust user-installed certificates (for debugging proxies) -->
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>

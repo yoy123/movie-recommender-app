@@ -17,7 +17,7 @@ Complete documentation of Fire TV / Android TV specific implementation: DPAD nav
 
 **Code:** [build.gradle.kts:47](../app/build.gradle.kts#L47)
 ```kotlin
-flavorDimensions += "platform"
+flavorDimensions += "distribution"
 productFlavors {
     create("mobile") {
         dimension = "platform"
