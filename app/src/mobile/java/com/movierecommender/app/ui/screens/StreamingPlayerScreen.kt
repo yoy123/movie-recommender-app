@@ -23,9 +23,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.content.Context.MODE_PRIVATE
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -48,9 +50,36 @@ fun StreamingPlayerScreen(
     var isBound by remember { mutableStateOf(false) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var isPlayerReady by remember { mutableStateOf(false) }
+    var shouldStopStream by remember { mutableStateOf(true) }
+    var lastProgress by remember { mutableStateOf(0f) }
+    var lastProgressTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var stallRetries by remember { mutableIntStateOf(0) }
+    
+    // Load saved playback position
+    val savedPosition = remember(magnetUrl) {
+        val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+        val key = "position_${magnetUrl.hashCode()}"
+        prefs.getLong(key, 0L)
+    }
     
     val streamState = torrentService?.streamState?.collectAsState()?.value ?: TorrentStreamState.Idle
     val downloadProgress = torrentService?.downloadProgress?.collectAsState()?.value ?: 0f
+        // Restart stream if buffering stalls with no progress for too long
+        LaunchedEffect(streamState, downloadProgress) {
+            if (streamState is TorrentStreamState.Buffering || streamState is TorrentStreamState.Connecting) {
+                val now = System.currentTimeMillis()
+                if (downloadProgress > lastProgress + 0.1f) {
+                    lastProgress = downloadProgress
+                    lastProgressTime = now
+                    stallRetries = 0
+                } else if (now - lastProgressTime > 20000 && stallRetries < 2) {
+                    stallRetries += 1
+                    lastProgressTime = now
+                    torrentService?.stopStream()
+                    torrentService?.startStream(magnetUrl)
+                }
+            }
+        }
     val downloadSpeed = torrentService?.downloadSpeed?.collectAsState()?.value ?: 0
     val seeds = torrentService?.seeds?.collectAsState()?.value ?: 0
     
@@ -80,7 +109,15 @@ fun StreamingPlayerScreen(
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         
         onDispose {
-            torrentService?.stopStream()
+            // Save current playback position
+            exoPlayer?.let { player ->
+                val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+                val key = "position_${magnetUrl.hashCode()}"
+                prefs.edit().putLong(key, player.currentPosition).apply()
+            }
+            if (shouldStopStream) {
+                torrentService?.stopStream()
+            }
             if (isBound) {
                 context.unbindService(serviceConnection)
             }
@@ -94,11 +131,40 @@ fun StreamingPlayerScreen(
             val videoPath = streamState.videoPath
             exoPlayer = ExoPlayer.Builder(context).build().apply {
                 val mediaItem = MediaItem.fromUri("file://$videoPath")
-                setMediaItem(mediaItem)
+                // Resume from saved position if available
+                if (savedPosition > 0L) {
+                    setMediaItem(mediaItem, savedPosition)
+                } else {
+                    setMediaItem(mediaItem)
+                }
                 prepare()
                 playWhenReady = true
+                addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (playbackState == Player.STATE_ENDED) {
+                            val latestProgress = torrentService?.downloadProgress?.value ?: 0f
+                            val stillDownloading = latestProgress < 100f
+                            if (stillDownloading) {
+                                val resumePosition = exoPlayer?.currentPosition ?: 0L
+                                setMediaItem(mediaItem, resumePosition)
+                                prepare()
+                                playWhenReady = true
+                            }
+                        }
+                    }
+                })
             }
             isPlayerReady = true
+        }
+    }
+    
+    // Update playback position for intelligent cache management
+    LaunchedEffect(isPlayerReady) {
+        while (isPlayerReady) {
+            exoPlayer?.let { player ->
+                torrentService?.updatePlaybackPosition(player.currentPosition)
+            }
+            delay(500)
         }
     }
     
@@ -127,7 +193,8 @@ fun StreamingPlayerScreen(
                 title = { Text(movieTitle, maxLines = 1) },
                 navigationIcon = {
                     IconButton(onClick = {
-                        torrentService?.stopStream()
+                        shouldStopStream = false
+                        torrentService?.pauseDownloadIfPossiblePublic()
                         exoPlayer?.release()
                         onBackClick()
                     }) {

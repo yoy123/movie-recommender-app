@@ -66,6 +66,22 @@ fun AppNavigation(
                 },
                 onGenerateRecommendations = {
                     navController.navigate(Screen.Recommendations.route)
+                },
+                onWatchNow = { title: String, magnetUrl: String ->
+                    android.util.Log.d("AppNavigation", "onWatchNow from MovieSelection: title=$title")
+                    val encodedTitle = Uri.encode(title)
+                    val encodedMagnet = android.util.Base64.encodeToString(
+                        magnetUrl.toByteArray(),
+                        android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP
+                    )
+                    val route = "streaming/$encodedTitle/$encodedMagnet"
+                    android.util.Log.d("AppNavigation", "Navigating to streaming route from MovieSelection")
+                    try {
+                        navController.navigate(route)
+                        android.util.Log.d("AppNavigation", "Streaming navigation successful")
+                    } catch (e: Exception) {
+                        android.util.Log.e("AppNavigation", "Streaming navigation failed", e)
+                    }
                 }
             )
         }

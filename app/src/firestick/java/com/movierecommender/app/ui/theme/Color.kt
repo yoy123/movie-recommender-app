@@ -1,4 +1,4 @@
-package com.movierecommender.app.ui.theme
+package com.movierecommender.app.ui.theme.firestick
 
 import androidx.compose.ui.graphics.Color
 

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,6 +33,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.ui.viewmodel.MovieViewModel
 
@@ -39,7 +43,8 @@ import com.movierecommender.app.ui.viewmodel.MovieViewModel
 fun MovieSelectionScreen(
     viewModel: MovieViewModel,
     onBackClick: () -> Unit,
-    onGenerateRecommendations: () -> Unit
+    onGenerateRecommendations: () -> Unit,
+    onWatchNow: (title: String, magnetUrl: String) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
@@ -204,7 +209,9 @@ fun MovieSelectionScreen(
                                     if (movie.isFavorite) viewModel.removeFromFavorites(movie.id)
                                     else viewModel.addToFavorites(movie)
                                 },
-                                onClick = { viewModel.toggleMovieSelection(movie) }
+                                onClick = { viewModel.toggleMovieSelection(movie) },
+                                viewModel = viewModel,
+                                onWatchNow = onWatchNow
                             )
                         }
                     }
@@ -256,8 +263,14 @@ fun MovieCard(
     isSelected: Boolean,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    viewModel: MovieViewModel? = null,
+    onWatchNow: (title: String, magnetUrl: String) -> Unit = { _, _ -> }
 ) {
+    val context = LocalContext.current
+    var isLoadingMagnet by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    
     Card(
         onClick = onClick,
         modifier = Modifier
@@ -295,6 +308,52 @@ fun MovieCard(
                     tint = if (isFavorite) androidx.compose.ui.graphics.Color(0xFFE53935) else androidx.compose.ui.graphics.Color.White,
                     modifier = Modifier.size(32.dp)
                 )
+            }
+
+            // Watch Now button - top center - ALWAYS VISIBLE
+            if (viewModel != null) {
+                IconButton(
+                    onClick = {
+                        if (!isLoadingMagnet) {
+                            isLoadingMagnet = true
+                            coroutineScope.launch {
+                                try {
+                                    val year = movie.releaseDate?.take(4)
+                                    val magnet = viewModel.getTorrentMagnetUrl(movie.title, year)
+                                    if (magnet != null) {
+                                        onWatchNow(movie.title, magnet)
+                                    } else {
+                                        Toast.makeText(context, "No streaming source found", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Error finding source", Toast.LENGTH_SHORT).show()
+                                } finally {
+                                    isLoadingMagnet = false
+                                }
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(8.dp)
+                        .size(48.dp),
+                    enabled = !isLoadingMagnet
+                ) {
+                    if (isLoadingMagnet) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = androidx.compose.ui.graphics.Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.PlayArrow,
+                            contentDescription = "Watch Now",
+                            tint = androidx.compose.ui.graphics.Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
             }
 
             // Checkbox - top right corner - ALWAYS VISIBLE

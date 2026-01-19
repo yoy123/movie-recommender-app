@@ -4,17 +4,19 @@
 
 Android app (Kotlin + Jetpack Compose) using MVVM with OpenAI GPT-4o-mini for movie recommendations.
 
+**Package**: `com.movierecommender.app`
+
 ### Layer Structure
 ```
 UI (Compose Screens) → ViewModel (StateFlow) → Repository → Data Sources (Room + Retrofit)
 ```
 
 ### Product Flavors
-Two build variants share core logic but have distinct UI implementations:
+Two build variants share core logic but have **distinct UI implementations**:
 - **mobile** (`app/src/mobile/`) - Standard Android phone/tablet UI
 - **firestick** (`app/src/firestick/`) - TV/D-pad navigation with `androidx.tv` libraries
 
-Shared code lives in `app/src/main/` (data layer, models, repository).
+Shared code lives in `app/src/main/` (data layer, models, repository). Each flavor has its own `MainActivity.kt`, `ui/viewmodel/`, `ui/screens/`, and `ui/navigation/`.
 
 ## Key Patterns
 
@@ -25,13 +27,15 @@ _uiState.value = _uiState.value.copy(isLoading = true)
 ```
 
 ### Resource Wrapper
-API/DB operations return `Flow<Resource<T>>` with `Success`, `Error`, `Loading` states. Always handle all three in UI.
+API/DB operations return `Flow<Resource<T>>` with `Success`, `Error`, `Loading` states (defined in `MovieRepository.kt`). Always handle all three in UI collectors.
 
 ### Favorites System
-"[Name]'s Favorites" uses `genreId = -1` pseudo-genre. Check `isFavoritesMode` in ViewModel before navigation.
+"[Name]'s Favorites" uses `genreId = -1` pseudo-genre. Check `isFavoritesMode` in ViewModel before navigation—it determines whether to route to `FavoritesScreen` or `MovieSelectionScreen`.
 
 ### LLM Integration
-`LlmRecommendationService` makes two API attempts (creative → strict) with different temperatures. Response must pass `isValidRecommendationStructure()` or falls back to TMDB-based `buildFallbackRecommendations()` algorithm.
+`LlmRecommendationService` makes two API attempts (creative temp=0.6 → strict temp=0.3). Response must pass `isValidRecommendationStructure()` validation or falls back to TMDB-based `buildFallbackRecommendations()` algorithm in `MovieRepository`.
+
+Session retries track `sessionRecommendedTitles` in ViewModel to prevent duplicate recommendations across retries.
 
 ## Build & Run
 
@@ -40,46 +44,55 @@ API/DB operations return `Flow<Resource<T>>` with `Success`, `Error`, `Loading` 
 TMDB_API_KEY=your_key
 OPENAI_API_KEY=sk-proj-...
 
-# Build
-./gradlew :app:assembleDebug          # Both flavors
-./gradlew :app:assembleMobileDebug    # Mobile only
-./gradlew :app:assembleFirestickDebug # Firestick only
+# Build both flavors
+./gradlew :app:assembleDebug
 
-# Install
+# Build specific flavor
+./gradlew :app:assembleMobileDebug
+./gradlew :app:assembleFirestickDebug
+
+# Install to connected device
 ./gradlew installMobileDebug
+./gradlew installFirestickDebug
 ```
 
 ## Code Conventions
 
 - **Compose**: Use `remember` + `LaunchedEffect` for side effects; collect StateFlow with `collectAsState()`
-- **Navigation**: Routes defined in `Screen` sealed class; URL params encoded with Base64 (see `AppNavigation.kt`)
-- **Settings**: User preferences persisted via `DataStore` in `SettingsRepository`
-- **Database**: Room with `fallbackToDestructiveMigration()` - bump version in `AppDatabase` for schema changes
+- **Navigation**: Routes in `Screen` sealed class; URL params encoded with **Base64** to handle special chars (see `AppNavigation.kt`)
+- **Settings**: User preferences via `DataStore` in `SettingsRepository`; each pref has a `Flow<T>` getter and `suspend fun set*()` setter
+- **Database**: Room with `fallbackToDestructiveMigration()` - bump `version` in `AppDatabase.kt` for schema changes (currently v2)
+- **Movie flags**: `isSelected`, `isRecommended`, `isFavorite` are Boolean flags on `Movie` entity—update via DAO, don't recreate objects
 
 ## Critical Files
 
-| Purpose | File |
-|---------|------|
-| Data models | `data/model/Movie.kt` |
-| API interface | `data/remote/TmdbApiService.kt` |
-| LLM logic | `data/remote/LlmRecommendationService.kt` |
-| Business logic | `data/repository/MovieRepository.kt` |
-| State container | `ui/viewmodel/MovieViewModel.kt` |
-| Navigation | `ui/navigation/AppNavigation.kt` |
-| User prefs | `data/settings/SettingsRepository.kt` |
+| Purpose | Location |
+|---------|----------|
+| Data models | `app/src/main/.../data/model/Movie.kt` |
+| TMDB API | `app/src/main/.../data/remote/TmdbApiService.kt` |
+| LLM logic | `app/src/main/.../data/remote/LlmRecommendationService.kt` |
+| Business logic | `app/src/main/.../data/repository/MovieRepository.kt` |
+| Room DAO | `app/src/main/.../data/local/MovieDao.kt` |
+| Database | `app/src/main/.../data/local/AppDatabase.kt` |
+| Settings | `app/src/main/.../data/settings/SettingsRepository.kt` |
+| **Mobile** ViewModel | `app/src/mobile/.../ui/viewmodel/MovieViewModel.kt` |
+| **Mobile** Navigation | `app/src/mobile/.../ui/navigation/AppNavigation.kt` |
+| **Firestick** ViewModel | `app/src/firestick/.../ui/viewmodel/MovieViewModel.kt` |
 
 ## Recommendation Preferences
 
-Six user-configurable sliders passed to LLM (each has `use*` boolean toggle):
-- `indiePreference` (0=blockbuster, 1=indie)
-- `popularityPreference` (0=cult, 1=mainstream)
-- `releaseYearStart/End` (1950-current)
-- `tonePreference` (0=light, 1=dark)
-- `internationalPreference` (0=domestic, 1=international)
-- `experimentalPreference` (0=traditional, 1=experimental)
+Six user-configurable sliders passed to LLM (each has `use*` boolean toggle in UI and settings):
+| Preference | Range | Meaning |
+|------------|-------|---------|
+| `indiePreference` | 0–1 | 0=blockbusters, 1=indie |
+| `popularityPreference` | 0–1 | 0=cult classics, 1=mainstream |
+| `releaseYearStart/End` | 1950–current | Year range filter |
+| `tonePreference` | 0–1 | 0=light/uplifting, 1=dark/serious |
+| `internationalPreference` | 0–1 | 0=domestic, 1=international |
+| `experimentalPreference` | 0–1 | 0=traditional, 1=experimental |
 
-## Testing Notes
+## Testing & Debugging
 
 - Debug builds use insecure SSL for emulator compatibility (see `TmdbApiService.buildInsecureClientBuilder()`)
-- Session retries track `sessionRecommendedTitles` to prevent duplicate recommendations
-- `excludedMovies` list passed to LLM includes favorites + selected + already-recommended
+- Verbose logging in `LlmRecommendationService` (TAG: `LlmRecommendation`) and `AppNavigation` for navigation debugging
+- `excludedMovies` list passed to LLM includes favorites + selected + already-recommended to prevent repeats

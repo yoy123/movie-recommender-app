@@ -3,7 +3,7 @@
     ExperimentalFoundationApi::class
 )
 
-package com.movierecommender.app.ui.screens
+package com.movierecommender.app.ui.screens.firestick
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
@@ -45,7 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.movierecommender.app.data.model.Movie
-import com.movierecommender.app.ui.viewmodel.MovieViewModel
+import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
 
 @Composable
 fun GenreSelectionScreen(

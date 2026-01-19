@@ -1,4 +1,4 @@
-package com.movierecommender.app
+package com.movierecommender.app.firestick
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,10 +11,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.movierecommender.app.ui.navigation.AppNavigation
-import com.movierecommender.app.ui.theme.MovieRecommenderTheme
-import com.movierecommender.app.ui.viewmodel.MovieViewModel
-import com.movierecommender.app.ui.viewmodel.MovieViewModelFactory
+import com.movierecommender.app.MovieRecommenderApplication
+import com.movierecommender.app.torrent.TorrentStreamService
+import com.movierecommender.app.ui.navigation.firestick.AppNavigation
+import com.movierecommender.app.ui.theme.firestick.MovieRecommenderTheme
+import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
+import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModelFactory
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,5 +41,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        // Clear torrent cache when app exits
+        startService(TorrentStreamService.getClearCacheIntent(this))
+        super.onDestroy()
     }
 }

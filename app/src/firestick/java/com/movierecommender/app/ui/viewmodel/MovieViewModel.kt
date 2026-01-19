@@ -1,4 +1,4 @@
-package com.movierecommender.app.ui.viewmodel
+package com.movierecommender.app.ui.viewmodel.firestick
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider

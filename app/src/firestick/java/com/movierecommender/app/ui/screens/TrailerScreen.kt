@@ -1,4 +1,4 @@
-package com.movierecommender.app.ui.screens
+package com.movierecommender.app.ui.screens.firestick
 
 import android.annotation.SuppressLint
 import android.app.Activity

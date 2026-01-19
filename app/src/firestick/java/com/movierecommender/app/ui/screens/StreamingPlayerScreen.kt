@@ -1,4 +1,4 @@
-package com.movierecommender.app.ui.screens
+package com.movierecommender.app.ui.screens.firestick
 
 import android.content.ComponentName
 import android.content.Context
@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.content.Context.MODE_PRIVATE
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem
@@ -68,11 +69,38 @@ fun StreamingPlayerScreen(
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
+    var shouldStopStream by remember { mutableStateOf(true) }
+    var lastProgress by remember { mutableStateOf(0f) }
+    var lastProgressTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var stallRetries by remember { mutableIntStateOf(0) }
+    
+    // Load saved playback position
+    val savedPosition = remember(magnetUrl) {
+        val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+        val key = "position_${magnetUrl.hashCode()}"
+        prefs.getLong(key, 0L)
+    }
     
     val focusRequester = remember { FocusRequester() }
     
     val streamState = torrentService?.streamState?.collectAsState()?.value ?: TorrentStreamState.Idle
     val downloadProgress = torrentService?.downloadProgress?.collectAsState()?.value ?: 0f
+        // Restart stream if buffering stalls with no progress for too long
+        LaunchedEffect(streamState, downloadProgress) {
+            if (streamState is TorrentStreamState.Buffering || streamState is TorrentStreamState.Connecting) {
+                val now = System.currentTimeMillis()
+                if (downloadProgress > lastProgress + 0.1f) {
+                    lastProgress = downloadProgress
+                    lastProgressTime = now
+                    stallRetries = 0
+                } else if (now - lastProgressTime > 20000 && stallRetries < 2) {
+                    stallRetries += 1
+                    lastProgressTime = now
+                    torrentService?.stopStream()
+                    torrentService?.startStream(magnetUrl)
+                }
+            }
+        }
     val downloadSpeed = torrentService?.downloadSpeed?.collectAsState()?.value ?: 0
     val seeds = torrentService?.seeds?.collectAsState()?.value ?: 0
     
@@ -100,11 +128,27 @@ fun StreamingPlayerScreen(
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         
         onDispose {
-            torrentService?.stopStream()
-            if (isBound) {
-                context.unbindService(serviceConnection)
+            // Save current playback position before releasing player
+            exoPlayer?.let { player ->
+                val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+                val key = "position_${magnetUrl.hashCode()}"
+                prefs.edit().putLong(key, player.currentPosition).apply()
+                player.release()
             }
-            exoPlayer?.release()
+            exoPlayer = null
+
+            if (shouldStopStream) {
+                torrentService?.stopStream()
+            }
+            // Only unbind if we're stopping the stream; keep service alive for resume
+            if (isBound && shouldStopStream) {
+                context.unbindService(serviceConnection)
+                isBound = false
+            } else if (isBound) {
+                // Just unbind without stopping - service continues in background
+                context.unbindService(serviceConnection)
+                isBound = false
+            }
         }
     }
     
@@ -114,12 +158,32 @@ fun StreamingPlayerScreen(
             val videoPath = streamState.videoPath
             exoPlayer = ExoPlayer.Builder(context).build().apply {
                 val mediaItem = MediaItem.fromUri("file://$videoPath")
-                setMediaItem(mediaItem)
+                // Resume from saved position if available
+                if (savedPosition > 0L) {
+                    setMediaItem(mediaItem, savedPosition)
+                } else {
+                    setMediaItem(mediaItem)
+                }
                 prepare()
                 playWhenReady = true
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
+                    }
+
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        // If we hit END but still have more content, re-prepare and keep going.
+                        // This handles the case where ExoPlayer reaches end of buffered data while torrent is still downloading.
+                        if (playbackState == Player.STATE_ENDED) {
+                            val latestProgress = torrentService?.downloadProgress?.value ?: downloadProgress
+                            val stillDownloading = latestProgress < 100f
+                            if (stillDownloading) {
+                                val resumePosition = currentPosition
+                                setMediaItem(mediaItem, resumePosition)
+                                prepare()
+                                playWhenReady = true
+                            }
+                        }
                     }
                 })
             }
@@ -127,12 +191,13 @@ fun StreamingPlayerScreen(
         }
     }
     
-    // Update position periodically
+    // Update position and cache management periodically
     LaunchedEffect(isPlayerReady) {
         while (isPlayerReady) {
             exoPlayer?.let { player ->
                 currentPosition = player.currentPosition
                 duration = player.duration.coerceAtLeast(0L)
+                torrentService?.updatePlaybackPosition(currentPosition)
             }
             delay(500)
         }
@@ -217,8 +282,14 @@ fun StreamingPlayerScreen(
                             true
                         }
                         KeyEvent.KEYCODE_BACK -> {
-                            torrentService?.stopStream()
-                            exoPlayer?.release()
+                            // Save position before backing out
+                            exoPlayer?.let { player ->
+                                val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+                                val key = "position_${magnetUrl.hashCode()}"
+                                prefs.edit().putLong(key, player.currentPosition).apply()
+                            }
+                            shouldStopStream = false
+                            torrentService?.pauseDownloadIfPossiblePublic()
                             onBackClick()
                             true
                         }
@@ -298,8 +369,14 @@ fun StreamingPlayerScreen(
                             onSeekBack = { exoPlayer?.let { it.seekTo((it.currentPosition - 10000).coerceAtLeast(0)) } },
                             onSeekForward = { exoPlayer?.let { it.seekTo(it.currentPosition + 10000) } },
                             onBack = {
-                                torrentService?.stopStream()
-                                exoPlayer?.release()
+                                // Save position before backing out
+                                exoPlayer?.let { player ->
+                                    val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+                                    val key = "position_${magnetUrl.hashCode()}"
+                                    prefs.edit().putLong(key, player.currentPosition).apply()
+                                }
+                                shouldStopStream = false
+                                torrentService?.pauseDownloadIfPossiblePublic()
                                 onBackClick()
                             }
                         )

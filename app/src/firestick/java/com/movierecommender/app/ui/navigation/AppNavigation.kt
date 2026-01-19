@@ -1,4 +1,4 @@
-package com.movierecommender.app.ui.navigation
+package com.movierecommender.app.ui.navigation.firestick
 
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -7,14 +7,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.movierecommender.app.data.repository.MovieRepository
-import com.movierecommender.app.ui.screens.GenreSelectionScreen
-import com.movierecommender.app.ui.screens.MovieSelectionScreen
-import com.movierecommender.app.ui.screens.RecommendationsScreen
-import com.movierecommender.app.ui.screens.FavoritesScreen
-import com.movierecommender.app.ui.screens.TrailerScreen
-import com.movierecommender.app.ui.screens.StreamingPlayerScreen
-import com.movierecommender.app.ui.viewmodel.MovieViewModel
-import com.movierecommender.app.ui.viewmodel.MovieViewModelFactory
+import com.movierecommender.app.ui.screens.firestick.GenreSelectionScreen
+import com.movierecommender.app.ui.screens.firestick.MovieSelectionScreen
+import com.movierecommender.app.ui.screens.firestick.RecommendationsScreen
+import com.movierecommender.app.ui.screens.firestick.FavoritesScreen
+import com.movierecommender.app.ui.screens.firestick.TrailerScreen
+import com.movierecommender.app.ui.screens.firestick.StreamingPlayerScreen
+import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
+import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModelFactory
 import com.movierecommender.app.data.settings.SettingsRepository
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.remember
@@ -66,6 +66,22 @@ fun AppNavigation(
                 },
                 onGenerateRecommendations = {
                     navController.navigate(Screen.Recommendations.route)
+                },
+                onWatchNow = { title: String, magnetUrl: String ->
+                    android.util.Log.d("AppNavigation", "onWatchNow from MovieSelection: title=$title")
+                    val encodedTitle = Uri.encode(title)
+                    val encodedMagnet = android.util.Base64.encodeToString(
+                        magnetUrl.toByteArray(),
+                        android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP
+                    )
+                    val route = "streaming/$encodedTitle/$encodedMagnet"
+                    android.util.Log.d("AppNavigation", "Navigating to streaming route from MovieSelection")
+                    try {
+                        navController.navigate(route)
+                        android.util.Log.d("AppNavigation", "Streaming navigation successful")
+                    } catch (e: Exception) {
+                        android.util.Log.e("AppNavigation", "Streaming navigation failed", e)
+                    }
                 }
             )
         }

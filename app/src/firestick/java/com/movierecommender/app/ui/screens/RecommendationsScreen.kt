@@ -1,4 +1,4 @@
-package com.movierecommender.app.ui.screens
+package com.movierecommender.app.ui.screens.firestick
 
 import android.content.Intent
 import android.net.Uri
@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.movierecommender.app.data.model.Movie
-import com.movierecommender.app.ui.viewmodel.MovieViewModel
+import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavController
 
@@ -690,11 +690,6 @@ private fun RecommendationCard(
                             isLoadingMagnet = true
                             coroutineScope.launch {
                                 try {
-                                    val displayTitle = if (!item.year.isNullOrBlank()) {
-                                        "${item.title} (${item.year})"
-                                    } else {
-                                        item.title
-                                    }
                                     val magnet = viewModel.getTorrentMagnetUrl(item.title, item.year)
                                     if (magnet != null) {
                                         magnetUrl = magnet
