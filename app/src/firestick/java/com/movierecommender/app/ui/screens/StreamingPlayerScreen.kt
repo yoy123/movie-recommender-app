@@ -152,6 +152,9 @@ fun StreamingPlayerScreen(
         }
     }
     
+    // Track last known good position for error recovery
+    var lastGoodPosition by remember { mutableLongStateOf(savedPosition) }
+    
     // Initialize ExoPlayer when stream is ready
     LaunchedEffect(streamState) {
         if (streamState is TorrentStreamState.Ready && exoPlayer == null) {
@@ -169,21 +172,56 @@ fun StreamingPlayerScreen(
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
+                        // Update last good position when actually playing
+                        if (playing) {
+                            lastGoodPosition = currentPosition
+                        }
                     }
 
                     override fun onPlaybackStateChanged(playbackState: Int) {
-                        // If we hit END but still have more content, re-prepare and keep going.
-                        // This handles the case where ExoPlayer reaches end of buffered data while torrent is still downloading.
-                        if (playbackState == Player.STATE_ENDED) {
-                            val latestProgress = torrentService?.downloadProgress?.value ?: downloadProgress
-                            val stillDownloading = latestProgress < 100f
-                            if (stillDownloading) {
-                                val resumePosition = currentPosition
-                                setMediaItem(mediaItem, resumePosition)
-                                prepare()
-                                playWhenReady = true
+                        when (playbackState) {
+                            Player.STATE_BUFFERING -> {
+                                // Ensure playWhenReady stays true during buffering
+                                // This handles seeks into unbuffered regions
+                                if (!playWhenReady) {
+                                    playWhenReady = true
+                                }
                             }
+                            Player.STATE_READY -> {
+                                // Resume playback when ready after buffering
+                                if (playWhenReady && !isPlaying) {
+                                    play()
+                                }
+                                // Update last good position when playback is ready
+                                lastGoodPosition = currentPosition
+                            }
+                            Player.STATE_ENDED -> {
+                                // If we hit END but still have more content, re-prepare and keep going.
+                                // This handles the case where ExoPlayer reaches end of buffered data while torrent is still downloading.
+                                val latestProgress = torrentService?.downloadProgress?.value ?: downloadProgress
+                                val stillDownloading = latestProgress < 100f
+                                if (stillDownloading) {
+                                    val resumePosition = currentPosition
+                                    setMediaItem(mediaItem, resumePosition)
+                                    prepare()
+                                    playWhenReady = true
+                                }
+                            }
+                            else -> {}
                         }
+                    }
+                    
+                    override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        // Handle source errors (e.g., Invalid NAL length when seeking past downloaded content)
+                        android.util.Log.e("StreamingPlayer", "Player error: ${error.message}", error)
+                        
+                        // Re-prepare from last known good position
+                        val fallbackPosition = lastGoodPosition.coerceAtLeast(0L)
+                        android.util.Log.d("StreamingPlayer", "Recovering from error, seeking to last good position: $fallbackPosition")
+                        
+                        setMediaItem(mediaItem, fallbackPosition)
+                        prepare()
+                        playWhenReady = true
                     }
                 })
             }
@@ -346,6 +384,8 @@ fun StreamingPlayerScreen(
                             PlayerView(ctx).apply {
                                 player = exoPlayer
                                 useController = false // We handle controls via D-pad
+                                // Keep screen on during playback to prevent Fire TV screensaver
+                                keepScreenOn = true
                                 layoutParams = FrameLayout.LayoutParams(
                                     ViewGroup.LayoutParams.MATCH_PARENT,
                                     ViewGroup.LayoutParams.MATCH_PARENT

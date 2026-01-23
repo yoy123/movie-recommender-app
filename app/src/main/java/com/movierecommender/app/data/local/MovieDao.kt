@@ -45,4 +45,36 @@ interface MovieDao {
     
     @Query("DELETE FROM movies")
     suspend fun clearAllMovies()
+    
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Database Cleanup (prevents unbounded growth)
+    // ─────────────────────────────────────────────────────────────────────────────
+    
+    /**
+     * Delete orphaned movies older than cutoffTime.
+     * Orphaned = not selected, not recommended, and NOT a favorite.
+     * IMPORTANT: Favorites are NEVER deleted by this query.
+     * 
+     * @param cutoffTime Unix timestamp (millis) - movies older than this are deleted
+     * @return Number of rows deleted
+     */
+    @Query("""
+        DELETE FROM movies 
+        WHERE isSelected = 0 
+          AND isRecommended = 0 
+          AND isFavorite = 0 
+          AND timestamp < :cutoffTime
+    """)
+    suspend fun deleteOldOrphanedMovies(cutoffTime: Long): Int
+    
+    /**
+     * Count orphaned movies (for diagnostics/logging).
+     */
+    @Query("""
+        SELECT COUNT(*) FROM movies 
+        WHERE isSelected = 0 
+          AND isRecommended = 0 
+          AND isFavorite = 0
+    """)
+    suspend fun countOrphanedMovies(): Int
 }

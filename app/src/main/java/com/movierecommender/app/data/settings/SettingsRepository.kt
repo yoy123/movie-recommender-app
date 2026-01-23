@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -25,6 +26,9 @@ class SettingsRepository(private val context: Context) {
         // When false, app uses TMDB-only fallback recommendations
         val LLM_CONSENT_GIVEN = booleanPreferencesKey("llm_consent_given")
         val LLM_CONSENT_ASKED = booleanPreferencesKey("llm_consent_asked")
+        
+        // Database cleanup - last time orphaned movies were cleaned
+        val LAST_DB_CLEANUP = longPreferencesKey("last_db_cleanup")
         
         val INDIE_PREFERENCE = floatPreferencesKey("indie_preference")
         val USE_INDIE = booleanPreferencesKey("use_indie")
@@ -48,6 +52,9 @@ class SettingsRepository(private val context: Context) {
     // LLM consent flows - false by default (opt-in required for GDPR)
     val llmConsentGiven: Flow<Boolean> = context.dataStore.data.map { it[Keys.LLM_CONSENT_GIVEN] ?: false }
     val llmConsentAsked: Flow<Boolean> = context.dataStore.data.map { it[Keys.LLM_CONSENT_ASKED] ?: false }
+    
+    // Database cleanup - 0 means never cleaned
+    val lastDbCleanup: Flow<Long> = context.dataStore.data.map { it[Keys.LAST_DB_CLEANUP] ?: 0L }
 
     val indiePreference: Flow<Float> = context.dataStore.data.map { it[Keys.INDIE_PREFERENCE] ?: 0.5f }
     val useIndie: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_INDIE] ?: true }
@@ -165,5 +172,12 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setUseExperimental(value: Boolean) {
         context.dataStore.edit { it[Keys.USE_EXPERIMENTAL] = value }
+    }
+    
+    /**
+     * Record when database cleanup was last performed.
+     */
+    suspend fun setLastDbCleanup(timestamp: Long) {
+        context.dataStore.edit { it[Keys.LAST_DB_CLEANUP] = timestamp }
     }
 }

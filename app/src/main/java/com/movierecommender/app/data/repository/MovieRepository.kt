@@ -964,6 +964,47 @@ class MovieRepository(
         movieDao.clearRecommendedMovies()
     }
     
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Database Cleanup (prevents unbounded growth)
+    // ─────────────────────────────────────────────────────────────────────────────
+    
+    companion object {
+        /** Cleanup orphaned movies older than 30 days */
+        const val ORPHAN_AGE_DAYS = 30L
+        /** Minimum interval between cleanups (7 days) */
+        const val CLEANUP_INTERVAL_DAYS = 7L
+        
+        private const val MILLIS_PER_DAY = 24 * 60 * 60 * 1000L
+    }
+    
+    /**
+     * Perform database cleanup if needed (>7 days since last cleanup).
+     * Deletes orphaned movies (not selected, not recommended, not favorite) older than 30 days.
+     * 
+     * @param lastCleanupTime Unix timestamp of last cleanup (from SettingsRepository)
+     * @return Pair of (shouldUpdateTimestamp, deletedCount) - first is true if cleanup was performed
+     */
+    suspend fun cleanupOrphanedMoviesIfNeeded(lastCleanupTime: Long): Pair<Boolean, Int> {
+        val now = System.currentTimeMillis()
+        val daysSinceLastCleanup = (now - lastCleanupTime) / MILLIS_PER_DAY
+        
+        if (daysSinceLastCleanup < CLEANUP_INTERVAL_DAYS) {
+            android.util.Log.d("MovieRepository", "Cleanup skipped: only $daysSinceLastCleanup days since last cleanup")
+            return Pair(false, 0)
+        }
+        
+        val cutoffTime = now - (ORPHAN_AGE_DAYS * MILLIS_PER_DAY)
+        val orphanCountBefore = movieDao.countOrphanedMovies()
+        val deletedCount = movieDao.deleteOldOrphanedMovies(cutoffTime)
+        
+        android.util.Log.d(
+            "MovieRepository",
+            "Database cleanup: deleted $deletedCount orphaned movies (had $orphanCountBefore orphans, cutoff=${ORPHAN_AGE_DAYS}d)"
+        )
+        
+        return Pair(true, deletedCount)
+    }
+    
     suspend fun addToFavorites(movie: Movie) {
         // First ensure the movie is in the database
         movieDao.insertMovie(movie.copy(isFavorite = true))

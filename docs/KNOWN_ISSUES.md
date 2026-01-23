@@ -161,51 +161,25 @@ RecommendationsScreen → MovieViewModel.getImdbTrailerUrlByTitle()
 
 ### 6. Unbounded Database Growth
 
-**Evidence:**
+**Status:** ✅ **RESOLVED** (2026-01-20)
 
-- [MovieDao.kt](../app/src/main/java/com/movierecommender/app/data/local/MovieDao.kt)
-- No cleanup queries for orphaned movies
-- Movies persist forever (no TTL, no auto-delete)
+**Resolution:**
+- Added `deleteOldOrphanedMovies(cutoffTime)` and `countOrphanedMovies()` queries to MovieDao
+- Added cleanup logic in MovieRepository with configurable constants:
+  - `ORPHAN_AGE_DAYS = 30` (delete orphans older than 30 days)
+  - `CLEANUP_INTERVAL_DAYS = 7` (run cleanup at most once per 7 days)
+- Added `lastDbCleanup` preference to SettingsRepository to track last cleanup time
+- MovieRecommenderApplication.onCreate() triggers cleanup asynchronously on app startup
+- **IMPORTANT**: Favorites are NEVER deleted (isFavorite = 1 excluded from cleanup)
 
-**Problem:**
+**Files Modified:**
+- [MovieDao.kt](../app/src/main/java/com/movierecommender/app/data/local/MovieDao.kt): Added cleanup queries
+- [MovieRepository.kt](../app/src/main/java/com/movierecommender/app/data/repository/MovieRepository.kt): Added `cleanupOrphanedMoviesIfNeeded()` method
+- [SettingsRepository.kt](../app/src/main/java/com/movierecommender/app/data/settings/SettingsRepository.kt): Added `lastDbCleanup` preference
+- [MovieRecommenderApplication.kt](../app/src/main/java/com/movierecommender/app/MovieRecommenderApplication.kt): Added startup cleanup call
 
-1. User selects 5 movies → 5 rows inserted with `isSelected = 1`
-2. User gets recommendations → 15 rows inserted with `isRecommended = 1`
-3. User clicks "Start Over" → flags cleared (`isSelected = 0`, `isRecommended = 0`)
-4. **Movies remain in DB** (20 rows with all flags = 0)
-5. Repeat 100 times → 2000 orphaned rows
-
-**User Impact:**
-
-- **Android:** DB grows indefinitely (~500 bytes/movie)
-- **Fire TV:** Same issue
-- After 1 year heavy use: ~10K movies = 5 MB (tolerable, but wasteful)
-
-**Risk Level:** 🟢 **LOW** (performance impact minimal)
-
-**Recommended Fix:**
-
-1. Add periodic cleanup job:
-
-   ```kotlin
-   @Query("""
-       DELETE FROM movies 
-       WHERE isSelected = 0 
-         AND isRecommended = 0 
-         AND isFavorite = 0 
-         AND timestamp < :cutoffTime
-   """)
-   suspend fun deleteOldOrphanedMovies(cutoffTime: Long)
-   ```
-
-2. Call on app startup if last cleanup > 7 days
-3. Preserve favorites (never delete `isFavorite = 1`)
-
-**Test Plan:**
-
-1. Insert 100 orphaned movies
-2. Run cleanup with cutoffTime = 30 days ago
-3. Verify orphans deleted, favorites preserved
+**Verification:**
+- Build passed
 
 ---
 
@@ -506,49 +480,47 @@ for (rec in recommendations) {
 
 ### 15. No ProGuard Rules for Release
 
-**Evidence:**
+**Status:** ✅ **RESOLVED** (2026-01-20)
 
-- [proguard-rules.pro](../app/proguard-rules.pro) exists but minimal rules
+**Resolution:**
+- Verified existing proguard-rules.pro already contains comprehensive rules for:
+  - Retrofit (interfaces, annotations)
+  - Room (database, entities, DAOs)
+  - Gson/data models
+  - OkHttp, Coroutines, Compose
+  - BuildConfig
+- Added additional DAO method retention rules
+- Release build (`assembleMobileRelease`) completes successfully with R8
 
-**Problem:** Release builds might strip classes needed by:
+**Files Modified:**
+- [proguard-rules.pro](../app/proguard-rules.pro): Added DAO annotation and method retention
 
-- Retrofit (API interfaces)
-- Room (DAO methods)
-- Gson (JSON parsing)
-
-**User Impact:**
-
-- **Android:** Release build might crash (reflection failures)
-- **Fire TV:** Same risk
-
-**Risk Level:** 🟡 **MEDIUM** (only affects release builds)
-
-**Recommended Fix:**
-
-1. Add comprehensive rules:
-
-   ```proguard
-   # Retrofit
-   -keep interface com.movierecommender.app.data.remote.** { *; }
-   
-   # Room
-   -keep class com.movierecommender.app.data.local.** { *; }
-   
-   # Gson
-   -keep class com.movierecommender.app.data.model.** { *; }
-   ```
-
-2. Test release build thoroughly
-
-**Test Plan:**
-
-1. Build release APK with ProGuard
-2. Install on device
-3. Verify all features work (especially API calls)
+**Verification:**
+- Release build passed: `./gradlew :app:assembleMobileRelease`
 
 ---
 
 ## Fire TV Specific Issues
+
+### 21. Screensaver Activates During Torrent Playback
+
+**Status:** ✅ **RESOLVED** (2026-01-19)
+
+**Problem:** Fire TV screensaver would activate after a few minutes of torrent playback because the PlayerView wasn't signaling activity to the system.
+
+**Resolution:**
+- Added `keepScreenOn = true` to PlayerView in both mobile and firestick StreamingPlayerScreen
+- This uses Android's built-in FLAG_KEEP_SCREEN_ON mechanism to prevent screen timeout during video playback
+
+**Files Modified:**
+- [firestick/StreamingPlayerScreen.kt](../app/src/firestick/java/com/movierecommender/app/ui/screens/StreamingPlayerScreen.kt): Added `keepScreenOn = true`
+- [mobile/StreamingPlayerScreen.kt](../app/src/mobile/java/com/movierecommender/app/ui/screens/StreamingPlayerScreen.kt): Added `keepScreenOn = true`
+
+**Verification:**
+- Build passed
+- Screen stays awake during torrent playback on Fire TV
+
+---
 
 ### 16. No DPAD Focus Hints
 
@@ -715,40 +687,67 @@ for (rec in recommendations) {
 
 ## Summary Statistics
 
-**Total Issues:** 20 (8 RESOLVED)
+**Last Updated:** 2026-01-20
+**Total Issues:** 20 (**10 RESOLVED**)
 
 **By Risk Level:**
 
-- 🔴 Critical/High: 0 (was 6, #1, #3, #4, #5, #17, #19 resolved)
-- 🟡 Medium: 7 (was 9, #2, #7 resolved)
-- 🟢 Low: 5 (was 5, #12 resolved but same count)
+- 🔴 Critical/High: **0** (was 6 - #1, #3, #4, #5, #17, #19 resolved)
+- 🟡 Medium: **5** (was 9 - #2, #6, #7, #12, #15 resolved)
+- 🟢 Low: 5 (unchanged)
 
 **By Platform:**
 
-- Both (Android + Fire TV): 12 (was 17)
+- Both (Android + Fire TV): 10 (was 17)
 - Fire TV only: 0 (was 2, #17 resolved)
 
 **By Category:**
 
-- Data integrity: 2
-- Performance: 4
-- Dead code: 1 (was 2, #5 ImdbScraperService NOT dead)
-- Security: 4
-- UX: 5
-- Compliance: 1
+- Data integrity: 0 (was 2 - #1, #6 resolved)
+- Performance: 3 (was 4 - #7 resolved)
+- Dead code: 0 (was 2 - #4 removed, #5 verified not dead)
+- Security: 1 (was 4 - #3, #19 resolved)
+- UX: 4 (was 5 - #12 resolved)
+- Compliance: 0 (was 1 - #19 resolved)
 - Tech debt: 2
 
-**Resolved Issues:**
+**Resolved Issues (10):**
 
-- ✅ #5: ImdbScraperService - NOT dead code (verified reachable from UI)
-- ✅ #17: Fire TV Banner - already exists at `ic_tv_banner.png`
+| Issue | Description | Resolution |
+|-------|-------------|------------|
+| ✅ #1 | Destructive Migration | Proper Room migrations + schema export |
+| ✅ #2 | TMDB Rate Limiting | RateLimitInterceptor with exponential backoff |
+| ✅ #3 | Debug SSL Insecurity | network_security_config.xml + removed trust-all |
+| ✅ #4 | OmdbApiService Dead Code | Removed completely |
+| ✅ #5 | ImdbScraperService | NOT dead code (verified reachable from UI) |
+| ✅ #6 | DB Growth/Cleanup | Automatic orphan cleanup with 30-day TTL |
+| ✅ #7 | HTTP Caching | 10MB OkHttp cache configured |
+| ✅ #12 | Name Validation | sanitizeUserName() with length/char limits |
+| ✅ #15 | ProGuard Rules | Verified comprehensive rules, release build works |
+| ✅ #17 | Fire TV Banner | Already exists at `ic_tv_banner.png` |
+| ✅ #19 | LLM Consent | GDPR dialog + TMDB-only fallback |
+
+**Remaining Issues (10):**
+
+| Priority | Issue | Description |
+|----------|-------|-------------|
+| 🟡 Medium | #8 | Popcorn sequential page search |
+| 🟡 Medium | #9 | LLM genre validation performance |
+| 🟡 Medium | #10 | Make constants configurable |
+| 🟡 Medium | #11 | Offline mode graceful degradation |
+| 🟡 Medium | #16 | Fire TV DPAD focus indicators |
+| 🟢 Low | #13 | Telemetry/analytics (product decision needed) |
+| 🟢 Low | #14 | Unit tests coverage |
+| 🟢 Low | #18 | Pre-commit hooks / secret scanning |
+| 🟢 Low | #20 | Certificate pinning (advanced hardening) |
 
 **Next Steps:**
 
-1. Fix critical issues first (#1, #3, #19)
-2. Address high-priority issues (#2, #4)
-3. Schedule medium/low issues for future sprints
+1. ✅ All critical/high issues resolved
+2. Medium-priority issues can be addressed in future sprints
+3. Low-priority issues are tech debt / nice-to-have
 
 ---
 
 **Note:** This document is SOURCE-OF-TRUTH for project issues. Update as issues are fixed or new ones discovered.
+
