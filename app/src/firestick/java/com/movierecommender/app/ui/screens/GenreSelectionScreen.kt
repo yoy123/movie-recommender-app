@@ -27,6 +27,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.movierecommender.app.data.model.Movie
+import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
 
 @Composable
@@ -55,90 +57,202 @@ fun GenreSelectionScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showSettingsDialog by remember { mutableStateOf(false) }
     
+    // Determine which tab is selected based on content mode
+    val selectedTabIndex = when (uiState.contentMode) {
+        ContentMode.MOVIES -> 0
+        ContentMode.TV_SHOWS -> 1
+    }
+    
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { 
-                    Text(
-                        "Select a Genre",
-                        modifier = Modifier.padding(start = 32.dp)
-                    ) 
-                },
-                actions = {
-                    if (uiState.selectedMovies.isNotEmpty()) {
-                        // Clear selections button with focus indicator
-                        val clearInteraction = remember { MutableInteractionSource() }
-                        val clearFocused by clearInteraction.collectIsFocusedAsState()
+            Column {
+                TopAppBar(
+                    title = { 
+                        Text(
+                            if (uiState.contentMode == ContentMode.MOVIES) "Movie Genres" 
+                            else "TV Show Genres",
+                            modifier = Modifier.padding(start = 32.dp)
+                        ) 
+                    },
+                    actions = {
+                        if (uiState.selectedMovies.isNotEmpty()) {
+                            // Clear selections button with focus indicator
+                            val clearInteraction = remember { MutableInteractionSource() }
+                            val clearFocused by clearInteraction.collectIsFocusedAsState()
+                            
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(end = 4.dp)
+                            ) {
+                                Surface(
+                                    shape = MaterialTheme.shapes.small,
+                                    color = if (clearFocused) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+                                    border = if (clearFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
+                                ) {
+                                    IconButton(
+                                        onClick = { viewModel.clearSelections() },
+                                        interactionSource = clearInteraction
+                                    ) {
+                                        Icon(
+                                            Icons.Default.DeleteSweep,
+                                            contentDescription = "Clear selections",
+                                            tint = if (clearFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.size(if (clearFocused) 32.dp else 24.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "clear selections",
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontSize = 8.sp,
+                                    modifier = Modifier.offset(y = (-8).dp)
+                                )
+                            }
+                        }
                         
+                        val settingsInteraction = remember { MutableInteractionSource() }
+                        val settingsFocused by settingsInteraction.collectIsFocusedAsState()
+
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(end = 4.dp)
+                            modifier = Modifier.padding(end = 32.dp)
                         ) {
                             Surface(
+                                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
                                 shape = MaterialTheme.shapes.small,
-                                color = if (clearFocused) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
-                                border = if (clearFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
+                                color = if (settingsFocused) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+                                border = if (settingsFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
                             ) {
                                 IconButton(
-                                    onClick = { viewModel.clearSelections() },
-                                    interactionSource = clearInteraction
+                                    onClick = { showSettingsDialog = true },
+                                    interactionSource = settingsInteraction
                                 ) {
                                     Icon(
-                                        Icons.Default.DeleteSweep,
-                                        contentDescription = "Clear selections",
-                                        tint = if (clearFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
-                                        modifier = Modifier.size(if (clearFocused) 32.dp else 24.dp)
+                                        Icons.Default.Settings,
+                                        contentDescription = "Settings",
+                                        tint = if (settingsFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(if (settingsFocused) 32.dp else 24.dp)
                                     )
                                 }
                             }
+
                             Text(
-                                text = "clear selections",
+                                text = "settings",
                                 color = MaterialTheme.colorScheme.onPrimary,
                                 fontSize = 8.sp,
                                 modifier = Modifier.offset(y = (-8).dp)
                             )
                         }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+                
+                // Movies / TV Tabs with D-pad focus support
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .padding(horizontal = 32.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Movies Tab
+                    val moviesInteraction = remember { MutableInteractionSource() }
+                    val moviesFocused by moviesInteraction.collectIsFocusedAsState()
+                    
+                    Surface(
+                        onClick = { viewModel.setContentMode(ContentMode.MOVIES) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusable(interactionSource = moviesInteraction),
+                        shape = MaterialTheme.shapes.medium,
+                        color = if (selectedTabIndex == 0) 
+                            MaterialTheme.colorScheme.primary 
+                        else if (moviesFocused) 
+                            MaterialTheme.colorScheme.secondaryContainer
+                        else 
+                            MaterialTheme.colorScheme.surface,
+                        border = if (moviesFocused) 
+                            BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimaryContainer) 
+                        else null,
+                        tonalElevation = if (moviesFocused) 8.dp else 0.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Movie,
+                                contentDescription = "Movies",
+                                modifier = Modifier.size(if (moviesFocused) 28.dp else 24.dp),
+                                tint = if (selectedTabIndex == 0) 
+                                    MaterialTheme.colorScheme.onPrimary 
+                                else 
+                                    MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Movies",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = if (selectedTabIndex == 0) 
+                                    MaterialTheme.colorScheme.onPrimary 
+                                else 
+                                    MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                     
-                    val settingsInteraction = remember { MutableInteractionSource() }
-                    val settingsFocused by settingsInteraction.collectIsFocusedAsState()
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(end = 32.dp)
+                    // TV Shows Tab
+                    val tvInteraction = remember { MutableInteractionSource() }
+                    val tvFocused by tvInteraction.collectIsFocusedAsState()
+                    
+                    Surface(
+                        onClick = { viewModel.setContentMode(ContentMode.TV_SHOWS) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusable(interactionSource = tvInteraction),
+                        shape = MaterialTheme.shapes.medium,
+                        color = if (selectedTabIndex == 1) 
+                            MaterialTheme.colorScheme.primary 
+                        else if (tvFocused) 
+                            MaterialTheme.colorScheme.secondaryContainer
+                        else 
+                            MaterialTheme.colorScheme.surface,
+                        border = if (tvFocused) 
+                            BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimaryContainer) 
+                        else null,
+                        tonalElevation = if (tvFocused) 8.dp else 0.dp
                     ) {
-                        Surface(
-                            modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
-                            shape = MaterialTheme.shapes.small,
-                            color = if (settingsFocused) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
-                            border = if (settingsFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
+                        Row(
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            IconButton(
-                                onClick = { showSettingsDialog = true },
-                                interactionSource = settingsInteraction
-                            ) {
-                                Icon(
-                                    Icons.Default.Settings,
-                                    contentDescription = "Settings",
-                                    tint = if (settingsFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(if (settingsFocused) 32.dp else 24.dp)
-                                )
-                            }
+                            Icon(
+                                Icons.Default.Tv,
+                                contentDescription = "TV Shows",
+                                modifier = Modifier.size(if (tvFocused) 28.dp else 24.dp),
+                                tint = if (selectedTabIndex == 1) 
+                                    MaterialTheme.colorScheme.onPrimary 
+                                else 
+                                    MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "TV Shows",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = if (selectedTabIndex == 1) 
+                                    MaterialTheme.colorScheme.onPrimary 
+                                else 
+                                    MaterialTheme.colorScheme.onSurface
+                            )
                         }
-
-                        Text(
-                            text = "settings",
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontSize = 8.sp,
-                            modifier = Modifier.offset(y = (-8).dp)
-                        )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
+                }
+            }
         }
     ) { paddingValues ->
         Box(
@@ -146,6 +260,12 @@ fun GenreSelectionScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            // Get the current genres list based on content mode
+            val currentGenres = when (uiState.contentMode) {
+                ContentMode.MOVIES -> uiState.genres
+                ContentMode.TV_SHOWS -> uiState.tvGenres
+            }
+            
             when {
                 uiState.isLoading -> {
                     CircularProgressIndicator(
@@ -165,12 +285,17 @@ fun GenreSelectionScreen(
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        Button(onClick = { viewModel.loadGenres() }) {
+                        Button(onClick = { 
+                            when (uiState.contentMode) {
+                                ContentMode.MOVIES -> viewModel.loadGenres()
+                                ContentMode.TV_SHOWS -> viewModel.loadTvGenres()
+                            }
+                        }) {
                             Text("Retry")
                         }
                     }
                 }
-                uiState.genres.isEmpty() -> {
+                currentGenres.isEmpty() -> {
                     Text(
                         text = "No genres available",
                         modifier = Modifier.align(Alignment.Center)
@@ -188,23 +313,26 @@ fun GenreSelectionScreen(
                         horizontalArrangement = Arrangement.spacedBy(24.dp),
                         verticalArrangement = Arrangement.spacedBy(20.dp)
                     ) {
-                        // Add Dee's Favorites as first item
-                        item {
-                            GenreCard(
-                                name = "${uiState.userName}'s Favorites",
-                                icon = Icons.Default.Favorite,
-                                onClick = {
-                                    viewModel.selectGenre(-1, "${uiState.userName}'s Favorites")
-                                    onGenreSelected()
-                                }
-                            )
+                        // Add Favorites as first item (Movies only for now)
+                        if (uiState.contentMode == ContentMode.MOVIES) {
+                            item {
+                                GenreCard(
+                                    name = "${uiState.userName}'s Favorites",
+                                    icon = Icons.Default.Favorite,
+                                    onClick = {
+                                        viewModel.selectGenre(-1, "${uiState.userName}'s Favorites")
+                                        onGenreSelected()
+                                    }
+                                )
+                            }
                         }
                         
-                        // Regular genres
-                        items(uiState.genres) { genre ->
+                        // Genre cards
+                        items(currentGenres) { genre ->
                             GenreCard(
                                 name = genre.name,
-                                icon = Icons.Default.Movie,
+                                icon = if (uiState.contentMode == ContentMode.MOVIES) 
+                                    Icons.Default.Movie else Icons.Default.Tv,
                                 onClick = {
                                     viewModel.selectGenre(genre.id, genre.name)
                                     onGenreSelected()

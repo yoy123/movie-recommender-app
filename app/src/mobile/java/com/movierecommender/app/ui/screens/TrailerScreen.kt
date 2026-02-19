@@ -109,6 +109,11 @@ fun TrailerScreen(
         return
     }
 
+    // Check if this is a YouTube video key (prefixed with "youtube:")
+    val isYouTubeKey = videoUrl.startsWith("youtube:")
+    val youtubeVideoId = if (isYouTubeKey) videoUrl.removePrefix("youtube:") else null
+    val actualVideoUrl = if (isYouTubeKey) "https://www.youtube.com/watch?v=$youtubeVideoId" else videoUrl
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -193,40 +198,47 @@ fun TrailerScreen(
                         setBackgroundColor(Color.Black.toArgb())
                         isVerticalScrollBarEnabled = false
                         isHorizontalScrollBarEnabled = false
-                        // Load video URL wrapped in HTML5 video player
-                        val htmlContent = """
-                            <!DOCTYPE html>
-                            <html>
-                            <head>
-                                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                                <style>
-                                    body {
-                                        margin: 0;
-                                        padding: 0;
-                                        background-color: black;
-                                        display: flex;
-                                        justify-content: center;
-                                        align-items: center;
-                                        height: 100vh;
-                                    }
-                                    video {
-                                        width: 100%;
-                                        height: 100%;
-                                        max-width: 100vw;
-                                        max-height: 100vh;
-                                        object-fit: contain;
-                                    }
-                                </style>
-                            </head>
-                            <body>
-                                <video controls autoplay playsinline>
-                                    <source src="$videoUrl" type="video/mp4">
-                                    Your browser does not support the video tag.
-                                </video>
-                            </body>
-                            </html>
-                        """.trimIndent()
-                        loadDataWithBaseURL(null, htmlContent, "text/html", "UTF-8", null)
+                        
+                        // For YouTube, load the full watch page directly
+                        // This avoids embedding restrictions
+                        if (isYouTubeKey) {
+                            loadUrl(actualVideoUrl)
+                        } else {
+                            // Load direct video URL wrapped in HTML5 video player
+                            val htmlContent = """
+                                <!DOCTYPE html>
+                                <html>
+                                <head>
+                                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                                    <style>
+                                        body {
+                                            margin: 0;
+                                            padding: 0;
+                                            background-color: black;
+                                            display: flex;
+                                            justify-content: center;
+                                            align-items: center;
+                                            height: 100vh;
+                                        }
+                                        video {
+                                            width: 100%;
+                                            height: 100%;
+                                            max-width: 100vw;
+                                            max-height: 100vh;
+                                            object-fit: contain;
+                                        }
+                                    </style>
+                                </head>
+                                <body>
+                                    <video controls autoplay playsinline>
+                                        <source src="$videoUrl" type="video/mp4">
+                                        Your browser does not support the video tag.
+                                    </video>
+                                </body>
+                                </html>
+                            """.trimIndent()
+                            loadDataWithBaseURL(null, htmlContent, "text/html", "UTF-8", null)
+                        }
                     }
                 },
                 modifier = Modifier.matchParentSize(),

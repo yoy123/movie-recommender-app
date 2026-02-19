@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import android.os.StatFs
 import java.io.File
 
 /**
@@ -34,8 +35,43 @@ class TorrentStreamService : Service(), TorrentListener {
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "torrent_streaming"
         private const val NOTIFICATION_ID = 9001
-        private const val MAX_CACHE_SIZE_MB = 500 // Maximum cache size in MB
         private const val ACTION_CLEAR_CACHE = "com.movierecommender.app.torrent.CLEAR_CACHE"
+        
+        // Dynamic cache size constants
+        private const val MIN_CACHE_SIZE_MB = 100  // Minimum cache to ensure streaming works
+        private const val FREE_SPACE_PERCENTAGE = 0.75 // Use 75% of available free space
+        private const val RESERVED_SPACE_MB = 500 // Always leave at least 500MB free on device
+        
+        /**
+         * Calculate optimal cache size based on available free space.
+         * Uses 50% of free space with a minimum of MIN_CACHE_SIZE_MB.
+         * Also ensures at least RESERVED_SPACE_MB remains free on the device.
+         */
+        fun calculateDynamicCacheSize(cacheDir: File): Int {
+            return try {
+                val statFs = StatFs(cacheDir.absolutePath)
+                val freeSpaceMB = statFs.availableBytes / (1024 * 1024)
+                
+                // Calculate usable space (free space minus reserved)
+                val usableSpaceMB = (freeSpaceMB - RESERVED_SPACE_MB).coerceAtLeast(0)
+                
+                // Take percentage of usable space
+                val calculatedSizeMB = (usableSpaceMB * FREE_SPACE_PERCENTAGE).toInt()
+                
+                // Ensure minimum size
+                val finalSize = calculatedSizeMB.coerceAtLeast(MIN_CACHE_SIZE_MB)
+                
+                android.util.Log.d("TorrentStreamService", 
+                    "Dynamic cache: freeSpace=${freeSpaceMB}MB, usable=${usableSpaceMB}MB, " +
+                    "calculated=${calculatedSizeMB}MB, final=${finalSize}MB")
+                
+                finalSize
+            } catch (e: Exception) {
+                android.util.Log.w("TorrentStreamService", 
+                    "Failed to calculate dynamic cache size, using default", e)
+                MIN_CACHE_SIZE_MB // Safe fallback
+            }
+        }
         
         fun getIntent(context: Context): Intent {
             return Intent(context, TorrentStreamService::class.java)
@@ -60,6 +96,7 @@ class TorrentStreamService : Service(), TorrentListener {
     private var lastCacheCheckMs = 0L
     private var lastNotificationMs = 0L
     private var lastCleanupMs = 0L
+    private var dynamicMaxCacheSizeMB: Int = MIN_CACHE_SIZE_MB // Recalculated on init
     
     private val _streamState = MutableStateFlow<TorrentStreamState>(TorrentStreamState.Idle)
     val streamState: StateFlow<TorrentStreamState> = _streamState.asStateFlow()
@@ -145,6 +182,7 @@ class TorrentStreamService : Service(), TorrentListener {
     /**
      * Monitor cache size and manage disk space.
      * Pauses downloading if cache is full, resumes when space is available.
+     * Uses dynamically calculated cache limit based on available free space.
      */
     private fun manageCacheSize() {
         val now = System.currentTimeMillis()
@@ -154,8 +192,8 @@ class TorrentStreamService : Service(), TorrentListener {
             val cacheSizeMB = getCacheSizeInMB(dir)
             _cacheUsageMB.value = cacheSizeMB
             
-            // If cache is over limit, clean old chunks more aggressively
-            if (cacheSizeMB > MAX_CACHE_SIZE_MB) {
+            // If cache is over dynamic limit, clean old chunks more aggressively
+            if (cacheSizeMB > dynamicMaxCacheSizeMB) {
                 pauseDownloadIfPossible()
                 cleanupOldChunks(aggressive = true)
             } else if (isDownloadPaused) {
@@ -203,7 +241,7 @@ class TorrentStreamService : Service(), TorrentListener {
 
     private fun maybeResumeDownload() {
         val cacheSizeMB = cacheDir?.let { getCacheSizeInMB(it) } ?: return
-        if (cacheSizeMB <= MAX_CACHE_SIZE_MB) {
+        if (cacheSizeMB <= dynamicMaxCacheSizeMB) {
             resumeDownloadInternal()
         }
     }
@@ -299,6 +337,10 @@ class TorrentStreamService : Service(), TorrentListener {
             saveLocation.mkdirs()
         }
         
+        // Calculate dynamic cache size based on available free space
+        dynamicMaxCacheSizeMB = calculateDynamicCacheSize(saveLocation)
+        android.util.Log.i("TorrentStreamService", "Torrent cache size set to ${dynamicMaxCacheSizeMB}MB")
+        
         val options = TorrentOptions.Builder()
             .saveLocation(saveLocation)
             .removeFilesAfterStop(false) // Keep files for intelligent cache management
@@ -313,6 +355,7 @@ class TorrentStreamService : Service(), TorrentListener {
     
     /**
      * Start streaming a torrent from a magnet URL.
+     * If switching to a different movie, clears the previous cache first.
      */
     fun startStream(magnetUrl: String) {
         android.util.Log.d("TorrentStreamService", "Starting stream: $magnetUrl")
@@ -322,7 +365,10 @@ class TorrentStreamService : Service(), TorrentListener {
         }
 
         if (currentMagnetUrl != null && currentMagnetUrl != magnetUrl) {
+            // Switching to a different movie - clear cache from previous movie
+            android.util.Log.d("TorrentStreamService", "Switching movies - clearing previous cache")
             stopStream()
+            clearCacheDirectory()
         }
 
         currentMagnetUrl = magnetUrl

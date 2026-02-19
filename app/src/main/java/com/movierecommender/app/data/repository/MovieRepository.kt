@@ -6,17 +6,30 @@ import com.movierecommender.app.data.model.Genre
 import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.MovieDetails
 import com.movierecommender.app.data.model.MovieResponse
+import com.movierecommender.app.data.model.TvShow
+import com.movierecommender.app.data.model.TvShowResponse
 import com.movierecommender.app.data.remote.TmdbApiService
 import com.movierecommender.app.data.remote.ImdbScraperService
 import com.movierecommender.app.data.remote.PopcornApiService
+import com.movierecommender.app.data.remote.PopcornTvApiService
 import com.movierecommender.app.data.remote.YtsApiService
+import com.movierecommender.app.data.remote.EztvApiService
+import com.movierecommender.app.data.remote.PirateBayApiService
+import com.movierecommender.app.data.remote.TorrentGalaxyService
+import com.movierecommender.app.data.remote.LeetxService
 import com.movierecommender.app.data.remote.TorrentInfo
+import com.movierecommender.app.data.remote.EpisodeTorrentInfo
+import com.movierecommender.app.data.remote.PopcornTvShowDetails
+import com.movierecommender.app.data.remote.PopcornEpisode
+import com.movierecommender.app.data.remote.PopcornEpisodeTorrent
 import com.movierecommender.app.data.model.Video
 import com.movierecommender.app.data.remote.LlmRecommendationService
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
 import kotlin.math.abs
@@ -31,9 +44,14 @@ class MovieRepository(
     private val movieDao: MovieDao,
     private val apiService: TmdbApiService,
     private val llmService: LlmRecommendationService = LlmRecommendationService(),
-    private val imdbScraper: ImdbScraperService = ImdbScraperService.create(),
+    private val imdbScraper: ImdbScraperService = ImdbScraperService(),
     private val popcornApi: PopcornApiService = PopcornApiService(),
-    private val ytsApi: YtsApiService = YtsApiService()
+    private val popcornTvApi: PopcornTvApiService = PopcornTvApiService(),
+    private val ytsApi: YtsApiService = YtsApiService(),
+    private val eztvApi: EztvApiService = EztvApiService(),
+    private val pirateBayApi: PirateBayApiService = PirateBayApiService(),
+    private val torrentGalaxyApi: TorrentGalaxyService = TorrentGalaxyService(),
+    private val leetxApi: LeetxService = LeetxService()
 ) {
     
     // OpenAI API key from BuildConfig
@@ -105,6 +123,80 @@ class MovieRepository(
         emit(Resource.Loading())
         try {
             val response = apiService.searchMovies(query = query)
+            emit(Resource.Success(response.results))
+        } catch (e: Exception) {
+            emit(Resource.Error(e.localizedMessage ?: "An error occurred"))
+        }
+    }
+    
+    // ─────────────────────────────────────────────────────────────────────────────
+    // TV Shows API
+    // ─────────────────────────────────────────────────────────────────────────────
+    
+    suspend fun getTvGenres(): Flow<Resource<List<Genre>>> = flow {
+        emit(Resource.Loading())
+        try {
+            val response = apiService.getTvGenres()
+            emit(Resource.Success(response.genres))
+        } catch (e: Exception) {
+            emit(Resource.Error(e.localizedMessage ?: "An error occurred"))
+        }
+    }
+    
+    suspend fun getTvShowsByGenre(genreId: Int, page: Int = 1): Flow<Resource<List<TvShow>>> = flow {
+        emit(Resource.Loading())
+        try {
+            val response = apiService.getTvShowsByGenre(genreId = genreId, page = page)
+            emit(Resource.Success(response.results))
+        } catch (e: Exception) {
+            emit(Resource.Error(e.localizedMessage ?: "An error occurred"))
+        }
+    }
+    
+    /**
+     * Paged TV genre discovery. Returns paging metadata (page/totalPages) so UI can implement infinite scroll.
+     */
+    suspend fun getTvShowsByGenreResponse(genreId: Int, page: Int = 1): Flow<Resource<TvShowResponse>> = flow {
+        emit(Resource.Loading())
+        try {
+            val response = apiService.getTvShowsByGenre(genreId = genreId, page = page)
+            emit(Resource.Success(response))
+        } catch (e: Exception) {
+            emit(Resource.Error(e.localizedMessage ?: "An error occurred"))
+        }
+    }
+    
+    suspend fun searchTvShows(query: String): Flow<Resource<List<TvShow>>> = flow {
+        emit(Resource.Loading())
+        try {
+            val response = apiService.searchTvShows(query = query)
+            emit(Resource.Success(response.results))
+        } catch (e: Exception) {
+            emit(Resource.Error(e.localizedMessage ?: "An error occurred"))
+        }
+    }
+    
+    /**
+     * Get similar TV shows for a given series.
+     * Used for TV show recommendations.
+     */
+    suspend fun getSimilarTvShows(seriesId: Int): Flow<Resource<List<TvShow>>> = flow {
+        emit(Resource.Loading())
+        try {
+            val response = apiService.getSimilarTvShows(seriesId = seriesId)
+            emit(Resource.Success(response.results))
+        } catch (e: Exception) {
+            emit(Resource.Error(e.localizedMessage ?: "An error occurred"))
+        }
+    }
+    
+    /**
+     * Get TMDB recommendations for a TV show.
+     */
+    suspend fun getTvShowRecommendations(seriesId: Int): Flow<Resource<List<TvShow>>> = flow {
+        emit(Resource.Loading())
+        try {
+            val response = apiService.getTvShowRecommendations(seriesId = seriesId)
             emit(Resource.Success(response.results))
         } catch (e: Exception) {
             emit(Resource.Error(e.localizedMessage ?: "An error occurred"))
@@ -1020,6 +1112,10 @@ class MovieRepository(
         null
     }
 
+    /**
+     * Get direct video URL for a movie trailer.
+     * Uses IMDB scraping to get direct MP4 URLs that can be played in WebView or ExoPlayer.
+     */
     suspend fun getImdbTrailerUrl(movieId: Int): String? = withContext(Dispatchers.IO) {
         try {
             // Get movie details to retrieve IMDB ID
@@ -1045,16 +1141,223 @@ class MovieRepository(
     }
 
     suspend fun getImdbTrailerUrlByTitle(title: String, year: String?): String? = withContext(Dispatchers.IO) {
+        android.util.Log.d("MovieRepository", "=== getImdbTrailerUrlByTitle called: $title ($year) ===")
         try {
             // Search without year first for better results
             val search = apiService.searchMovies(query = title)
+            android.util.Log.d("MovieRepository", "TMDB search for '$title' returned ${search.results.size} results")
             val best = search.results.firstOrNull { m ->
                 val y = m.releaseDate?.take(4)
                 year == null || y == year
             } ?: search.results.firstOrNull()
+            if (best != null) {
+                android.util.Log.d("MovieRepository", "Best match: ${best.title} (id=${best.id})")
+            } else {
+                android.util.Log.w("MovieRepository", "No TMDB match found for '$title'")
+            }
             best?.id?.let { id -> getImdbTrailerUrl(id) }
         } catch (e: Exception) {
+            android.util.Log.e("MovieRepository", "Error in getImdbTrailerUrlByTitle: ${e.message}")
             e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * Get trailer URL for a TV show by title and year.
+     * Uses TMDB TV search to find the show, then fetches YouTube trailer from TMDB Videos API.
+     * Returns a "youtube:<key>" prefixed URL that TrailerScreen can render in WebView.
+     * Falls back to IMDB scraping if no YouTube trailer is found on TMDB.
+     */
+    suspend fun getTvShowTrailerUrlByTitle(title: String, year: String?): String? = withContext(Dispatchers.IO) {
+        android.util.Log.d("MovieRepository", "=== getTvShowTrailerUrlByTitle called: $title ($year) ===")
+        try {
+            // Search TMDB TV shows endpoint
+            val search = apiService.searchTvShows(query = title)
+            android.util.Log.d("MovieRepository", "TMDB TV search for '$title' returned ${search.results.size} results")
+            val best = search.results.firstOrNull { show ->
+                val y = show.firstAirDate?.take(4)
+                year == null || y == year
+            } ?: search.results.firstOrNull()
+
+            if (best == null) {
+                android.util.Log.w("MovieRepository", "No TMDB TV match found for '$title'")
+                return@withContext null
+            }
+            android.util.Log.d("MovieRepository", "Best TV match: ${best.name} (id=${best.id})")
+
+            // Try TMDB Videos API for YouTube trailers first
+            try {
+                val videos = apiService.getTvShowVideos(best.id)
+                val trailer = videos.results.firstOrNull { v ->
+                    v.site.equals("YouTube", ignoreCase = true) &&
+                    v.type.equals("Trailer", ignoreCase = true)
+                } ?: videos.results.firstOrNull { v ->
+                    v.site.equals("YouTube", ignoreCase = true) &&
+                    (v.type.equals("Teaser", ignoreCase = true) || v.type.equals("Opening Credits", ignoreCase = true))
+                } ?: videos.results.firstOrNull { v ->
+                    v.site.equals("YouTube", ignoreCase = true)
+                }
+
+                if (trailer != null) {
+                    val youtubeUrl = "youtube:${trailer.key}"
+                    android.util.Log.d("MovieRepository", "Found YouTube trailer for TV show: $youtubeUrl")
+                    return@withContext youtubeUrl
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("MovieRepository", "Failed to get TV show videos from TMDB: ${e.message}")
+            }
+
+            // Fallback: Try IMDB scraping via external IDs
+            try {
+                val externalIds = apiService.getTvShowExternalIds(best.id)
+                val imdbId = externalIds.imdbId
+                if (!imdbId.isNullOrBlank()) {
+                    val trailerUrl = imdbScraper.getTrailerUrl(imdbId)
+                    if (trailerUrl != null) {
+                        android.util.Log.d("MovieRepository", "Found IMDB trailer for TV show: $trailerUrl")
+                        return@withContext trailerUrl
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("MovieRepository", "IMDB fallback failed for TV show: ${e.message}")
+            }
+
+            android.util.Log.w("MovieRepository", "No trailer found for TV show: $title")
+            null
+        } catch (e: Exception) {
+            android.util.Log.e("MovieRepository", "Error in getTvShowTrailerUrlByTitle: ${e.message}")
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * Get torrent info for a TV show's first episode (S01E01) for quick "Watch Now" from recommendations.
+     * Searches Popcorn TV API for the show, gets details, and returns best torrent for S01E01.
+     * Falls back to EZTV API if Popcorn TV doesn't have the show.
+     */
+    suspend fun getTvShowFirstEpisodeTorrent(title: String, year: String?): EpisodeTorrentInfo? = withContext(Dispatchers.IO) {
+        android.util.Log.d("MovieRepository", "Searching TV show torrent for quick play: $title ($year)")
+        var resolvedImdbId: String? = null
+        try {
+            // Search for the show on Popcorn TV
+            val show = popcornTvApi.searchShow(title, year)
+            if (show == null) {
+                android.util.Log.w("MovieRepository", "TV show not found on Popcorn API: $title")
+                // Fallback: try keyword search
+                val keywordResults = popcornTvApi.searchShowsByKeywords(title)
+                val keywordMatch = keywordResults?.firstOrNull()
+                if (keywordMatch?.imdbId != null) {
+                    resolvedImdbId = keywordMatch.imdbId
+                    val details = popcornTvApi.getShowDetails(keywordMatch.imdbId)
+                    if (details != null) {
+                        val result = findBestFirstEpisode(details)
+                        if (result != null) return@withContext result
+                    }
+                }
+                // Popcorn failed — fall through to EZTV
+            } else {
+                val imdbId = show.imdbId
+                if (imdbId != null) {
+                    resolvedImdbId = imdbId
+                    val details = popcornTvApi.getShowDetails(imdbId)
+                    if (details != null) {
+                        val result = findBestFirstEpisode(details)
+                        if (result != null) return@withContext result
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MovieRepository", "Popcorn TV search failed: ${e.message}")
+        }
+
+        // EZTV fallback
+        android.util.Log.d("MovieRepository", "Trying EZTV fallback for: $title")
+        try {
+            // Resolve IMDB ID via TMDB if we don't have one yet
+            val imdbId = resolvedImdbId ?: resolveImdbIdForTvShow(title, year)
+            if (imdbId != null) {
+                val result = eztvApi.getFirstEpisodeTorrent(imdbId, showTitle = title)
+                if (result != null) {
+                    android.util.Log.d("MovieRepository", "EZTV found torrent for $title: S${result.season}E${result.episode}")
+                    return@withContext result
+                }
+            }
+            android.util.Log.w("MovieRepository", "EZTV also failed for: $title")
+        } catch (e: Exception) {
+            android.util.Log.e("MovieRepository", "EZTV fallback failed: ${e.message}")
+        }
+
+        null
+    }
+
+    /**
+     * Find the best available first episode torrent from show details.
+     * Tries S01E01 first, then falls back to any available episode.
+     */
+    private fun findBestFirstEpisode(details: PopcornTvShowDetails): EpisodeTorrentInfo? {
+        // Try S01E01 first
+        var torrent = popcornTvApi.getEpisodeTorrent(details, 1, 1, "720p")
+        if (torrent != null) {
+            android.util.Log.d("MovieRepository", "Found S01E01 torrent: ${torrent.quality} with ${torrent.seeds} seeds")
+            return torrent
+        }
+
+        // Fallback: find any available episode with torrents
+        val seasons = popcornTvApi.getSeasons(details)
+        for (season in seasons) {
+            val episodes = popcornTvApi.getEpisodesForSeason(details, season)
+            for (episode in episodes) {
+                val epNum = episode.episode ?: continue
+                torrent = popcornTvApi.getEpisodeTorrent(details, season, epNum, "720p")
+                if (torrent != null) {
+                    android.util.Log.d("MovieRepository", "Found S${season}E${epNum} torrent: ${torrent.quality} with ${torrent.seeds} seeds")
+                    return torrent
+                }
+            }
+        }
+
+        android.util.Log.w("MovieRepository", "No episodes with torrents found for: ${details.title}")
+        return null
+    }
+
+    /**
+     * Resolve IMDB ID for a TV show via TMDB search + external IDs.
+     * Used when Popcorn TV API doesn't return an IMDB ID.
+     * Also tries Popcorn TV API search first for faster resolution.
+     */
+    suspend fun resolveImdbIdForTvShow(title: String, year: String? = null): String? = withContext(Dispatchers.IO) {
+        // Try Popcorn TV API first (faster, no extra API call)
+        try {
+            val popcornResult = popcornTvApi.searchShow(title, year)
+            if (popcornResult?.imdbId != null) {
+                android.util.Log.d("MovieRepository", "Resolved IMDB ID for '$title' via Popcorn: ${popcornResult.imdbId}")
+                return@withContext popcornResult.imdbId
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MovieRepository", "Popcorn IMDB resolve failed for '$title': ${e.message}")
+        }
+
+        // Fallback: TMDB search + external IDs
+        try {
+            val search = apiService.searchTvShows(query = title)
+            val best = search.results.firstOrNull { show ->
+                val y = show.firstAirDate?.take(4)
+                year == null || y == year
+            } ?: search.results.firstOrNull()
+
+            if (best != null) {
+                val externalIds = apiService.getTvShowExternalIds(best.id)
+                externalIds.imdbId.also { id ->
+                    android.util.Log.d("MovieRepository", "Resolved IMDB ID for '$title' via TMDB: $id")
+                }
+            } else {
+                android.util.Log.w("MovieRepository", "No TMDB match for TV show: $title")
+                null
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MovieRepository", "Failed to resolve IMDB ID for '$title': ${e.message}")
             null
         }
     }
@@ -1128,9 +1431,278 @@ class MovieRepository(
         } catch (e: Exception) {
             android.util.Log.w("MovieRepository", "Popcorn API search failed: ${e.message}")
         }
-        
+
+        // Fallback to PirateBay
+        try {
+            val pirateBayTorrent = pirateBayApi.searchMovie(title, year)
+            if (pirateBayTorrent != null) {
+                android.util.Log.d("MovieRepository", "Found PirateBay torrent: ${pirateBayTorrent.quality} (${pirateBayTorrent.size}) with ${pirateBayTorrent.seeds} seeds")
+                return@withContext pirateBayTorrent
+            }
+            android.util.Log.d("MovieRepository", "No PirateBay torrent found, trying TorrentGalaxy...")
+        } catch (e: Exception) {
+            android.util.Log.w("MovieRepository", "PirateBay search failed: ${e.message}")
+        }
+
+        // Fallback to TorrentGalaxy
+        try {
+            val tgxTorrent = torrentGalaxyApi.searchMovie(title, year)
+            if (tgxTorrent != null) {
+                android.util.Log.d("MovieRepository", "Found TorrentGalaxy torrent: ${tgxTorrent.quality} (${tgxTorrent.size}) with ${tgxTorrent.seeds} seeds")
+                return@withContext tgxTorrent
+            }
+            android.util.Log.d("MovieRepository", "No TorrentGalaxy torrent found, trying 1337x...")
+        } catch (e: Exception) {
+            android.util.Log.w("MovieRepository", "TorrentGalaxy search failed: ${e.message}")
+        }
+
+        // Fallback to 1337x
+        try {
+            val leetxTorrent = leetxApi.searchMovie(title, year)
+            if (leetxTorrent != null) {
+                android.util.Log.d("MovieRepository", "Found 1337x torrent: ${leetxTorrent.quality} (${leetxTorrent.size}) with ${leetxTorrent.seeds} seeds")
+                return@withContext leetxTorrent
+            }
+            android.util.Log.d("MovieRepository", "No 1337x torrent found")
+        } catch (e: Exception) {
+            android.util.Log.w("MovieRepository", "1337x search failed: ${e.message}")
+        }
+
         android.util.Log.w("MovieRepository", "No torrent source found for: $title")
         null
+    }
+    
+    /**
+     * Get TV show details from Popcorn Time API by IMDB ID.
+     * Returns show with all episodes and their torrent links.
+     */
+    suspend fun getTvShowTorrentDetails(imdbId: String) = popcornTvApi.getShowDetails(imdbId)
+    
+    /**
+     * Search for a TV show on Popcorn Time API by title.
+     * Returns basic show info that can be used to get full details.
+     */
+    suspend fun searchTvShowTorrent(title: String, year: String? = null) = popcornTvApi.searchShow(title, year)
+    
+    /**
+     * Get torrent info for a specific TV show episode.
+     * Tries Popcorn TV API first, falls back to EZTV.
+     * @param showTitle The title of the TV show (used to search if imdbId not provided)
+     * @param imdbId Optional IMDB ID for direct lookup
+     * @param season Season number
+     * @param episode Episode number
+     * @param preferredQuality Preferred quality (720p, 1080p, 480p)
+     */
+    suspend fun getTvEpisodeTorrentInfo(
+        showTitle: String,
+        imdbId: String? = null,
+        season: Int,
+        episode: Int,
+        preferredQuality: String = "720p"
+    ): EpisodeTorrentInfo? = withContext(Dispatchers.IO) {
+        android.util.Log.d("MovieRepository", "Searching TV torrent for: $showTitle S${season}E${episode}")
+
+        // Resolve IMDB ID upfront (needed by both APIs)
+        val resolvedImdbId = imdbId
+            ?: popcornTvApi.searchShow(showTitle)?.imdbId
+            ?: resolveImdbIdForTvShow(showTitle, null)
+
+        // Query both APIs in parallel and pick the best result
+        coroutineScope {
+            val popcornJob = async {
+                try {
+                    val showDetails = if (resolvedImdbId != null) {
+                        popcornTvApi.getShowDetails(resolvedImdbId)
+                    } else null
+
+                    if (showDetails != null) {
+                        val torrent = popcornTvApi.getEpisodeTorrent(showDetails, season, episode, preferredQuality)
+                        if (torrent != null) {
+                            android.util.Log.d("MovieRepository", "Found Popcorn TV torrent: ${torrent.quality} with ${torrent.seeds} seeds")
+                        }
+                        torrent
+                    } else null
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "Popcorn TV episode lookup failed: ${e.message}")
+                    null
+                }
+            }
+
+            val eztvJob = async {
+                try {
+                    val eztvImdbId = resolvedImdbId
+                    if (eztvImdbId != null) {
+                        val torrent = eztvApi.getEpisodeTorrent(eztvImdbId, season, episode, preferredQuality, showTitle)
+                        if (torrent != null) {
+                            android.util.Log.d("MovieRepository", "Found EZTV torrent: ${torrent.quality} with ${torrent.seeds} seeds")
+                        }
+                        torrent
+                    } else null
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "EZTV episode lookup failed: ${e.message}")
+                    null
+                }
+            }
+
+            val popcornResult = popcornJob.await()
+            val eztvResult = eztvJob.await()
+
+            // Pick the best torrent (most seeds)
+            val best = listOfNotNull(popcornResult, eztvResult).maxByOrNull { it.seeds }
+            if (best != null) {
+                android.util.Log.d("MovieRepository", "Best torrent for $showTitle S${season}E${episode}: ${best.provider} ${best.quality} (${best.seeds} seeds)")
+            } else {
+                android.util.Log.w("MovieRepository", "No torrent found for $showTitle S${season}E${episode}")
+            }
+            best
+        }
+    }
+    
+    /**
+     * Get available seasons for a TV show.
+     * Aggregates from ALL torrent APIs (Popcorn TV + EZTV) and merges/deduplicates.
+     */
+    suspend fun getTvShowSeasons(imdbId: String): List<Int> = withContext(Dispatchers.IO) {
+        val allSeasons = mutableSetOf<Int>()
+
+        // Query both APIs in parallel
+        coroutineScope {
+            val popcornJob = async {
+                try {
+                    val showDetails = popcornTvApi.getShowDetails(imdbId)
+                    if (showDetails != null) {
+                        val seasons = popcornTvApi.getSeasons(showDetails)
+                        android.util.Log.d("MovieRepository", "Popcorn TV seasons for $imdbId: $seasons")
+                        seasons
+                    } else emptyList()
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "Popcorn TV seasons lookup failed: ${e.message}")
+                    emptyList()
+                }
+            }
+
+            val eztvJob = async {
+                try {
+                    val seasons = eztvApi.getSeasons(imdbId)
+                    android.util.Log.d("MovieRepository", "EZTV seasons for $imdbId: $seasons")
+                    seasons
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "EZTV seasons lookup failed: ${e.message}")
+                    emptyList()
+                }
+            }
+
+            allSeasons.addAll(popcornJob.await())
+            allSeasons.addAll(eztvJob.await())
+        }
+
+        android.util.Log.d("MovieRepository", "Aggregated seasons for $imdbId: ${allSeasons.sorted()}")
+        allSeasons.sorted()
+    }
+    
+    /**
+     * Get episodes for a specific season of a TV show.
+     * Aggregates from ALL torrent APIs (Popcorn TV + EZTV) and merges by episode number.
+     * Episodes found in multiple sources get combined torrent info.
+     */
+    suspend fun getTvShowEpisodes(imdbId: String, season: Int): List<PopcornEpisode> = withContext(Dispatchers.IO) {
+        // Query both APIs in parallel
+        val (popcornEpisodes, eztvEpisodes) = coroutineScope {
+            val popcornJob = async {
+            try {
+                val showDetails = popcornTvApi.getShowDetails(imdbId)
+                if (showDetails != null) {
+                    val episodes = popcornTvApi.getEpisodesForSeason(showDetails, season)
+                    android.util.Log.d("MovieRepository", "Popcorn TV found ${episodes.size} episodes for S$season")
+                    episodes
+                } else emptyList()
+            } catch (e: Exception) {
+                android.util.Log.w("MovieRepository", "Popcorn TV episodes lookup failed: ${e.message}")
+                emptyList()
+            }
+        }
+
+        val eztvJob = async {
+            try {
+                val eztvEpisodes = eztvApi.getEpisodesForSeason(imdbId, season)
+                android.util.Log.d("MovieRepository", "EZTV found ${eztvEpisodes.size} episodes for S$season")
+                eztvEpisodes.map { eztvEp ->
+                    PopcornEpisode(
+                        tvdbId = null,
+                        season = season,
+                        episode = eztvEp.episode,
+                        title = eztvEp.title?.let { t ->
+                            t.substringAfterLast("]").substringBefore("[").trim()
+                                .ifEmpty { "Episode ${eztvEp.episode}" }
+                        } ?: "Episode ${eztvEp.episode}",
+                        overview = null,
+                        firstAired = null,
+                        torrents = mapOf(
+                            "0" to PopcornEpisodeTorrent(
+                                provider = "EZTV",
+                                seeds = eztvEp.bestSeeds,
+                                peers = 0,
+                                url = ""
+                            )
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("MovieRepository", "EZTV episodes lookup failed: ${e.message}")
+                emptyList()
+            }
+        }
+
+            Pair(popcornJob.await(), eztvJob.await())
+        }
+
+        // Merge: use a map keyed by episode number, Popcorn data takes priority for metadata
+        val mergedMap = mutableMapOf<Int, PopcornEpisode>()
+
+        // Add Popcorn episodes first (they have better metadata: titles, overviews, etc.)
+        for (ep in popcornEpisodes) {
+            val epNum = ep.episode ?: continue
+            mergedMap[epNum] = ep
+        }
+
+        // Merge EZTV episodes: add new ones, enrich existing with EZTV torrents
+        for (ep in eztvEpisodes) {
+            val epNum = ep.episode ?: continue
+            val existing = mergedMap[epNum]
+            if (existing == null) {
+                // Episode only in EZTV — add it
+                mergedMap[epNum] = ep
+            } else {
+                // Episode in both — merge torrents (add EZTV torrents under "eztv_*" keys)
+                val mergedTorrents = (existing.torrents ?: emptyMap()).toMutableMap()
+                ep.torrents?.entries?.forEach { (quality, torrent) ->
+                    val eztvKey = "eztv_$quality"
+                    mergedTorrents[eztvKey] = torrent
+                }
+                mergedMap[epNum] = existing.copy(torrents = mergedTorrents)
+            }
+        }
+
+        val result = mergedMap.values.sortedBy { it.episode }
+        android.util.Log.d("MovieRepository", "Aggregated ${result.size} episodes for S$season (Popcorn: ${popcornEpisodes.size}, EZTV: ${eztvEpisodes.size})")
+        result
+    }
+    
+    /**
+     * Get IMDB ID for a TV show from TMDB.
+     * @param tmdbId The TMDB series ID
+     * @return IMDB ID if available (e.g., "tt1234567")
+     */
+    suspend fun getTvShowImdbId(tmdbId: Int): String? = withContext(Dispatchers.IO) {
+        try {
+            val externalIds = apiService.getTvShowExternalIds(tmdbId)
+            externalIds.imdbId.also { imdbId ->
+                android.util.Log.d("MovieRepository", "Got IMDB ID for TMDB $tmdbId: $imdbId")
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MovieRepository", "Failed to get IMDB ID for TMDB $tmdbId: ${e.message}")
+            null
+        }
     }
     
     /**

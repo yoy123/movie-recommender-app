@@ -37,8 +37,11 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import com.movierecommender.app.data.model.Movie
+import com.movierecommender.app.data.model.TvShow
+import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.ui.viewmodel.MovieViewModel
 import com.movierecommender.app.ui.dialogs.LlmConsentDialog
+import com.movierecommender.app.data.remote.PopcornEpisode
 
 @Composable
 fun MovieSelectionScreen(
@@ -51,6 +54,14 @@ fun MovieSelectionScreen(
     var searchQuery by remember { mutableStateOf("") }
     var showSettingsDialog by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState()
+    
+    val isTvMode = uiState.contentMode == ContentMode.TV_SHOWS
+    val contentLabel = if (isTvMode) "TV Shows" else "Movies"
+    val contentLabelSingular = if (isTvMode) "show" else "movie"
+    
+    // Get the appropriate item count for infinite scroll
+    val itemCount = if (isTvMode) uiState.tvShows.size else uiState.movies.size
+    val selectedCount = if (isTvMode) uiState.selectedTvShows.size else uiState.selectedMovies.size
 
     val lastVisibleIndex by remember {
         derivedStateOf {
@@ -60,7 +71,7 @@ fun MovieSelectionScreen(
 
     LaunchedEffect(
         lastVisibleIndex,
-        uiState.movies.size,
+        itemCount,
         uiState.canLoadMoreGenreMovies,
         uiState.isLoading,
         uiState.isLoadingMore,
@@ -68,7 +79,7 @@ fun MovieSelectionScreen(
     ) {
         // Infinite scroll for genre browsing (disabled while searching).
         val threshold = 6
-        val nearEnd = uiState.movies.isNotEmpty() && lastVisibleIndex >= (uiState.movies.size - threshold).coerceAtLeast(0)
+        val nearEnd = itemCount > 0 && lastVisibleIndex >= (itemCount - threshold).coerceAtLeast(0)
         if (nearEnd && uiState.canLoadMoreGenreMovies && !uiState.isLoading && !uiState.isLoadingMore && uiState.searchQuery.isBlank()) {
             viewModel.loadNextGenreMoviesPage()
         }
@@ -78,19 +89,22 @@ fun MovieSelectionScreen(
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text("Select Movies (1-5)") },
+                    title = { Text("Select $contentLabel (1-5)") },
                     navigationIcon = {
                         IconButton(onClick = onBackClick) {
                             Icon(Icons.Default.ArrowBack, "Back")
                         }
                     },
                     actions = {
-                        if (uiState.selectedMovies.isNotEmpty()) {
+                        if (selectedCount > 0) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier.padding(end = 4.dp)
                             ) {
-                                IconButton(onClick = { viewModel.clearSelections() }) {
+                                IconButton(onClick = { 
+                                    if (isTvMode) viewModel.clearTvShowSelections() 
+                                    else viewModel.clearSelections() 
+                                }) {
                                     Icon(
                                         Icons.Default.DeleteSweep,
                                         contentDescription = "Clear selections",
@@ -124,12 +138,12 @@ fun MovieSelectionScreen(
                     value = searchQuery,
                     onValueChange = {
                         searchQuery = it
-                        viewModel.searchMovies(it)
+                        viewModel.searchContent(it)
                     },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                    placeholder = { Text("Search movies...") },
+                    placeholder = { Text("Search ${contentLabel.lowercase()}...") },
                     leadingIcon = {
                         Icon(Icons.Default.Search, "Search")
                     },
@@ -137,11 +151,11 @@ fun MovieSelectionScreen(
                 )
                 
                 LinearProgressIndicator(
-                    progress = (uiState.selectedMovies.size / 5f).coerceAtMost(1f),
+                    progress = (selectedCount / 5f).coerceAtMost(1f),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    text = "${uiState.selectedMovies.size} movie${if (uiState.selectedMovies.size != 1) "s" else ""} selected (up to 5)",
+                    text = "$selectedCount $contentLabelSingular${if (selectedCount != 1) "s" else ""} selected (up to 5)",
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -150,15 +164,21 @@ fun MovieSelectionScreen(
             }
         },
         floatingActionButton = {
-            if (uiState.selectedMovies.isNotEmpty()) {
+            if (selectedCount > 0) {
                 ExtendedFloatingActionButton(
                     onClick = {
-                        // Check if consent is needed before generating recommendations
-                        if (!uiState.llmConsentAsked) {
-                            viewModel.checkAndShowLlmConsentIfNeeded()
-                        } else {
-                            viewModel.generateRecommendations()
+                        if (isTvMode) {
+                            // TV shows don't use LLM, go straight to recommendations
+                            viewModel.generateTvRecommendations()
                             onGenerateRecommendations()
+                        } else {
+                            // Check if consent is needed before generating recommendations
+                            if (!uiState.llmConsentAsked) {
+                                viewModel.checkAndShowLlmConsentIfNeeded()
+                            } else {
+                                viewModel.generateRecommendations()
+                                onGenerateRecommendations()
+                            }
                         }
                     },
                     icon = { Icon(Icons.Default.Check, "Generate") },
@@ -187,9 +207,9 @@ fun MovieSelectionScreen(
                             .padding(16.dp)
                     )
                 }
-                uiState.movies.isEmpty() -> {
+                itemCount == 0 -> {
                     Text(
-                        text = "No movies found",
+                        text = "No ${contentLabel.lowercase()} found",
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }
@@ -201,24 +221,38 @@ fun MovieSelectionScreen(
                             start = 16.dp,
                             top = 16.dp,
                             end = 16.dp,
-                            bottom = if (uiState.selectedMovies.isNotEmpty()) 100.dp else 16.dp
+                            bottom = if (selectedCount > 0) 100.dp else 16.dp
                         ),
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(uiState.movies) { movie ->
-                            MovieCard(
-                                movie = movie,
-                                isSelected = uiState.selectedMovies.any { it.id == movie.id },
-                                isFavorite = movie.isFavorite,
-                                onToggleFavorite = {
-                                    if (movie.isFavorite) viewModel.removeFromFavorites(movie.id)
-                                    else viewModel.addToFavorites(movie)
-                                },
-                                onClick = { viewModel.toggleMovieSelection(movie) },
-                                viewModel = viewModel,
-                                onWatchNow = onWatchNow
-                            )
+                        if (isTvMode) {
+                            // TV Shows grid
+                            items(uiState.tvShows) { tvShow ->
+                                TvShowCard(
+                                    tvShow = tvShow,
+                                    isSelected = uiState.selectedTvShows.any { it.id == tvShow.id },
+                                    onClick = { viewModel.toggleTvShowSelection(tvShow) },
+                                    viewModel = viewModel,
+                                    onWatchNow = onWatchNow
+                                )
+                            }
+                        } else {
+                            // Movies grid
+                            items(uiState.movies) { movie ->
+                                MovieCard(
+                                    movie = movie,
+                                    isSelected = uiState.selectedMovies.any { it.id == movie.id },
+                                    isFavorite = movie.isFavorite,
+                                    onToggleFavorite = {
+                                        if (movie.isFavorite) viewModel.removeFromFavorites(movie.id)
+                                        else viewModel.addToFavorites(movie)
+                                    },
+                                    onClick = { viewModel.toggleMovieSelection(movie) },
+                                    viewModel = viewModel,
+                                    onWatchNow = onWatchNow
+                                )
+                            }
                         }
                     }
                 }
@@ -443,6 +477,382 @@ fun MovieCard(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TvShowCard(
+    tvShow: TvShow,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    viewModel: MovieViewModel? = null,
+    onWatchNow: (title: String, magnetUrl: String) -> Unit = { _, _ -> }
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var isLoadingMagnet by remember { mutableStateOf(false) }
+    var showEpisodePicker by remember { mutableStateOf(false) }
+    var availableSeasons by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var selectedSeason by remember { mutableStateOf(1) }
+    var isLoadingSeasons by remember { mutableStateOf(false) }
+    
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(280.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected)
+                MaterialTheme.colorScheme.primaryContainer
+            else
+                MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            AsyncImage(
+                model = tvShow.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
+                contentDescription = tvShow.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+            )
+            
+            // Watch Now button - top center
+            if (viewModel != null) {
+                IconButton(
+                    onClick = {
+                        if (!isLoadingMagnet && !isLoadingSeasons) {
+                            isLoadingSeasons = true
+                            coroutineScope.launch {
+                                try {
+                                    // Get IMDB ID from TMDB
+                                    val imdbId = viewModel.getTvShowImdbId(tvShow.id)
+                                    if (imdbId != null) {
+                                        // Get available seasons from Popcorn Time
+                                        val seasons = viewModel.getTvShowSeasons(imdbId)
+                                        if (seasons.isNotEmpty()) {
+                                            availableSeasons = seasons
+                                            selectedSeason = seasons.first()
+                                            showEpisodePicker = true
+                                        } else {
+                                            Toast.makeText(context, "No episodes available for streaming", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        Toast.makeText(context, "Show not found on streaming service", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Error finding show", Toast.LENGTH_SHORT).show()
+                                } finally {
+                                    isLoadingSeasons = false
+                                }
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(8.dp)
+                        .size(48.dp),
+                    enabled = !isLoadingMagnet && !isLoadingSeasons
+                ) {
+                    if (isLoadingMagnet || isLoadingSeasons) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = androidx.compose.ui.graphics.Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.PlayArrow,
+                            contentDescription = "Watch Now",
+                            tint = androidx.compose.ui.graphics.Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+            }
+
+            // Checkbox - top right corner
+            IconButton(
+                onClick = onClick,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .size(48.dp)
+            ) {
+                Icon(
+                    imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle,
+                    contentDescription = if (isSelected) "Selected" else "Not selected",
+                    tint = if (isSelected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+
+            // Info section with semi-transparent background for readability
+            Surface(
+                color = androidx.compose.ui.graphics.Color(0xCC000000),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp)
+                ) {
+                    Text(
+                        text = tvShow.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = androidx.compose.ui.graphics.Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = tvShow.overview,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.9f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "★ ${String.format("%.1f", tvShow.voteAverage)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = androidx.compose.ui.graphics.Color(0xFFFFD700)
+                        )
+                        tvShow.firstAirDate?.let {
+                            Text(
+                                text = it.take(4),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Episode Picker Dialog
+    if (showEpisodePicker && viewModel != null) {
+        EpisodePickerDialog(
+            showName = tvShow.name,
+            seasons = availableSeasons,
+            selectedSeason = selectedSeason,
+            onSeasonSelected = { selectedSeason = it },
+            onEpisodeSelected = { episode ->
+                showEpisodePicker = false
+                isLoadingMagnet = true
+                coroutineScope.launch {
+                    try {
+                        val imdbId = viewModel.getTvShowImdbId(tvShow.id)
+                        val magnet = viewModel.getTvEpisodeMagnetUrl(
+                            showTitle = tvShow.name,
+                            imdbId = imdbId,
+                            season = selectedSeason,
+                            episode = episode
+                        )
+                        if (magnet != null) {
+                            onWatchNow("${tvShow.name} S${selectedSeason}E${episode}", magnet)
+                        } else {
+                            Toast.makeText(context, "No streaming source found for this episode", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Error finding source", Toast.LENGTH_SHORT).show()
+                    } finally {
+                        isLoadingMagnet = false
+                    }
+                }
+            },
+            onDismiss = { showEpisodePicker = false },
+            viewModel = viewModel
+        )
+    }
+}
+
+/**
+ * Dialog for selecting a TV show episode to stream.
+ * Shows season tabs and episode list for the selected season.
+ */
+@Composable
+fun EpisodePickerDialog(
+    showName: String,
+    seasons: List<Int>,
+    selectedSeason: Int,
+    onSeasonSelected: (Int) -> Unit,
+    onEpisodeSelected: (Int) -> Unit,
+    onDismiss: () -> Unit,
+    viewModel: MovieViewModel,
+    preResolvedImdbId: String? = null
+) {
+    var episodes by remember { mutableStateOf<List<com.movierecommender.app.data.remote.PopcornEpisode>>(emptyList()) }
+    var isLoadingEpisodes by remember { mutableStateOf(false) }
+    var imdbId by remember { mutableStateOf(preResolvedImdbId) }
+    
+    // Load episodes when season changes
+    LaunchedEffect(selectedSeason) {
+        isLoadingEpisodes = true
+        try {
+            // Use pre-resolved IMDB ID if available, otherwise search Popcorn then TMDB
+            if (imdbId == null) {
+                val searchResult = viewModel.searchTvShowTorrent(showName)
+                imdbId = searchResult?.imdbId
+            }
+            if (imdbId == null) {
+                imdbId = viewModel.resolveImdbIdByTitle(showName)
+            }
+            if (imdbId != null) {
+                episodes = viewModel.getTvShowEpisodes(imdbId!!, selectedSeason)
+            }
+        } catch (e: Exception) {
+            episodes = emptyList()
+        } finally {
+            isLoadingEpisodes = false
+        }
+    }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = showName,
+                style = MaterialTheme.typography.titleLarge
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+            ) {
+                // Season tabs
+                if (seasons.size > 1) {
+                    ScrollableTabRow(
+                        selectedTabIndex = seasons.indexOf(selectedSeason).coerceAtLeast(0),
+                        modifier = Modifier.fillMaxWidth(),
+                        edgePadding = 0.dp
+                    ) {
+                        seasons.forEach { season ->
+                            Tab(
+                                selected = season == selectedSeason,
+                                onClick = { onSeasonSelected(season) },
+                                text = { Text("Season $season") }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                } else if (seasons.isNotEmpty()) {
+                    Text(
+                        text = "Season ${seasons.first()}",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+                
+                // Episode list
+                if (isLoadingEpisodes) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else if (episodes.isEmpty()) {
+                    Text(
+                        text = "No episodes available",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                } else {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(episodes.size) { index ->
+                            val episode = episodes[index]
+                            val episodeNum = episode.episode ?: (index + 1)
+                            EpisodeItem(
+                                episodeNumber = episodeNum,
+                                title = episode.title,
+                                hasStreaming = episode.torrents?.isNotEmpty() == true,
+                                onClick = { onEpisodeSelected(episodeNum) }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+/**
+ * Single episode row in the episode picker.
+ */
+@Composable
+fun EpisodeItem(
+    episodeNumber: Int,
+    title: String?,
+    hasStreaming: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        onClick = onClick,
+        enabled = hasStreaming,
+        color = if (hasStreaming) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "E$episodeNumber",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (hasStreaming) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (!title.isNullOrBlank() && title != "Episode $episodeNumber") {
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                }
+            }
+            if (hasStreaming) {
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = "Stream available",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            } else {
+                Text(
+                    text = "Unavailable",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

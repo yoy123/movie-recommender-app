@@ -5,6 +5,9 @@ import com.movierecommender.app.BuildConfig
 import com.movierecommender.app.data.model.GenreResponse
 import com.movierecommender.app.data.model.MovieDetails
 import com.movierecommender.app.data.model.MovieResponse
+import com.movierecommender.app.data.model.TvShowResponse
+import com.movierecommender.app.data.model.TvShowDetails
+import com.movierecommender.app.data.model.TvShowExternalIds
 import com.movierecommender.app.data.model.VideoResponse
 import okhttp3.Cache
 import okhttp3.OkHttpClient
@@ -72,6 +75,70 @@ interface TmdbApiService {
         @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY,
         @Query("language") language: String = "en-US"
     ): VideoResponse
+    
+    // ─────────────────────────────────────────────────────────────────────────────
+    // TV Shows API
+    // ─────────────────────────────────────────────────────────────────────────────
+    
+    @GET("genre/tv/list")
+    suspend fun getTvGenres(
+        @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY,
+        @Query("language") language: String = "en-US"
+    ): GenreResponse
+    
+    @GET("discover/tv")
+    suspend fun getTvShowsByGenre(
+        @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY,
+        @Query("with_genres") genreId: Int,
+        @Query("sort_by") sortBy: String = "popularity.desc",
+        @Query("page") page: Int = 1,
+        @Query("language") language: String = "en-US"
+    ): TvShowResponse
+    
+    @GET("search/tv")
+    suspend fun searchTvShows(
+        @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY,
+        @Query("query") query: String,
+        @Query("page") page: Int = 1,
+        @Query("language") language: String = "en-US"
+    ): TvShowResponse
+    
+    @GET("tv/{series_id}")
+    suspend fun getTvShowDetails(
+        @Path("series_id") seriesId: Int,
+        @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY,
+        @Query("append_to_response") appendToResponse: String = "keywords",
+        @Query("language") language: String = "en-US"
+    ): TvShowDetails
+    
+    @GET("tv/{series_id}/videos")
+    suspend fun getTvShowVideos(
+        @Path("series_id") seriesId: Int,
+        @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY,
+        @Query("language") language: String = "en-US"
+    ): VideoResponse
+    
+    @GET("tv/{series_id}/similar")
+    suspend fun getSimilarTvShows(
+        @Path("series_id") seriesId: Int,
+        @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY,
+        @Query("page") page: Int = 1,
+        @Query("language") language: String = "en-US"
+    ): TvShowResponse
+    
+    @GET("tv/{series_id}/recommendations")
+    suspend fun getTvShowRecommendations(
+        @Path("series_id") seriesId: Int,
+        @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY,
+        @Query("page") page: Int = 1,
+        @Query("language") language: String = "en-US"
+    ): TvShowResponse
+    
+    @GET("tv/{series_id}/external_ids")
+    suspend fun getTvShowExternalIds(
+        @Path("series_id") seriesId: Int,
+        @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY
+    ): TvShowExternalIds
     
     companion object {
         /** HTTP cache size: 10 MB */

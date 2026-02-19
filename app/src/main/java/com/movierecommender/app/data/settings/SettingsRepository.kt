@@ -30,6 +30,21 @@ class SettingsRepository(private val context: Context) {
         // Database cleanup - last time orphaned movies were cleaned
         val LAST_DB_CLEANUP = longPreferencesKey("last_db_cleanup")
         
+        // Plex Server Settings
+        // Server URL (e.g., "http://192.168.1.x:32400")
+        val PLEX_SERVER_URL = stringPreferencesKey("plex_server_url")
+        // X-Plex-Token for authentication
+        val PLEX_TOKEN = stringPreferencesKey("plex_token")
+        // Path to Plex library folder for movie downloads
+        val PLEX_MOVIE_LIBRARY_PATH = stringPreferencesKey("plex_movie_library_path")
+        // Path to Plex library folder for TV downloads
+        val PLEX_TV_LIBRARY_PATH = stringPreferencesKey("plex_tv_library_path")
+        // Plex library IDs (for triggering refreshes)
+        val PLEX_MOVIE_LIBRARY_ID = stringPreferencesKey("plex_movie_library_id")
+        val PLEX_TV_LIBRARY_ID = stringPreferencesKey("plex_tv_library_id")
+        // Whether Plex download is enabled
+        val PLEX_ENABLED = booleanPreferencesKey("plex_enabled")
+        
         val INDIE_PREFERENCE = floatPreferencesKey("indie_preference")
         val USE_INDIE = booleanPreferencesKey("use_indie")
         val POPULARITY_PREFERENCE = floatPreferencesKey("popularity_preference")
@@ -55,6 +70,15 @@ class SettingsRepository(private val context: Context) {
     
     // Database cleanup - 0 means never cleaned
     val lastDbCleanup: Flow<Long> = context.dataStore.data.map { it[Keys.LAST_DB_CLEANUP] ?: 0L }
+    
+    // Plex server settings
+    val plexServerUrl: Flow<String> = context.dataStore.data.map { it[Keys.PLEX_SERVER_URL] ?: "" }
+    val plexToken: Flow<String> = context.dataStore.data.map { it[Keys.PLEX_TOKEN] ?: "" }
+    val plexMovieLibraryPath: Flow<String> = context.dataStore.data.map { it[Keys.PLEX_MOVIE_LIBRARY_PATH] ?: "" }
+    val plexTvLibraryPath: Flow<String> = context.dataStore.data.map { it[Keys.PLEX_TV_LIBRARY_PATH] ?: "" }
+    val plexMovieLibraryId: Flow<String> = context.dataStore.data.map { it[Keys.PLEX_MOVIE_LIBRARY_ID] ?: "" }
+    val plexTvLibraryId: Flow<String> = context.dataStore.data.map { it[Keys.PLEX_TV_LIBRARY_ID] ?: "" }
+    val plexEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.PLEX_ENABLED] ?: false }
 
     val indiePreference: Flow<Float> = context.dataStore.data.map { it[Keys.INDIE_PREFERENCE] ?: 0.5f }
     val useIndie: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_INDIE] ?: true }
@@ -179,5 +203,35 @@ class SettingsRepository(private val context: Context) {
      */
     suspend fun setLastDbCleanup(timestamp: Long) {
         context.dataStore.edit { it[Keys.LAST_DB_CLEANUP] = timestamp }
+    }
+    
+    // Plex server setters
+    
+    suspend fun setPlexServerUrl(url: String) {
+        context.dataStore.edit { it[Keys.PLEX_SERVER_URL] = url.trim() }
+    }
+    
+    suspend fun setPlexToken(token: String) {
+        context.dataStore.edit { it[Keys.PLEX_TOKEN] = token.trim() }
+    }
+    
+    suspend fun setPlexMovieLibraryPath(path: String) {
+        context.dataStore.edit { it[Keys.PLEX_MOVIE_LIBRARY_PATH] = path.trim() }
+    }
+    
+    suspend fun setPlexTvLibraryPath(path: String) {
+        context.dataStore.edit { it[Keys.PLEX_TV_LIBRARY_PATH] = path.trim() }
+    }
+    
+    suspend fun setPlexMovieLibraryId(id: String) {
+        context.dataStore.edit { it[Keys.PLEX_MOVIE_LIBRARY_ID] = id.trim() }
+    }
+    
+    suspend fun setPlexTvLibraryId(id: String) {
+        context.dataStore.edit { it[Keys.PLEX_TV_LIBRARY_ID] = id.trim() }
+    }
+    
+    suspend fun setPlexEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.PLEX_ENABLED] = enabled }
     }
 }

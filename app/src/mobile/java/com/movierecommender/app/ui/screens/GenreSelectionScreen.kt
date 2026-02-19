@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.movierecommender.app.data.model.Movie
+import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.ui.viewmodel.MovieViewModel
 
 @Composable
@@ -39,24 +41,57 @@ fun GenreSelectionScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showSettingsDialog by remember { mutableStateOf(false) }
     
+    // Determine which tab is selected based on content mode
+    val selectedTabIndex = when (uiState.contentMode) {
+        ContentMode.MOVIES -> 0
+        ContentMode.TV_SHOWS -> 1
+    }
+    
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Select a Genre") },
-                actions = {
-                    IconButton(onClick = { showSettingsDialog = true }) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onPrimary
+            Column {
+                TopAppBar(
+                    title = { 
+                        Text(
+                            if (uiState.contentMode == ContentMode.MOVIES) "Movie Genres" 
+                            else "TV Show Genres"
                         )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    },
+                    actions = {
+                        IconButton(onClick = { showSettingsDialog = true }) {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 )
-            )
+                
+                // Movies / TV Tabs
+                TabRow(
+                    selectedTabIndex = selectedTabIndex,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Tab(
+                        selected = selectedTabIndex == 0,
+                        onClick = { viewModel.setContentMode(ContentMode.MOVIES) },
+                        text = { Text("Movies") },
+                        icon = { Icon(Icons.Default.Movie, contentDescription = "Movies") }
+                    )
+                    Tab(
+                        selected = selectedTabIndex == 1,
+                        onClick = { viewModel.setContentMode(ContentMode.TV_SHOWS) },
+                        text = { Text("TV Shows") },
+                        icon = { Icon(Icons.Default.Tv, contentDescription = "TV Shows") }
+                    )
+                }
+            }
         }
     ) { paddingValues ->
         Box(
@@ -64,6 +99,12 @@ fun GenreSelectionScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            // Get the current genres list based on content mode
+            val currentGenres = when (uiState.contentMode) {
+                ContentMode.MOVIES -> uiState.genres
+                ContentMode.TV_SHOWS -> uiState.tvGenres
+            }
+            
             when {
                 uiState.isLoading -> {
                     CircularProgressIndicator(
@@ -83,12 +124,17 @@ fun GenreSelectionScreen(
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        Button(onClick = { viewModel.loadGenres() }) {
+                        Button(onClick = { 
+                            when (uiState.contentMode) {
+                                ContentMode.MOVIES -> viewModel.loadGenres()
+                                ContentMode.TV_SHOWS -> viewModel.loadTvGenres()
+                            }
+                        }) {
                             Text("Retry")
                         }
                     }
                 }
-                uiState.genres.isEmpty() -> {
+                currentGenres.isEmpty() -> {
                     Text(
                         text = "No genres available",
                         modifier = Modifier.align(Alignment.Center)
@@ -101,23 +147,26 @@ fun GenreSelectionScreen(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // Add Dee's Favorites as first item
-                        item {
-                            GenreCard(
-                                name = "${uiState.userName}'s Favorites",
-                                icon = Icons.Default.Favorite,
-                                onClick = {
-                                    viewModel.selectGenre(-1, "${uiState.userName}'s Favorites")
-                                    onGenreSelected()
-                                }
-                            )
+                        // Add Favorites as first item (Movies only for now)
+                        if (uiState.contentMode == ContentMode.MOVIES) {
+                            item {
+                                GenreCard(
+                                    name = "${uiState.userName}'s Favorites",
+                                    icon = Icons.Default.Favorite,
+                                    onClick = {
+                                        viewModel.selectGenre(-1, "${uiState.userName}'s Favorites")
+                                        onGenreSelected()
+                                    }
+                                )
+                            }
                         }
                         
-                        // Regular genres
-                        items(uiState.genres) { genre ->
+                        // Genre cards
+                        items(currentGenres) { genre ->
                             GenreCard(
                                 name = genre.name,
-                                icon = Icons.Default.Movie,
+                                icon = if (uiState.contentMode == ContentMode.MOVIES) 
+                                    Icons.Default.Movie else Icons.Default.Tv,
                                 onClick = {
                                     viewModel.selectGenre(genre.id, genre.name)
                                     onGenreSelected()

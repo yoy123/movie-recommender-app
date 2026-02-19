@@ -66,3 +66,8 @@
 
 # Keep BuildConfig
 -keep class com.movierecommender.app.BuildConfig { *; }
+
+# NewPipe Extractor (uses Rhino JavaScript engine for YouTube signature decryption)
+-keep class org.mozilla.javascript.** { *; }
+-keep class org.mozilla.classfile.ClassFileWriter
+-dontwarn org.mozilla.javascript.tools.**

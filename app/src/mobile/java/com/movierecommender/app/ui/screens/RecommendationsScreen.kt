@@ -16,10 +16,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.movierecommender.app.data.model.Movie
+import com.movierecommender.app.data.model.TvShow
+import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.ui.viewmodel.MovieViewModel
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavController
@@ -50,11 +54,19 @@ fun RecommendationsScreen(
     onWatchNow: (title: String, magnetUrl: String) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    
+    val isTvMode = uiState.contentMode == ContentMode.TV_SHOWS
+    val hasSelections = if (isTvMode) uiState.selectedTvShows.isNotEmpty() else uiState.selectedMovies.isNotEmpty()
+    val contentLabel = if (isTvMode) "TV shows" else "movies"
 
     // Auto-generate recommendations on first entry if we have selections and nothing yet
-    LaunchedEffect(uiState.selectedMovies, uiState.recommendationText, uiState.isLoading) {
-        if (!uiState.isLoading && uiState.recommendationText == null && uiState.selectedMovies.isNotEmpty()) {
-            viewModel.generateRecommendations()
+    LaunchedEffect(uiState.selectedMovies, uiState.selectedTvShows, uiState.recommendationText, uiState.isLoading, isTvMode) {
+        if (!uiState.isLoading && uiState.recommendationText == null && hasSelections) {
+            if (isTvMode) {
+                viewModel.generateTvRecommendations()
+            } else {
+                viewModel.generateRecommendations()
+            }
         }
     }
     
@@ -73,7 +85,10 @@ fun RecommendationsScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.padding(end = 4.dp)
                         ) {
-                            IconButton(onClick = { viewModel.retryRecommendations() }) {
+                            IconButton(onClick = { 
+                                if (isTvMode) viewModel.retryTvRecommendations() 
+                                else viewModel.retryRecommendations() 
+                            }) {
                                 Icon(Icons.Default.Autorenew, "Retry recommendations")
                             }
                             Text(
@@ -135,7 +150,10 @@ fun RecommendationsScreen(
                                     textAlign = TextAlign.Center
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = { viewModel.generateRecommendations() }) {
+                            Button(onClick = { 
+                                if (isTvMode) viewModel.generateTvRecommendations() 
+                                else viewModel.generateRecommendations() 
+                            }) {
                                 Text("Retry")
                             }
                         }
@@ -167,12 +185,23 @@ fun RecommendationsScreen(
                                                     style = MaterialTheme.typography.titleMedium
                                                 )
                                                 Spacer(modifier = Modifier.height(8.dp))
-                                                uiState.selectedMovies.forEach { movie ->
-                                                    Column(modifier = Modifier.fillMaxWidth()) {
-                                                        Text(
-                                                            text = "• ${movie.title}",
-                                                            style = MaterialTheme.typography.bodyMedium
-                                                        )
+                                                if (isTvMode) {
+                                                    uiState.selectedTvShows.forEach { tvShow ->
+                                                        Column(modifier = Modifier.fillMaxWidth()) {
+                                                            Text(
+                                                                text = "• ${tvShow.name}",
+                                                                style = MaterialTheme.typography.bodyMedium
+                                                            )
+                                                        }
+                                                    }
+                                                } else {
+                                                    uiState.selectedMovies.forEach { movie ->
+                                                        Column(modifier = Modifier.fillMaxWidth()) {
+                                                            Text(
+                                                                text = "• ${movie.title}",
+                                                                style = MaterialTheme.typography.bodyMedium
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
@@ -192,6 +221,7 @@ fun RecommendationsScreen(
                                                 ParsedRecommendationsList(
                                                     text = displayText,
                                                     viewModel = viewModel,
+                                                    isTvMode = isTvMode,
                                                     onOpenTrailer = onOpenTrailer,
                                                     onWatchNow = onWatchNow
                                                 )
@@ -431,6 +461,7 @@ private data class RecItem(
 private fun ParsedRecommendationsList(
     text: String,
     viewModel: MovieViewModel,
+    isTvMode: Boolean = false,
     onOpenTrailer: (title: String, youtubeKey: String) -> Unit,
     onWatchNow: (title: String, magnetUrl: String) -> Unit
 ) {
@@ -495,7 +526,7 @@ private fun ParsedRecommendationsList(
             )
             Spacer(modifier = Modifier.height(8.dp))
             items.forEach { item ->
-                RecommendationRow(item = item, viewModel = viewModel, onOpenTrailer = onOpenTrailer, onWatchNow = onWatchNow)
+                RecommendationRow(item = item, viewModel = viewModel, isTvMode = isTvMode, onOpenTrailer = onOpenTrailer, onWatchNow = onWatchNow)
             }
         }
     }
@@ -505,19 +536,31 @@ private fun ParsedRecommendationsList(
 private fun RecommendationRow(
     item: RecItem,
     viewModel: MovieViewModel,
+    isTvMode: Boolean = false,
     onOpenTrailer: (title: String, youtubeKey: String) -> Unit,
     onWatchNow: (title: String, magnetUrl: String) -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val rating by produceState<String?>(initialValue = null, key1 = item.title, key2 = item.year) {
         value = try { viewModel.getTmdbRatingByTitleYear(item.title, item.year) } catch (e: Exception) { null }
     }
     val trailerUrl by produceState<String?>(initialValue = null, key1 = item.title, key2 = item.year) {
-        value = try { viewModel.getImdbTrailerUrlByTitle(item.title, item.year) } catch (e: Exception) { null }
+        value = try { viewModel.getTrailerUrlByTitle(item.title, item.year, isTvMode) } catch (e: Exception) { null }
     }
-    val torrentMagnet by produceState<String?>(initialValue = null, key1 = item.title, key2 = item.year) {
-        value = try { viewModel.getTorrentMagnetUrl(item.title, item.year) } catch (e: Exception) { null }
+    // Only pre-fetch torrent for movies; TV shows use episode picker
+    val torrentResult by produceState<Pair<String, String>?>(initialValue = null, key1 = item.title, key2 = item.year) {
+        value = if (!isTvMode) {
+            try { viewModel.getTorrentMagnetUrlForContent(item.title, item.year, false) } catch (e: Exception) { null }
+        } else null
     }
+
+    // TV show episode picker state
+    var showEpisodePicker by remember { mutableStateOf(false) }
+    var isLoadingSeasons by remember { mutableStateOf(false) }
+    var availableSeasons by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var selectedSeason by remember { mutableStateOf(1) }
+    var resolvedImdbId by remember { mutableStateOf<String?>(null) }
     Column {
         val displayTitle = if (!item.year.isNullOrBlank()) {
             "${item.title} (${item.year})"
@@ -562,32 +605,88 @@ private fun RecommendationRow(
                 val url = trailerUrl
                 android.util.Log.d("RecommendationsScreen", "Trailer button clicked: title=${item.title}, url=$url")
                 if (url != null && url.isNotBlank()) {
-                    // IMDB returns direct video URLs, pass the whole URL
                     android.util.Log.d("RecommendationsScreen", "Calling onOpenTrailer with URL length: ${url.length}")
                     onOpenTrailer(item.title, url)
                     android.util.Log.d("RecommendationsScreen", "onOpenTrailer called successfully")
                 } else {
-                    // No trailer URL from IMDB - show toast instead of navigating
                     android.util.Log.w("RecommendationsScreen", "No trailer URL available")
-                    Toast.makeText(context, "No trailer available for this movie", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, if (isTvMode) "No trailer available for this TV show" else "No trailer available for this movie", Toast.LENGTH_SHORT).show()
                 }
             }) {
                 Text("Watch Trailer")
             }
             
             TextButton(onClick = {
-                val magnet = torrentMagnet
-                android.util.Log.d("RecommendationsScreen", "Watch Now button clicked: title=${item.title}")
-                if (magnet != null && magnet.isNotBlank()) {
-                    android.util.Log.d("RecommendationsScreen", "Calling onWatchNow with magnet")
-                    onWatchNow(item.title, magnet)
+                if (isTvMode) {
+                    // TV mode: show episode picker
+                    if (!isLoadingSeasons) {
+                        isLoadingSeasons = true
+                        coroutineScope.launch {
+                            try {
+                                val result = viewModel.getSeasonsForTvShowByTitle(item.title, item.year)
+                                if (result != null) {
+                                    resolvedImdbId = result.first
+                                    availableSeasons = result.second
+                                    selectedSeason = result.second.first()
+                                    showEpisodePicker = true
+                                } else {
+                                    Toast.makeText(context, "No episodes available", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Error finding show", Toast.LENGTH_SHORT).show()
+                            } finally {
+                                isLoadingSeasons = false
+                            }
+                        }
+                    }
                 } else {
-                    android.util.Log.w("RecommendationsScreen", "No streaming source available")
-                    Toast.makeText(context, "No streaming source available", Toast.LENGTH_SHORT).show()
+                    // Movie mode: use pre-fetched torrent
+                    val result = torrentResult
+                    android.util.Log.d("RecommendationsScreen", "Watch Now button clicked: title=${item.title}")
+                    if (result != null && result.first.isNotBlank()) {
+                        android.util.Log.d("RecommendationsScreen", "Calling onWatchNow with magnet")
+                        onWatchNow(result.second, result.first)
+                    } else {
+                        android.util.Log.w("RecommendationsScreen", "No streaming source available")
+                        Toast.makeText(context, "No streaming source available", Toast.LENGTH_SHORT).show()
+                    }
                 }
-            }) {
-                Text("Watch Now")
+            }, enabled = !isLoadingSeasons) {
+                Text(if (isLoadingSeasons) "Finding..." else if (isTvMode) "Browse Episodes" else "Watch Now")
             }
+        }
+
+        // Episode Picker Dialog for TV shows
+        if (showEpisodePicker && resolvedImdbId != null) {
+            EpisodePickerDialog(
+                showName = item.title,
+                seasons = availableSeasons,
+                selectedSeason = selectedSeason,
+                onSeasonSelected = { selectedSeason = it },
+                onEpisodeSelected = { episode ->
+                    showEpisodePicker = false
+                    coroutineScope.launch {
+                        try {
+                            val magnet = viewModel.getTvEpisodeMagnetUrl(
+                                showTitle = item.title,
+                                imdbId = resolvedImdbId,
+                                season = selectedSeason,
+                                episode = episode
+                            )
+                            if (magnet != null) {
+                                onWatchNow("${item.title} S${selectedSeason}E${episode}", magnet)
+                            } else {
+                                Toast.makeText(context, "No streaming source found", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Error finding source", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                onDismiss = { showEpisodePicker = false },
+                viewModel = viewModel,
+                preResolvedImdbId = resolvedImdbId
+            )
         }
     }
 }

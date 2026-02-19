@@ -1,6 +1,6 @@
 # KNOWN_ISSUES.md
 
-**Last Updated:** 2026-01-19
+**Last Updated:** 2026-01-23
 **Status:** SOURCE-OF-TRUTH MEMORY
 
 ## Purpose
@@ -294,52 +294,49 @@ for (rec in recommendations) {
 
 ---
 
-### 10. Hardcoded Constants Should Be Configurable
+### 10. ~~Hardcoded Constants Should Be Configurable~~ **PARTIALLY RESOLVED**
 
-**Evidence:**
+**Status:** ✅ **CACHE SIZE NOW DYNAMIC** - 2026-01-23
 
-- [TorrentStreamService.kt:27](../app/src/main/java/com/movierecommender/app/torrent/TorrentStreamService.kt#L27)
+**Original Evidence:**
 
-  ```kotlin
-  private const val MAX_CACHE_SIZE_BYTES = 500L * 1024 * 1024 // 500 MB
-  ```
+- ~~[TorrentStreamService.kt:27](../app/src/main/java/com/movierecommender/app/torrent/TorrentStreamService.kt#L27)~~ **FIXED**
+- [LlmRecommendationService.kt:34](../app/src/main/java/com/movierecommender/app/data/remote/LlmRecommendationService.kt#L34) - 15 recommendations (kept as-is per user preference)
+- [MovieRepository.kt:221](../app/src/main/java/com/movierecommender/app/data/repository/MovieRepository.kt#L221) - 25 candidate pool threshold (kept as-is, quality gate)
 
-- [LlmRecommendationService.kt:34](../app/src/main/java/com/movierecommender/app/data/remote/LlmRecommendationService.kt#L34)
+**Resolution:**
 
-  ```kotlin
-  private const val RECOMMENDATION_COUNT = 15
-  ```
+1. **Torrent Cache Size:** Now dynamically calculated based on available free space
+   - Uses 15% of available space (after reserving 500MB for system)
+   - Bounded: minimum 100MB, maximum 1GB
+   - Automatically adapts to low-storage devices (Fire TV Stick, budget phones)
+   - Logs calculated size for debugging
 
-- [MovieRepository.kt:56](../app/src/main/java/com/movierecommender/app/data/repository/MovieRepository.kt#L56)
+2. **Recommendation Count (15):** Kept hardcoded - user confirmed this is fine
 
-  ```kotlin
-  private const val MIN_CANDIDATE_POOL_SIZE = 25
-  ```
+3. **Candidate Pool Threshold (25):** Kept hardcoded - serves as a quality gate:
+   - If TMDB returns ≥25 candidates → LLM picks from bounded list (no hallucinations)
+   - If TMDB returns <25 candidates → LLM has "open mode" (more creative but risk of hallucinations)
+   - Typical searches yield 40-80 candidates, so threshold is rarely hit
 
-**Problem:** These values are hardcoded. Users can't adjust:
+**Code Changes:**
 
-- Torrent cache size (500 MB might be too much for low-storage devices)
-- Recommendation count (15 might be too many)
-- Candidate pool size (25 affects LLM quality)
+- [TorrentStreamService.kt](../app/src/main/java/com/movierecommender/app/torrent/TorrentStreamService.kt):
+  - Added `calculateDynamicCacheSize(cacheDir: File): Int` function
+  - Added `dynamicMaxCacheSizeMB` instance variable
+  - Cache size calculated on `initTorrentStream()` using `StatFs.availableBytes`
+  - Constants: `MIN_CACHE_SIZE_MB=100`, `MAX_CACHE_SIZE_MB=1024`, `FREE_SPACE_PERCENTAGE=0.15`, `RESERVED_SPACE_MB=500`
 
-**User Impact:**
+**Behavior Change:**
 
-- **Android:** No customization
-- **Fire TV:** Same limitation
+| Device Storage | Old Cache | New Cache |
+|----------------|-----------|-----------|
+| Fire TV (8GB free) | 500MB | ~1GB (capped) |
+| Fire TV (2GB free) | 500MB | ~225MB |
+| Fire TV (500MB free) | 500MB | 100MB (minimum) |
+| Budget phone (1GB free) | 500MB | ~75MB |
 
-**Risk Level:** 🟢 **LOW** (nice-to-have)
-
-**Recommended Fix:**
-
-1. Move to `SettingsRepository` as configurable preferences
-2. Add UI sliders in Settings screen
-3. Default values remain same (backward compatible)
-
-**Test Plan:**
-
-1. Add preferences with defaults
-2. Change value in UI → verify behavior changes
-3. Verify defaults work if preference not set
+**Risk Level:** ✅ **RESOLVED** (main concern was low-storage devices)
 
 ---
 
@@ -522,41 +519,41 @@ for (rec in recommendations) {
 
 ---
 
-### 16. No DPAD Focus Hints
+### 16. ~~No DPAD Focus Hints~~ **RESOLVED**
 
-**Evidence:**
+**Status:** ✅ **FIXED** - 2026-01-23
 
-- Compose UI uses default focus behavior
-- No visual indicator which element has focus
+**Original Problem:** On Fire TV, user couldn't tell which element had focus. Focus indicators were either missing or too faint.
 
-**Problem:** On Fire TV, user can't tell which movie card is focused. Must press D-pad to see focus change.
+**Resolution:**
 
-**User Impact:**
+1. **MovieCard icons (heart, play, checkmark):**
+   - Wrapped each IconButton in a Surface with focus-reactive styling
+   - When focused: colored background, 3dp white border, icon scales up (32dp → 36dp)
+   - Heart: Primary color background when focused
+   - Play: Tertiary color background when focused  
+   - Check: Secondary color background when focused
 
-- **Android:** None (touch UI)
-- **Fire TV:** Confusing navigation
+2. **Movie card switching:**
+   - Added 4dp primary-colored border when card or any icon is focused
+   - Background changes to surfaceVariant
+   - Elevation increases from 4dp to 12dp
+   - Visual feedback makes current card very obvious
 
-**Risk Level:** 🟡 **MEDIUM** (UX)
+3. **RecommendationsScreen buttons (Watch Trailer / Watch Now):**
+   - Buttons grow from 48dp to 56dp height when focused
+   - Border increases from 1dp outline to 4dp white
+   - Text grows from 16sp to 18sp and becomes bold
+   - Elevation increases from 2dp to 8dp
+   - Color changes to fully saturated primary/tertiary
+   - Added 16dp spacing between buttons for easier D-pad navigation
 
-**Recommended Fix:**
+**Files Modified:**
+- [firestick/MovieSelectionScreen.kt](../app/src/firestick/java/com/movierecommender/app/ui/screens/MovieSelectionScreen.kt): Complete MovieCard rewrite with focus indicators
+- [firestick/RecommendationsScreen.kt](../app/src/firestick/java/com/movierecommender/app/ui/screens/RecommendationsScreen.kt): Enhanced button focus states
 
-1. Add focus border to all focusable elements:
-
-   ```kotlin
-   Modifier.onFocusChanged { state ->
-       if (state.isFocused) {
-           // Highlight with border
-       }
-   }
-   ```
-
-2. Use `FocusRequester` to auto-focus first element
-
-**Test Plan:**
-
-1. Launch on Fire TV
-2. Navigate with D-pad
-3. Verify focused element has visible highlight
+**Verification:**
+- Build passed for firestick flavor
 
 ---
 
@@ -687,31 +684,31 @@ for (rec in recommendations) {
 
 ## Summary Statistics
 
-**Last Updated:** 2026-01-20
-**Total Issues:** 20 (**10 RESOLVED**)
+**Last Updated:** 2026-01-23
+**Total Issues:** 21 (**14 RESOLVED**)
 
 **By Risk Level:**
 
 - 🔴 Critical/High: **0** (was 6 - #1, #3, #4, #5, #17, #19 resolved)
-- 🟡 Medium: **5** (was 9 - #2, #6, #7, #12, #15 resolved)
-- 🟢 Low: 5 (unchanged)
+- 🟡 Medium: **3** (was 9 - #2, #6, #7, #10, #12, #15, #16 resolved)
+- 🟢 Low: 4 (was 5 - #21 resolved)
 
 **By Platform:**
 
-- Both (Android + Fire TV): 10 (was 17)
-- Fire TV only: 0 (was 2, #17 resolved)
+- Both (Android + Fire TV): 7 (was 17)
+- Fire TV only: 0 (was 2, #16, #17 resolved)
 
 **By Category:**
 
 - Data integrity: 0 (was 2 - #1, #6 resolved)
-- Performance: 3 (was 4 - #7 resolved)
+- Performance: 2 (was 4 - #7, #10 resolved)
 - Dead code: 0 (was 2 - #4 removed, #5 verified not dead)
 - Security: 1 (was 4 - #3, #19 resolved)
-- UX: 4 (was 5 - #12 resolved)
+- UX: 3 (was 5 - #12, #16 resolved)
 - Compliance: 0 (was 1 - #19 resolved)
 - Tech debt: 2
 
-**Resolved Issues (10):**
+**Resolved Issues (13):**
 
 | Issue | Description | Resolution |
 |-------|-------------|------------|
@@ -722,24 +719,159 @@ for (rec in recommendations) {
 | ✅ #5 | ImdbScraperService | NOT dead code (verified reachable from UI) |
 | ✅ #6 | DB Growth/Cleanup | Automatic orphan cleanup with 30-day TTL |
 | ✅ #7 | HTTP Caching | 10MB OkHttp cache configured |
+| ✅ #10 | Hardcoded Cache Size | Dynamic cache based on free space (75% of available) |
 | ✅ #12 | Name Validation | sanitizeUserName() with length/char limits |
 | ✅ #15 | ProGuard Rules | Verified comprehensive rules, release build works |
+| ✅ #16 | DPAD Focus Hints | Enhanced focus indicators for all TV elements |
 | ✅ #17 | Fire TV Banner | Already exists at `ic_tv_banner.png` |
 | ✅ #19 | LLM Consent | GDPR dialog + TMDB-only fallback |
+| ✅ #21 | Screensaver During Playback | keepScreenOn = true on PlayerView |
 
-**Remaining Issues (10):**
+**Remaining Issues (7):**
 
 | Priority | Issue | Description |
 |----------|-------|-------------|
 | 🟡 Medium | #8 | Popcorn sequential page search |
 | 🟡 Medium | #9 | LLM genre validation performance |
-| 🟡 Medium | #10 | Make constants configurable |
 | 🟡 Medium | #11 | Offline mode graceful degradation |
-| 🟡 Medium | #16 | Fire TV DPAD focus indicators |
 | 🟢 Low | #13 | Telemetry/analytics (product decision needed) |
 | 🟢 Low | #14 | Unit tests coverage |
 | 🟢 Low | #18 | Pre-commit hooks / secret scanning |
 | 🟢 Low | #20 | Certificate pinning (advanced hardening) |
+
+### 22. TV Shows Recommendations: Trailers and Torrents Used Movie-Only Code Paths
+
+**Status:** ✅ **FIXED** - 2026-02-18
+
+**Evidence:**
+
+- [MovieRepository.kt](../app/src/main/java/com/movierecommender/app/data/repository/MovieRepository.kt): `getImdbTrailerUrlByTitle()` called `apiService.searchMovies()` (movies-only TMDB endpoint) for all content types
+- [MovieRepository.kt](../app/src/main/java/com/movierecommender/app/data/repository/MovieRepository.kt): `getTorrentInfo()` searched YTS + Popcorn Movies API — both movie-only sources
+- Both firestick and mobile `RecommendationsScreen` used movie-only methods regardless of `ContentMode`
+
+**Problem:** When the user was in TV Shows mode, both "Watch Trailer" and "Watch Now" buttons on recommendation cards always used movie-only APIs:
+1. **Trailers:** TMDB movie search → no results for TV show titles → "No trailer available"
+2. **Torrents:** YTS/Popcorn Movie API → no results for TV shows → "No streaming source found"
+
+**Resolution:**
+
+**Repository layer:**
+- Added `getTvShowTrailerUrlByTitle()`: Uses TMDB TV search → TMDB Videos API for YouTube trailers, falls back to IMDB scraping via external IDs
+- Added `getTvShowFirstEpisodeTorrent()`: Searches Popcorn TV API, gets show details, returns best torrent for first available episode (S01E01 preferred)
+- Added `findBestFirstEpisode()`: Helper to find best available episode torrent with quality fallback
+
+**ViewModel layer (both flavors):**
+- Added `getTvShowTrailerUrlByTitle()`: Routes to repository TV show trailer method
+- Added `getTrailerUrlByTitle(title, year, isTvMode)`: Content-mode-aware wrapper
+- Added `getTvShowTorrentMagnetUrl()`: Returns `Pair<magnetUrl, displayLabel>` with episode info
+- Added `getTorrentMagnetUrlForContent(title, year, isTvMode)`: Content-mode-aware wrapper
+
+**UI layer:**
+- Firestick `RecommendationCard`: Now accepts `isTvMode` parameter, uses `getTrailerUrlByTitle()` and `getTorrentMagnetUrlForContent()`
+- Mobile `RecommendationRow`: Same changes — threads `isTvMode` through `ParsedRecommendationsList`
+
+**Behavior Change:**
+- **Before:** TV show recommendations → no trailers, no torrents
+- **After:** TV show recommendations → YouTube trailers from TMDB Videos API, torrents from Popcorn TV API (first episode auto-selected)
+
+**Risk Level:** ✅ **RESOLVED**
+
+---
+
+### 23. EZTV API Added as Fallback Torrent Source for TV Shows
+
+**Status:** ✅ **IMPLEMENTED** - 2026-02-18
+
+**Evidence:**
+
+- [EztvApiService.kt](../app/src/main/java/com/movierecommender/app/data/remote/EztvApiService.kt): New service class for EZTV API integration
+- [MovieRepository.kt](../app/src/main/java/com/movierecommender/app/data/repository/MovieRepository.kt): Four TV torrent methods updated to use EZTV fallback
+
+**Background:** Popcorn TV API sometimes doesn't have torrent data for certain TV shows. EZTV (eztvx.to) provides an alternative, free, no-API-key-required source for TV show torrents indexed by IMDB ID.
+
+**Implementation:**
+
+**New service (`EztvApiService.kt`):**
+- Lookup by IMDB ID via `GET /api/get-torrents?imdb_id={id}`
+- Paginated fetching (up to 300 torrents per show)
+- Quality detection from torrent titles (2160p/1080p/720p/480p/HDTV/SD)
+- Quality-scored torrent selection (matching quality + seed count - file size penalty)
+- Mirror URL fallback: `eztvx.to` → `eztv.re` → `eztv.wf`
+- Browser-like User-Agent header to avoid Cloudflare blocking
+- Methods: `getTorrentsByImdbId()`, `getEpisodeTorrent()`, `getSeasons()`, `getEpisodesForSeason()`, `getFirstEpisodeTorrent()`
+
+**Repository integration (fallback chain: Popcorn TV → EZTV):**
+- `getTvShowFirstEpisodeTorrent()`: Popcorn search/keyword search → EZTV via resolved IMDB ID
+- `getTvEpisodeTorrentInfo()`: Popcorn episode lookup → EZTV episode lookup
+- `getTvShowSeasons()`: Popcorn seasons → EZTV seasons
+- `getTvShowEpisodes()`: Popcorn episodes → EZTV episodes (mapped to `PopcornEpisode` for UI compatibility)
+
+**Helper added:**
+- `resolveImdbIdForTvShow()`: Searches TMDB TV shows → gets external IDs to resolve IMDB ID when Popcorn doesn't provide one
+
+**Behavior Change:**
+- **Before:** TV shows not found on Popcorn TV API → "No streaming source found"
+- **After:** TV shows not found on Popcorn TV API → EZTV fallback attempted → significantly improved torrent coverage
+
+**Risk Level:** Low — EZTV is a fallback-only path; Popcorn TV remains primary
+
+---
+
+### 24. TV Show Recommendations Now Show Episode Picker Instead of Auto-Playing S01E01
+
+**Status:** ✅ **IMPLEMENTED** - 2026-02-18
+
+**Evidence:**
+
+- Firestick [RecommendationsScreen.kt](../app/src/firestick/java/com/movierecommender/app/ui/screens/RecommendationsScreen.kt): `RecommendationCard` now shows `EpisodePickerDialog` in TV mode
+- Mobile [RecommendationsScreen.kt](../app/src/mobile/java/com/movierecommender/app/ui/screens/RecommendationsScreen.kt): `RecommendationRow` now shows `EpisodePickerDialog` in TV mode
+- Both [MovieSelectionScreen.kt](../app/src/firestick/java/com/movierecommender/app/ui/screens/MovieSelectionScreen.kt) `EpisodePickerDialog` updated with `preResolvedImdbId` parameter and TMDB IMDB resolution fallback
+
+**Problem:** The "Watch Now" button on TV show recommendation cards auto-played S01E01 without letting users choose an episode. Users expected to browse and select any episode.
+
+**Resolution:**
+
+- **Button label changed:** "Watch Now" → "Browse Episodes" in TV mode (both flavors)
+- **Click behavior changed:** Instead of calling `getTvShowFirstEpisodeTorrent()`, now resolves IMDB ID via `getSeasonsForTvShowByTitle()` and opens the `EpisodePickerDialog`
+- **New ViewModel methods:** `resolveImdbIdByTitle()` and `getSeasonsForTvShowByTitle()` for title-based IMDB resolution
+- **Repository method made public:** `resolveImdbIdForTvShow()` now tries Popcorn TV search first, then falls back to TMDB search + external IDs
+- **`EpisodePickerDialog` enhanced:** Accepts optional `preResolvedImdbId` parameter to skip redundant searches; falls back to TMDB resolution when Popcorn TV search returns no IMDB ID
+
+**Behavior Change:**
+- **Before:** TV show recommendation → "Watch Now" → auto-streams S01E01
+- **After:** TV show recommendation → "Browse Episodes" → episode picker dialog → user selects season/episode → streams selected episode
+
+**Risk Level:** Low — movie mode behavior unchanged; TV mode gains full episode browsing
+
+---
+
+### Issue #25: DPAD Focus Auto-Triggers Buttons on Card Selection (Firestick)
+
+**Status:** ✅ RESOLVED  
+**Severity:** High  
+**Platform:** Firestick only  
+**Files:**
+- [MovieSelectionScreen.kt](../app/src/firestick/java/com/movierecommender/app/ui/screens/MovieSelectionScreen.kt) — `MovieCard` and `TvShowCard` composables
+
+**Problem:** On Firestick, pressing DPAD center on a movie or TV show card immediately focused and triggered the first inner `IconButton` instead of just "entering" the card. In `MovieCard`, this auto-triggered the heart/favorite button (TopStart position). In `TvShowCard`, it auto-triggered the Watch Now/play button (TopCenter position). Users could not navigate between buttons before activating one.
+
+**Root Cause:** Both the `Card` (via `.focusable()`) and its inner `IconButton`s were independently focusable targets. Compose's focus system treated each `IconButton` as a separate DPAD navigation target, so pressing center/select on the card immediately moved focus to the first focusable child and triggered its `onClick`.
+
+**Resolution:** Implemented a two-level focus model:
+- **Level 1 (Card-level):** Card is the only DPAD-navigable focus target. Inner buttons are NOT focusable until the card is "active".
+- **Level 2 (Button-level):** Pressing DPAD center on a focused card sets `isCardActive = true` and requests focus on the middle button (play/watch) via `FocusRequester` — without triggering any action.
+- **Navigation within card:** Left/right DPAD navigates between buttons (heart ← play → check for movies; watch ← → check for TV shows).
+- **Exit card:** Pressing DPAD Back exits active state and returns focus to the card itself.
+- **Static icons:** When `isCardActive = false`, buttons are rendered as static icons (not `IconButton`) so they cannot receive DPAD focus.
+- **Auto-deactivate:** `LaunchedEffect` watches focus state; if neither the card nor any button is focused, `isCardActive` resets to `false`.
+
+**Behavior Change:**
+- **Before:** DPAD navigate to card → press center → auto-triggers favorite (movies) or play (TV shows)
+- **After:** DPAD navigate to card → press center → enters card (focuses play button without triggering) → left/right to navigate buttons → press center to activate → back to exit
+
+**Risk Level:** Low — only affects firestick flavor DPAD navigation; mobile touch UI unaffected
+
+---
 
 **Next Steps:**
 

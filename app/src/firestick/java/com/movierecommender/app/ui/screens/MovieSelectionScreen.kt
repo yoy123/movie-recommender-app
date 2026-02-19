@@ -34,11 +34,13 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -50,8 +52,11 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import com.movierecommender.app.data.model.Movie
+import com.movierecommender.app.data.model.TvShow
+import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
 import com.movierecommender.app.ui.dialogs.firestick.LlmConsentDialog
+import com.movierecommender.app.data.remote.PopcornEpisode
 
 @Composable
 fun MovieSelectionScreen(
@@ -66,6 +71,12 @@ fun MovieSelectionScreen(
     var isSearchActive by remember { mutableStateOf(false) }
     val keyboardController = LocalSoftwareKeyboardController.current
     val gridState = rememberLazyGridState()
+    
+    // Content mode handling
+    val isTvMode = uiState.contentMode == ContentMode.TV_SHOWS
+    val contentLabel = if (isTvMode) "TV Shows" else "Movies"
+    val itemCount = if (isTvMode) uiState.tvShows.size else uiState.movies.size
+    val selectedCount = if (isTvMode) uiState.selectedTvShows.size else uiState.selectedMovies.size
 
     val lastVisibleIndex by remember {
         derivedStateOf {
@@ -73,12 +84,14 @@ fun MovieSelectionScreen(
         }
     }
 
-    LaunchedEffect(lastVisibleIndex, uiState.movies.size, uiState.canLoadMoreGenreMovies, uiState.isLoading, uiState.isLoadingMore, uiState.searchQuery) {
-        // Infinite scroll for genre browsing (disabled while searching).
-        val threshold = 9
-        val nearEnd = uiState.movies.isNotEmpty() && lastVisibleIndex >= (uiState.movies.size - threshold).coerceAtLeast(0)
-        if (nearEnd && uiState.canLoadMoreGenreMovies && !uiState.isLoading && !uiState.isLoadingMore && uiState.searchQuery.isBlank()) {
-            viewModel.loadNextGenreMoviesPage()
+    LaunchedEffect(lastVisibleIndex, itemCount, uiState.canLoadMoreGenreMovies, uiState.isLoading, uiState.isLoadingMore, uiState.searchQuery, isTvMode) {
+        // Infinite scroll for genre browsing (disabled while searching) - only for movies for now
+        if (!isTvMode) {
+            val threshold = 9
+            val nearEnd = uiState.movies.isNotEmpty() && lastVisibleIndex >= (uiState.movies.size - threshold).coerceAtLeast(0)
+            if (nearEnd && uiState.canLoadMoreGenreMovies && !uiState.isLoading && !uiState.isLoadingMore && uiState.searchQuery.isBlank()) {
+                viewModel.loadNextGenreMoviesPage()
+            }
         }
     }
     
@@ -86,7 +99,7 @@ fun MovieSelectionScreen(
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text("Select Movies (1-5)") },
+                    title = { Text("Select $contentLabel (1-5)") },
                     navigationIcon = {
                         // TV-friendly back button with focus indicator
                         val backInteraction = remember { MutableInteractionSource() }
@@ -112,7 +125,7 @@ fun MovieSelectionScreen(
                         }
                     },
                     actions = {
-                        if (uiState.selectedMovies.isNotEmpty()) {
+                        if (selectedCount > 0) {
                             // Clear selections button with focus indicator
                             val clearInteraction = remember { MutableInteractionSource() }
                             val clearFocused by clearInteraction.collectIsFocusedAsState()
@@ -127,7 +140,10 @@ fun MovieSelectionScreen(
                                     border = if (clearFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
                                 ) {
                                     IconButton(
-                                        onClick = { viewModel.clearSelections() },
+                                        onClick = { 
+                                            if (isTvMode) viewModel.clearTvShowSelections()
+                                            else viewModel.clearSelections() 
+                                        },
                                         interactionSource = clearInteraction
                                     ) {
                                         Icon(
@@ -224,12 +240,12 @@ fun MovieSelectionScreen(
                         value = searchQuery,
                         onValueChange = {
                             searchQuery = it
-                            viewModel.searchMovies(it)
+                            viewModel.searchContent(it)
                         },
                         isActive = isSearchActive,
                         onActiveChange = { isSearchActive = it },
                         onSearch = {
-                            viewModel.searchMovies(searchQuery)
+                            viewModel.searchContent(searchQuery)
                             isSearchActive = false
                             keyboardController?.hide()
                         },
@@ -239,7 +255,7 @@ fun MovieSelectionScreen(
                 }
                 
                 LinearProgressIndicator(
-                    progress = (uiState.selectedMovies.size / 5f).coerceAtMost(1f),
+                    progress = (selectedCount / 5f).coerceAtMost(1f),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 48.dp)
@@ -251,24 +267,30 @@ fun MovieSelectionScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val itemLabel = if (isTvMode) "TV show" else "movie"
                     Text(
-                        text = "${uiState.selectedMovies.size} movie${if (uiState.selectedMovies.size != 1) "s" else ""} selected (up to 5)",
+                        text = "$selectedCount $itemLabel${if (selectedCount != 1) "s" else ""} selected (up to 5)",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     
-                    if (uiState.selectedMovies.isNotEmpty()) {
+                    if (selectedCount > 0) {
                         // Get Recommendations button with focus indicator
                         val getRecsInteraction = remember { MutableInteractionSource() }
                         val getRecsFocused by getRecsInteraction.collectIsFocusedAsState()
                         
                         Button(
                             onClick = {
-                                // Check if consent is needed before generating recommendations
-                                if (!uiState.llmConsentAsked) {
-                                    viewModel.checkAndShowLlmConsentIfNeeded()
-                                } else {
-                                    viewModel.generateRecommendations()
+                                if (isTvMode) {
+                                    viewModel.generateTvRecommendations()
                                     onGenerateRecommendations()
+                                } else {
+                                    // Check if consent is needed before generating recommendations
+                                    if (!uiState.llmConsentAsked) {
+                                        viewModel.checkAndShowLlmConsentIfNeeded()
+                                    } else {
+                                        viewModel.generateRecommendations()
+                                        onGenerateRecommendations()
+                                    }
                                 }
                             },
                             interactionSource = getRecsInteraction,
@@ -307,9 +329,9 @@ fun MovieSelectionScreen(
                             .padding(16.dp)
                     )
                 }
-                uiState.movies.isEmpty() -> {
+                itemCount == 0 -> {
                     Text(
-                        text = "No movies found",
+                        text = "No ${contentLabel.lowercase()} found",
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }
@@ -326,19 +348,33 @@ fun MovieSelectionScreen(
                         horizontalArrangement = Arrangement.spacedBy(20.dp),
                         verticalArrangement = Arrangement.spacedBy(20.dp)
                     ) {
-                        items(uiState.movies) { movie ->
-                            MovieCard(
-                                movie = movie,
-                                isSelected = uiState.selectedMovies.any { it.id == movie.id },
-                                isFavorite = movie.isFavorite,
-                                onToggleFavorite = {
-                                    if (movie.isFavorite) viewModel.removeFromFavorites(movie.id)
-                                    else viewModel.addToFavorites(movie)
-                                },
-                                onToggleSelection = { viewModel.toggleMovieSelection(movie) },
-                                viewModel = viewModel,
-                                onWatchNow = onWatchNow
-                            )
+                        if (isTvMode) {
+                            // TV Shows grid
+                            items(uiState.tvShows) { tvShow ->
+                                TvShowCard(
+                                    tvShow = tvShow,
+                                    isSelected = uiState.selectedTvShows.any { it.id == tvShow.id },
+                                    onToggleSelection = { viewModel.toggleTvShowSelection(tvShow) },
+                                    viewModel = viewModel,
+                                    onWatchNow = onWatchNow
+                                )
+                            }
+                        } else {
+                            // Movies grid
+                            items(uiState.movies) { movie ->
+                                MovieCard(
+                                    movie = movie,
+                                    isSelected = uiState.selectedMovies.any { it.id == movie.id },
+                                    isFavorite = movie.isFavorite,
+                                    onToggleFavorite = {
+                                        if (movie.isFavorite) viewModel.removeFromFavorites(movie.id)
+                                        else viewModel.addToFavorites(movie)
+                                    },
+                                    onToggleSelection = { viewModel.toggleMovieSelection(movie) },
+                                    viewModel = viewModel,
+                                    onWatchNow = onWatchNow
+                                )
+                            }
                         }
                     }
                 }
@@ -417,20 +453,96 @@ fun MovieCard(
     val context = LocalContext.current
     var isLoadingMagnet by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
-    val selectFocusRequester = remember { FocusRequester() }
+    
+    // Two-level focus: card level vs button level
+    var isCardActive by remember { mutableStateOf(false) }
+    // Flag to consume the KeyUp that follows an activation/deactivation KeyDown
+    var consumeNextUp by remember { mutableStateOf(false) }
+    
+    // Focus requesters
+    val cardFocusRequester = remember { FocusRequester() }
+    val heartFocusRequester = remember { FocusRequester() }
+    val playFocusRequester = remember { FocusRequester() }
+    val checkFocusRequester = remember { FocusRequester() }
+    
+    // Focus tracking
+    val cardInteraction = remember { MutableInteractionSource() }
+    val cardFocused by cardInteraction.collectIsFocusedAsState()
+    val heartInteraction = remember { MutableInteractionSource() }
+    val heartFocused by heartInteraction.collectIsFocusedAsState()
+    val playInteraction = remember { MutableInteractionSource() }
+    val playFocused by playInteraction.collectIsFocusedAsState()
+    val checkInteraction = remember { MutableInteractionSource() }
+    val checkFocused by checkInteraction.collectIsFocusedAsState()
+    
+    val anyIconFocused = heartFocused || playFocused || checkFocused
+    
+    // When isCardActive becomes true, focus the play button AFTER recomposition
+    LaunchedEffect(isCardActive) {
+        if (isCardActive) {
+            try { playFocusRequester.requestFocus() } catch (_: Exception) {}
+        }
+    }
+    
+    // Deactivate if focus leaves the card entirely
+    LaunchedEffect(cardFocused, anyIconFocused) {
+        if (!cardFocused && !anyIconFocused) {
+            isCardActive = false
+        }
+    }
     
     Card(
-        onClick = { selectFocusRequester.requestFocus() },
         modifier = Modifier
             .fillMaxWidth()
-            .height(280.dp),
+            .height(280.dp)
+            .focusRequester(cardFocusRequester)
+            .onPreviewKeyEvent { keyEvent ->
+                when (keyEvent.key) {
+                    Key.DirectionCenter, Key.Enter -> {
+                        if (keyEvent.type == KeyEventType.KeyDown && cardFocused && !isCardActive) {
+                            // First press: activate card (LaunchedEffect will focus the play button)
+                            isCardActive = true
+                            consumeNextUp = true
+                            true
+                        } else if (keyEvent.type == KeyEventType.KeyUp && consumeNextUp) {
+                            // Consume the matching KeyUp so the button doesn't trigger onClick
+                            consumeNextUp = false
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    Key.Back, Key.Escape -> {
+                        if (keyEvent.type == KeyEventType.KeyDown && isCardActive) {
+                            isCardActive = false
+                            consumeNextUp = true
+                            try { cardFocusRequester.requestFocus() } catch (_: Exception) {}
+                            true
+                        } else if (keyEvent.type == KeyEventType.KeyUp && consumeNextUp) {
+                            consumeNextUp = false
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    else -> false
+                }
+            }
+            .focusable(interactionSource = cardInteraction),
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected)
                 MaterialTheme.colorScheme.primaryContainer
+            else if (cardFocused || anyIconFocused)
+                MaterialTheme.colorScheme.surfaceVariant
             else
                 MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        border = if (cardFocused || anyIconFocused) 
+            BorderStroke(4.dp, MaterialTheme.colorScheme.primary) 
+        else null,
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (cardFocused || anyIconFocused) 12.dp else 4.dp
+        )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             AsyncImage(
@@ -442,83 +554,119 @@ fun MovieCard(
                     .height(180.dp)
             )
 
-            // Heart icon - top left corner - ALWAYS VISIBLE
-            IconButton(
-                onClick = onToggleFavorite,
+            // Heart icon - top left corner
+            Surface(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(8.dp)
-                    .size(48.dp)
+                    .size(48.dp),
+                shape = MaterialTheme.shapes.small,
+                color = if (heartFocused) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f),
+                border = if (heartFocused) BorderStroke(3.dp, androidx.compose.ui.graphics.Color.White) else null
             ) {
-                Icon(
-                    imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                    contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites",
-                    tint = if (isFavorite) androidx.compose.ui.graphics.Color(0xFFE53935) else androidx.compose.ui.graphics.Color.White,
-                    modifier = Modifier.size(32.dp)
-                )
+                IconButton(
+                    onClick = onToggleFavorite,
+                    interactionSource = heartInteraction,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .focusRequester(heartFocusRequester)
+                        .focusProperties { canFocus = isCardActive }
+                ) {
+                    Icon(
+                        imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites",
+                        tint = if (heartFocused) androidx.compose.ui.graphics.Color.White 
+                               else if (isFavorite) androidx.compose.ui.graphics.Color(0xFFE53935) 
+                               else androidx.compose.ui.graphics.Color.White,
+                        modifier = Modifier.size(if (heartFocused) 36.dp else 32.dp)
+                    )
+                }
             }
 
-            // Watch Now button - top center - ALWAYS VISIBLE
+            // Watch Now button - top center
             if (viewModel != null) {
-                IconButton(
-                    onClick = {
-                        if (!isLoadingMagnet) {
-                            isLoadingMagnet = true
-                            coroutineScope.launch {
-                                try {
-                                    val year = movie.releaseDate?.take(4)
-                                    val magnet = viewModel.getTorrentMagnetUrl(movie.title, year)
-                                    if (magnet != null) {
-                                        onWatchNow(movie.title, magnet)
-                                    } else {
-                                        Toast.makeText(context, "No streaming source found", Toast.LENGTH_SHORT).show()
-                                    }
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Error finding source", Toast.LENGTH_SHORT).show()
-                                } finally {
-                                    isLoadingMagnet = false
-                                }
-                            }
-                        }
-                    },
+                Surface(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(8.dp)
                         .size(48.dp),
-                    enabled = !isLoadingMagnet
+                    shape = MaterialTheme.shapes.small,
+                    color = if (playFocused) MaterialTheme.colorScheme.tertiary else androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f),
+                    border = if (playFocused) BorderStroke(3.dp, androidx.compose.ui.graphics.Color.White) else null
                 ) {
-                    if (isLoadingMagnet) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = androidx.compose.ui.graphics.Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Filled.PlayArrow,
-                            contentDescription = "Watch Now",
-                            tint = androidx.compose.ui.graphics.Color.White,
-                            modifier = Modifier.size(32.dp)
-                        )
+                    IconButton(
+                        onClick = {
+                            if (!isLoadingMagnet) {
+                                isLoadingMagnet = true
+                                coroutineScope.launch {
+                                    try {
+                                        val year = movie.releaseDate?.take(4)
+                                        val magnet = viewModel.getTorrentMagnetUrl(movie.title, year)
+                                        if (magnet != null) {
+                                            onWatchNow(movie.title, magnet)
+                                        } else {
+                                            Toast.makeText(context, "No streaming source found", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Error finding source", Toast.LENGTH_SHORT).show()
+                                    } finally {
+                                        isLoadingMagnet = false
+                                    }
+                                }
+                            }
+                        },
+                        interactionSource = playInteraction,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .focusRequester(playFocusRequester)
+                            .focusProperties { canFocus = isCardActive },
+                        enabled = !isLoadingMagnet
+                    ) {
+                        if (isLoadingMagnet) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = androidx.compose.ui.graphics.Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.PlayArrow,
+                                contentDescription = "Watch Now",
+                                tint = androidx.compose.ui.graphics.Color.White,
+                                modifier = Modifier.size(if (playFocused) 36.dp else 32.dp)
+                            )
+                        }
                     }
                 }
             }
 
-            // Checkbox - top right corner - ALWAYS VISIBLE
-            IconButton(
-                onClick = onToggleSelection,
+            // Checkbox - top right corner
+            Surface(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(8.dp)
-                    .size(48.dp)
-                    .focusRequester(selectFocusRequester)
+                    .size(48.dp),
+                shape = MaterialTheme.shapes.small,
+                color = if (checkFocused) MaterialTheme.colorScheme.secondary else androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f),
+                border = if (checkFocused) BorderStroke(3.dp, androidx.compose.ui.graphics.Color.White) else null
             ) {
-                Icon(
-                    imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle,
-                    contentDescription = if (isSelected) "Selected" else "Not selected",
-                    tint = if (isSelected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.White,
-                    modifier = Modifier.size(32.dp)
-                )
+                IconButton(
+                    onClick = onToggleSelection,
+                    interactionSource = checkInteraction,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .focusRequester(checkFocusRequester)
+                        .focusProperties { canFocus = isCardActive }
+                ) {
+                    Icon(
+                        imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle,
+                        contentDescription = if (isSelected) "Selected" else "Not selected",
+                        tint = if (checkFocused) androidx.compose.ui.graphics.Color.White
+                               else if (isSelected) MaterialTheme.colorScheme.primary 
+                               else androidx.compose.ui.graphics.Color.White,
+                        modifier = Modifier.size(if (checkFocused) 36.dp else 32.dp)
+                    )
+                }
             }
 
             // Info section with semi-transparent background for readability
@@ -565,6 +713,485 @@ fun MovieCard(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun TvShowCard(
+    tvShow: TvShow,
+    isSelected: Boolean,
+    onToggleSelection: () -> Unit,
+    viewModel: MovieViewModel? = null,
+    onWatchNow: (title: String, magnetUrl: String) -> Unit = { _, _ -> }
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var isLoadingMagnet by remember { mutableStateOf(false) }
+    var showEpisodePicker by remember { mutableStateOf(false) }
+    var availableSeasons by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var selectedSeason by remember { mutableStateOf(1) }
+    var isLoadingSeasons by remember { mutableStateOf(false) }
+    
+    // Two-level focus: card level vs button level
+    var isCardActive by remember { mutableStateOf(false) }
+    // Flag to consume the KeyUp that follows an activation/deactivation KeyDown
+    var consumeNextUp by remember { mutableStateOf(false) }
+    
+    // Focus requesters
+    val cardFocusRequester = remember { FocusRequester() }
+    val checkFocusRequester = remember { FocusRequester() }
+    val watchFocusRequester = remember { FocusRequester() }
+    
+    // Focus tracking
+    val cardInteraction = remember { MutableInteractionSource() }
+    val cardFocused by cardInteraction.collectIsFocusedAsState()
+    val checkInteraction = remember { MutableInteractionSource() }
+    val checkFocused by checkInteraction.collectIsFocusedAsState()
+    val watchInteraction = remember { MutableInteractionSource() }
+    val watchFocused by watchInteraction.collectIsFocusedAsState()
+    
+    val anyIconFocused = checkFocused || watchFocused
+    
+    // When isCardActive becomes true, focus the watch button AFTER recomposition
+    LaunchedEffect(isCardActive) {
+        if (isCardActive) {
+            try { watchFocusRequester.requestFocus() } catch (_: Exception) {}
+        }
+    }
+    
+    // Deactivate if focus leaves the card entirely
+    LaunchedEffect(cardFocused, anyIconFocused) {
+        if (!cardFocused && !anyIconFocused) {
+            isCardActive = false
+        }
+    }
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(280.dp)
+            .focusRequester(cardFocusRequester)
+            .onPreviewKeyEvent { keyEvent ->
+                when (keyEvent.key) {
+                    Key.DirectionCenter, Key.Enter -> {
+                        if (keyEvent.type == KeyEventType.KeyDown && cardFocused && !isCardActive) {
+                            isCardActive = true
+                            consumeNextUp = true
+                            true
+                        } else if (keyEvent.type == KeyEventType.KeyUp && consumeNextUp) {
+                            consumeNextUp = false
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    Key.Back, Key.Escape -> {
+                        if (keyEvent.type == KeyEventType.KeyDown && isCardActive) {
+                            isCardActive = false
+                            consumeNextUp = true
+                            try { cardFocusRequester.requestFocus() } catch (_: Exception) {}
+                            true
+                        } else if (keyEvent.type == KeyEventType.KeyUp && consumeNextUp) {
+                            consumeNextUp = false
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    else -> false
+                }
+            }
+            .focusable(interactionSource = cardInteraction),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected)
+                MaterialTheme.colorScheme.primaryContainer
+            else if (cardFocused || anyIconFocused)
+                MaterialTheme.colorScheme.surfaceVariant
+            else
+                MaterialTheme.colorScheme.surface
+        ),
+        border = if (cardFocused || anyIconFocused) 
+            BorderStroke(4.dp, MaterialTheme.colorScheme.primary) 
+        else null,
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (cardFocused || anyIconFocused) 12.dp else 4.dp
+        )
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            AsyncImage(
+                model = tvShow.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
+                contentDescription = tvShow.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+            )
+            
+            // Watch Now button - top center
+            if (viewModel != null) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(8.dp)
+                        .size(48.dp),
+                    shape = MaterialTheme.shapes.small,
+                    color = if (watchFocused) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f),
+                    border = if (watchFocused) BorderStroke(3.dp, androidx.compose.ui.graphics.Color.White) else null
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (!isLoadingMagnet && !isLoadingSeasons) {
+                                isLoadingSeasons = true
+                                coroutineScope.launch {
+                                    try {
+                                        val imdbId = viewModel.getTvShowImdbId(tvShow.id)
+                                        if (imdbId != null) {
+                                            val seasons = viewModel.getTvShowSeasons(imdbId)
+                                            if (seasons.isNotEmpty()) {
+                                                availableSeasons = seasons
+                                                selectedSeason = seasons.first()
+                                                showEpisodePicker = true
+                                            } else {
+                                                Toast.makeText(context, "No episodes available", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } else {
+                                            Toast.makeText(context, "Show not found", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Error finding show", Toast.LENGTH_SHORT).show()
+                                    } finally {
+                                        isLoadingSeasons = false
+                                    }
+                                }
+                            }
+                        },
+                        interactionSource = watchInteraction,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .focusRequester(watchFocusRequester)
+                            .focusProperties { canFocus = isCardActive },
+                        enabled = !isLoadingMagnet && !isLoadingSeasons
+                    ) {
+                        if (isLoadingMagnet || isLoadingSeasons) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = androidx.compose.ui.graphics.Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.PlayArrow,
+                                contentDescription = "Watch Now",
+                                tint = androidx.compose.ui.graphics.Color.White,
+                                modifier = Modifier.size(if (watchFocused) 36.dp else 32.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Checkbox - top right corner
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .size(48.dp),
+                shape = MaterialTheme.shapes.small,
+                color = if (checkFocused) MaterialTheme.colorScheme.secondary else androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f),
+                border = if (checkFocused) BorderStroke(3.dp, androidx.compose.ui.graphics.Color.White) else null
+            ) {
+                IconButton(
+                    onClick = onToggleSelection,
+                    interactionSource = checkInteraction,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .focusRequester(checkFocusRequester)
+                        .focusProperties { canFocus = isCardActive }
+                ) {
+                    Icon(
+                        imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle,
+                        contentDescription = if (isSelected) "Selected" else "Not selected",
+                        tint = if (checkFocused) androidx.compose.ui.graphics.Color.White
+                               else if (isSelected) MaterialTheme.colorScheme.primary 
+                               else androidx.compose.ui.graphics.Color.White,
+                        modifier = Modifier.size(if (checkFocused) 36.dp else 32.dp)
+                    )
+                }
+            }
+
+            // Info section with semi-transparent background for readability
+            Surface(
+                color = androidx.compose.ui.graphics.Color(0xCC000000),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp)
+                ) {
+                    Text(
+                        text = tvShow.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = androidx.compose.ui.graphics.Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = tvShow.overview,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.9f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "★ ${String.format("%.1f", tvShow.voteAverage)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = androidx.compose.ui.graphics.Color(0xFFFFD700)
+                        )
+                        tvShow.firstAirDate?.let {
+                            Text(
+                                text = it.take(4),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Episode Picker Dialog
+    if (showEpisodePicker && viewModel != null) {
+        EpisodePickerDialog(
+            showName = tvShow.name,
+            seasons = availableSeasons,
+            selectedSeason = selectedSeason,
+            onSeasonSelected = { selectedSeason = it },
+            onEpisodeSelected = { episode ->
+                showEpisodePicker = false
+                isLoadingMagnet = true
+                coroutineScope.launch {
+                    try {
+                        val imdbId = viewModel.getTvShowImdbId(tvShow.id)
+                        val magnet = viewModel.getTvEpisodeMagnetUrl(
+                            showTitle = tvShow.name,
+                            imdbId = imdbId,
+                            season = selectedSeason,
+                            episode = episode
+                        )
+                        if (magnet != null) {
+                            onWatchNow("${tvShow.name} S${selectedSeason}E${episode}", magnet)
+                        } else {
+                            Toast.makeText(context, "No streaming source found", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Error finding source", Toast.LENGTH_SHORT).show()
+                    } finally {
+                        isLoadingMagnet = false
+                    }
+                }
+            },
+            onDismiss = { showEpisodePicker = false },
+            viewModel = viewModel
+        )
+    }
+}
+
+/**
+ * Dialog for selecting a TV show episode to stream.
+ * Shows season tabs and episode list for the selected season.
+ * TV-optimized with focus indicators for DPAD navigation.
+ */
+@Composable
+fun EpisodePickerDialog(
+    showName: String,
+    seasons: List<Int>,
+    selectedSeason: Int,
+    onSeasonSelected: (Int) -> Unit,
+    onEpisodeSelected: (Int) -> Unit,
+    onDismiss: () -> Unit,
+    viewModel: MovieViewModel,
+    preResolvedImdbId: String? = null
+) {
+    var episodes by remember { mutableStateOf<List<PopcornEpisode>>(emptyList()) }
+    var isLoadingEpisodes by remember { mutableStateOf(false) }
+    var imdbId by remember { mutableStateOf(preResolvedImdbId) }
+    
+    // Load episodes when season changes
+    LaunchedEffect(selectedSeason) {
+        isLoadingEpisodes = true
+        try {
+            // Use pre-resolved IMDB ID if available, otherwise search Popcorn then TMDB
+            if (imdbId == null) {
+                val searchResult = viewModel.searchTvShowTorrent(showName)
+                imdbId = searchResult?.imdbId
+            }
+            if (imdbId == null) {
+                imdbId = viewModel.resolveImdbIdByTitle(showName)
+            }
+            if (imdbId != null) {
+                episodes = viewModel.getTvShowEpisodes(imdbId!!, selectedSeason)
+            }
+        } catch (e: Exception) {
+            episodes = emptyList()
+        } finally {
+            isLoadingEpisodes = false
+        }
+    }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = showName,
+                style = MaterialTheme.typography.titleLarge
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+            ) {
+                // Season tabs
+                if (seasons.size > 1) {
+                    ScrollableTabRow(
+                        selectedTabIndex = seasons.indexOf(selectedSeason).coerceAtLeast(0),
+                        modifier = Modifier.fillMaxWidth(),
+                        edgePadding = 0.dp
+                    ) {
+                        seasons.forEach { season ->
+                            Tab(
+                                selected = season == selectedSeason,
+                                onClick = { onSeasonSelected(season) },
+                                text = { Text("Season $season") }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                } else if (seasons.isNotEmpty()) {
+                    Text(
+                        text = "Season ${seasons.first()}",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+                
+                // Episode list
+                if (isLoadingEpisodes) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else if (episodes.isEmpty()) {
+                    Text(
+                        text = "No episodes available",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                } else {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(episodes.size) { index ->
+                            val episode = episodes[index]
+                            val episodeNum = episode.episode ?: (index + 1)
+                            EpisodeItem(
+                                episodeNumber = episodeNum,
+                                title = episode.title,
+                                hasStreaming = episode.torrents?.isNotEmpty() == true,
+                                onClick = { onEpisodeSelected(episodeNum) }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+/**
+ * Single episode row in the episode picker with TV focus support.
+ */
+@Composable
+fun EpisodeItem(
+    episodeNumber: Int,
+    title: String?,
+    hasStreaming: Boolean,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .focusable(interactionSource = interactionSource),
+        onClick = onClick,
+        enabled = hasStreaming,
+        color = when {
+            isFocused -> MaterialTheme.colorScheme.primaryContainer
+            hasStreaming -> MaterialTheme.colorScheme.surface
+            else -> MaterialTheme.colorScheme.surfaceVariant
+        },
+        border = if (isFocused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "E$episodeNumber",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (hasStreaming) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (!title.isNullOrBlank() && title != "Episode $episodeNumber") {
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                }
+            }
+            if (hasStreaming) {
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = "Stream available",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            } else {
+                Text(
+                    text = "Unavailable",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

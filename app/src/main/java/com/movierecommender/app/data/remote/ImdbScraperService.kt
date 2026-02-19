@@ -6,6 +6,10 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
+/**
+ * Service for scraping IMDB trailer video URLs.
+ * Extracts direct MP4 URLs from IMDB movie pages.
+ */
 class ImdbScraperService {
     
     private val client = OkHttpClient.Builder()

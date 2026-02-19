@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.movierecommender.app.data.model.Genre
 import com.movierecommender.app.data.model.Movie
+import com.movierecommender.app.data.model.TvShow
+import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.data.repository.MovieRepository
 import com.movierecommender.app.data.settings.SettingsRepository
 import com.movierecommender.app.data.repository.Resource
@@ -15,9 +17,13 @@ import kotlinx.coroutines.launch
 
 data class MovieUiState(
     val genres: List<Genre> = emptyList(),
+    val tvGenres: List<Genre> = emptyList(), // TV show genres
     val movies: List<Movie> = emptyList(),
+    val tvShows: List<TvShow> = emptyList(), // TV shows for current genre
     val selectedMovies: List<Movie> = emptyList(),
+    val selectedTvShows: List<TvShow> = emptyList(), // Selected TV shows for recommendations
     val recommendedMovies: List<Movie> = emptyList(),
+    val recommendedTvShows: List<TvShow> = emptyList(), // Recommended TV shows
     val favoriteMovies: List<Movie> = emptyList(),
     val recommendationText: String? = null, // LLM text response (TMDB fallback on failure)
     val isLoading: Boolean = false,
@@ -26,6 +32,7 @@ data class MovieUiState(
     val selectedGenreName: String? = null,
     val searchQuery: String = "",
     val isFavoritesMode: Boolean = false,
+    val contentMode: ContentMode = ContentMode.MOVIES, // Movies or TV Shows mode
     // Paging for genre discovery (infinite scroll)
     val genrePage: Int = 1,
     val genreTotalPages: Int = 1,
@@ -222,6 +229,46 @@ class MovieViewModel(
         }
     }
     
+    fun loadTvGenres() {
+        viewModelScope.launch {
+            repository.getTvGenres().collect { resource ->
+                when (resource) {
+                    is Resource.Loading -> {
+                        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+                    }
+                    is Resource.Success -> {
+                        _uiState.value = _uiState.value.copy(
+                            tvGenres = resource.data,
+                            isLoading = false,
+                            error = null
+                        )
+                    }
+                    is Resource.Error -> {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = resource.message
+                        )
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Switch between Movies and TV Shows content modes.
+     */
+    fun setContentMode(mode: ContentMode) {
+        _uiState.value = _uiState.value.copy(contentMode = mode)
+        when (mode) {
+            ContentMode.MOVIES -> {
+                if (_uiState.value.genres.isEmpty()) loadGenres()
+            }
+            ContentMode.TV_SHOWS -> {
+                if (_uiState.value.tvGenres.isEmpty()) loadTvGenres()
+            }
+        }
+    }
+    
     fun selectGenre(genreId: Int, genreName: String) {
         // Check if this is the special Dee's Favorites genre
         val isFavorites = genreId == -1
@@ -229,14 +276,19 @@ class MovieViewModel(
         _uiState.value = _uiState.value.copy(
             selectedGenreId = genreId,
             selectedGenreName = genreName,
-            isFavoritesMode = isFavorites
+            isFavoritesMode = isFavorites,
+            searchQuery = ""
         )
         
         if (!isFavorites) {
-            loadMoviesByGenre(genreId = genreId, reset = true)
+            // Load content based on current mode
+            when (_uiState.value.contentMode) {
+                ContentMode.MOVIES -> loadMoviesByGenre(genreId = genreId, reset = true)
+                ContentMode.TV_SHOWS -> loadTvShowsByGenre(genreId = genreId, reset = true)
+            }
         } else {
             // For favorites, we'll show search and favorites list
-            _uiState.value = _uiState.value.copy(movies = emptyList())
+            _uiState.value = _uiState.value.copy(movies = emptyList(), tvShows = emptyList())
         }
     }
     
@@ -316,7 +368,186 @@ class MovieViewModel(
         val nextPage = (_uiState.value.genrePage + 1).coerceAtMost(_uiState.value.genreTotalPages)
         // Avoid accidental re-entrancy.
         _uiState.value = _uiState.value.copy(isLoadingMore = true)
-        loadMoviesByGenre(genreId = genreId, reset = false, pageOverride = nextPage)
+        
+        when (_uiState.value.contentMode) {
+            ContentMode.MOVIES -> loadMoviesByGenre(genreId = genreId, reset = false, pageOverride = nextPage)
+            ContentMode.TV_SHOWS -> loadTvShowsByGenre(genreId = genreId, reset = false, pageOverride = nextPage)
+        }
+    }
+    
+    // ─────────────────────────────────────────────────────────────────────────────
+    // TV Shows Loading & Selection
+    // ─────────────────────────────────────────────────────────────────────────────
+    
+    fun loadTvShowsByGenre(genreId: Int, reset: Boolean = false, pageOverride: Int? = null) {
+        viewModelScope.launch {
+            val page = pageOverride ?: if (reset) 1 else _uiState.value.genrePage
+            if (reset) {
+                _uiState.value = _uiState.value.copy(
+                    tvShows = emptyList(),
+                    error = null,
+                    isLoadingMore = false,
+                    genrePage = 1,
+                    genreTotalPages = 1,
+                    canLoadMoreGenreMovies = false
+                )
+            }
+
+            repository.getTvShowsByGenreResponse(genreId = genreId, page = page).collect { resource ->
+                when (resource) {
+                    is Resource.Loading -> {
+                        _uiState.value = if (page == 1) {
+                            _uiState.value.copy(isLoading = true, error = null)
+                        } else {
+                            _uiState.value.copy(isLoadingMore = true, error = null)
+                        }
+                    }
+                    is Resource.Success -> {
+                        val merged = if (page == 1) {
+                            resource.data.results
+                        } else {
+                            (_uiState.value.tvShows + resource.data.results).distinctBy { it.id }
+                        }
+
+                        val totalPages = resource.data.totalPages.coerceAtLeast(1)
+                        val canLoadMore = page < totalPages
+
+                        _uiState.value = _uiState.value.copy(
+                            tvShows = merged,
+                            isLoading = false,
+                            isLoadingMore = false,
+                            error = null,
+                            genrePage = page,
+                            genreTotalPages = totalPages,
+                            canLoadMoreGenreMovies = canLoadMore
+                        )
+                    }
+                    is Resource.Error -> {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            isLoadingMore = false,
+                            error = resource.message
+                        )
+                    }
+                }
+            }
+        }
+    }
+    
+    fun searchTvShows(query: String) {
+        _uiState.value = _uiState.value.copy(searchQuery = query)
+        if (query.isBlank()) {
+            _uiState.value.selectedGenreId?.let { loadTvShowsByGenre(genreId = it, reset = true) }
+            return
+        }
+
+        _uiState.value = _uiState.value.copy(canLoadMoreGenreMovies = false, isLoadingMore = false)
+        
+        viewModelScope.launch {
+            repository.searchTvShows(query).collect { resource ->
+                when (resource) {
+                    is Resource.Loading -> {
+                        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+                    }
+                    is Resource.Success -> {
+                        _uiState.value = _uiState.value.copy(
+                            tvShows = resource.data,
+                            isLoading = false,
+                            error = null
+                        )
+                    }
+                    is Resource.Error -> {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = resource.message
+                        )
+                    }
+                }
+            }
+        }
+    }
+    
+    fun toggleTvShowSelection(tvShow: TvShow) {
+        val isCurrentlySelected = _uiState.value.selectedTvShows.any { it.id == tvShow.id }
+        if (isCurrentlySelected) {
+            _uiState.value = _uiState.value.copy(
+                selectedTvShows = _uiState.value.selectedTvShows.filter { it.id != tvShow.id }
+            )
+        } else {
+            // Allow up to 5 TV shows
+            if (_uiState.value.selectedTvShows.size < 5) {
+                _uiState.value = _uiState.value.copy(
+                    selectedTvShows = _uiState.value.selectedTvShows + tvShow
+                )
+            }
+        }
+    }
+    
+    fun clearTvShowSelections() {
+        _uiState.value = _uiState.value.copy(selectedTvShows = emptyList())
+    }
+    
+    /**
+     * Generate TV show recommendations based on selected shows.
+     * Uses TMDB's similar TV shows endpoint for each selected show.
+     */
+    fun generateTvRecommendations() {
+        val selectedShows = _uiState.value.selectedTvShows
+        if (selectedShows.isEmpty() || selectedShows.size > 5) return
+        
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null, recommendedTvShows = emptyList())
+            
+            try {
+                val allRecommendations = mutableListOf<TvShow>()
+                val selectedIds = selectedShows.map { it.id }.toSet()
+                
+                // Get similar shows for each selected show
+                for (show in selectedShows) {
+                    repository.getSimilarTvShows(show.id).collect { resource ->
+                        if (resource is Resource.Success) {
+                            allRecommendations.addAll(resource.data)
+                        }
+                    }
+                }
+                
+                // Deduplicate, remove already selected, and take top 15
+                val recommendations = allRecommendations
+                    .distinctBy { it.id }
+                    .filter { it.id !in selectedIds }
+                    .sortedByDescending { it.popularity }
+                    .take(15)
+                
+                // Build recommendation text
+                val recommendationText = buildString {
+                    appendLine("Based on your selections, here are TV shows you might enjoy:")
+                    appendLine()
+                    recommendations.forEachIndexed { index, show ->
+                        val year = show.firstAirDate?.take(4) ?: "N/A"
+                        appendLine("${index + 1}. ${show.name} ($year)")
+                    }
+                }
+                
+                _uiState.value = _uiState.value.copy(
+                    recommendedTvShows = recommendations,
+                    recommendationText = recommendationText,
+                    isLoading = false,
+                    error = null
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.localizedMessage ?: "Failed to get TV recommendations"
+                )
+            }
+        }
+    }
+    
+    fun searchContent(query: String) {
+        when (_uiState.value.contentMode) {
+            ContentMode.MOVIES -> searchMovies(query)
+            ContentMode.TV_SHOWS -> searchTvShows(query)
+        }
     }
     
     fun searchMovies(query: String) {
@@ -392,6 +623,15 @@ class MovieViewModel(
         val additionalExcluded = extractRecommendedTitlesFromText(current)
         generateRecommendations(additionalExcludedTitles = additionalExcluded)
     }
+    
+    fun retryTvRecommendations() {
+        // Clear current recommendations and regenerate with new random selection
+        _uiState.value = _uiState.value.copy(
+            recommendedTvShows = emptyList(),
+            recommendationText = null
+        )
+        generateTvRecommendations()
+    }
 
     fun generateRecommendations(additionalExcludedTitles: List<String> = emptyList()) {
         val selectedMovies = _uiState.value.selectedMovies
@@ -460,7 +700,9 @@ class MovieViewModel(
             repository.clearRecommendedMovies()
             sessionRecommendedTitles.clear()
             _uiState.value = _uiState.value.copy(
-                recommendationText = null
+                recommendationText = null,
+                selectedTvShows = emptyList(),
+                recommendedTvShows = emptyList()
             )
         }
     }
@@ -575,6 +817,26 @@ class MovieViewModel(
         return repository.getImdbTrailerUrlByTitle(title, year)
     }
 
+    /**
+     * Get trailer URL for a TV show by title.
+     * Uses TMDB TV search + Videos API for YouTube trailers, with IMDB scraping fallback.
+     */
+    suspend fun getTvShowTrailerUrlByTitle(title: String, year: String?): String? {
+        return repository.getTvShowTrailerUrlByTitle(title, year)
+    }
+
+    /**
+     * Get trailer URL based on current content mode.
+     * Routes to movie or TV show trailer fetching as appropriate.
+     */
+    suspend fun getTrailerUrlByTitle(title: String, year: String?, isTvMode: Boolean): String? {
+        return if (isTvMode) {
+            getTvShowTrailerUrlByTitle(title, year)
+        } else {
+            getImdbTrailerUrlByTitle(title, year)
+        }
+    }
+
     suspend fun getTmdbRatingByTitleYear(title: String, year: String?): String? {
         return repository.getTmdbRatingByTitleYear(title, year)
     }
@@ -584,6 +846,90 @@ class MovieViewModel(
      */
     suspend fun getTorrentMagnetUrl(title: String, year: String?): String? {
         return repository.getTorrentInfo(title, year)?.magnetUrl
+    }
+
+    /**
+     * Get torrent magnet URL for a TV show (first available episode) for quick play from recommendations.
+     * Returns the magnet URL and a display label like "ShowName S01E01".
+     */
+    suspend fun getTvShowTorrentMagnetUrl(title: String, year: String?): Pair<String, String>? {
+        val info = repository.getTvShowFirstEpisodeTorrent(title, year) ?: return null
+        val label = "${info.showTitle ?: title} S${info.season}E${info.episode}"
+        return Pair(info.magnetUrl, label)
+    }
+
+    /**
+     * Get torrent magnet URL based on current content mode.
+     * For movies: returns magnet URL directly.
+     * For TV shows: finds first available episode and returns (magnetUrl, displayLabel).
+     */
+    suspend fun getTorrentMagnetUrlForContent(title: String, year: String?, isTvMode: Boolean): Pair<String, String>? {
+        return if (isTvMode) {
+            getTvShowTorrentMagnetUrl(title, year)
+        } else {
+            val magnet = getTorrentMagnetUrl(title, year) ?: return null
+            Pair(magnet, title)
+        }
+    }
+    
+    /**
+     * Get torrent magnet URL for a TV show episode.
+     * @param showTitle The title of the TV show
+     * @param imdbId Optional IMDB ID for direct lookup
+     * @param season Season number
+     * @param episode Episode number  
+     * @param preferredQuality Preferred quality (720p, 1080p, 480p)
+     */
+    suspend fun getTvEpisodeMagnetUrl(
+        showTitle: String,
+        imdbId: String? = null,
+        season: Int,
+        episode: Int,
+        preferredQuality: String = "720p"
+    ): String? {
+        return repository.getTvEpisodeTorrentInfo(showTitle, imdbId, season, episode, preferredQuality)?.magnetUrl
+    }
+    
+    /**
+     * Get available seasons for a TV show.
+     */
+    suspend fun getTvShowSeasons(imdbId: String): List<Int> {
+        return repository.getTvShowSeasons(imdbId)
+    }
+    
+    /**
+     * Get episodes for a specific season.
+     */
+    suspend fun getTvShowEpisodes(imdbId: String, season: Int) = repository.getTvShowEpisodes(imdbId, season)
+    
+    /**
+     * Get IMDB ID for a TV show from TMDB.
+     * @param tmdbId The TMDB series ID
+     */
+    suspend fun getTvShowImdbId(tmdbId: Int): String? = repository.getTvShowImdbId(tmdbId)
+    
+    /**
+     * Search for a TV show on Popcorn Time API to get its IMDB ID.
+     */
+    suspend fun searchTvShowTorrent(title: String, year: String? = null) = repository.searchTvShowTorrent(title, year)
+
+    /**
+     * Resolve IMDB ID for a TV show by title (Popcorn TV then TMDB fallback).
+     * Used when we only have a title/year from recommendations and need the IMDB ID for episode lookups.
+     */
+    suspend fun resolveImdbIdByTitle(title: String, year: String? = null): String? {
+        return repository.resolveImdbIdForTvShow(title, year)
+    }
+
+    /**
+     * Get seasons for a TV show by title.
+     * Resolves IMDB ID first, then fetches seasons.
+     * Returns (imdbId, seasons) or null if show not found.
+     */
+    suspend fun getSeasonsForTvShowByTitle(title: String, year: String? = null): Pair<String, List<Int>>? {
+        val imdbId = resolveImdbIdByTitle(title, year) ?: return null
+        val seasons = repository.getTvShowSeasons(imdbId)
+        return if (seasons.isNotEmpty()) Pair(imdbId, seasons) else null
     }
 }
 
