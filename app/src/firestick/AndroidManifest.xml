@@ -40,6 +40,10 @@
             android:name="com.movierecommender.app.ui.leanback.ComposeActivity"
             android:theme="@style/Theme.MovieRecommender.Compose"
             android:exported="false" />
+        <activity
+            android:name="com.movierecommender.app.firestick.LeanbackPickerActivity"
+            android:theme="@style/Theme.MovieRecommender"
+            android:exported="false" />
     </application>
 
 </manifest>

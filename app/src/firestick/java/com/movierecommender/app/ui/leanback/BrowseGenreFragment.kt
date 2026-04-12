@@ -19,6 +19,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.movierecommender.app.MovieRecommenderApplication
 import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.data.model.Genre
+import com.movierecommender.app.firestick.LeanbackPickerActivity
 import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
 import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModelFactory
 import kotlinx.coroutines.launch
@@ -88,15 +89,10 @@ class BrowseGenreFragment : BrowseSupportFragment() {
                     }
                     startActivity(intent)
                 } else {
-                    // Select genre in ViewModel and navigate to Compose sub-screen
-                    viewModel.setContentMode(contentMode)
-                    viewModel.selectGenre(item.id, item.name)
-
-                    val intent = Intent(requireContext(), ComposeActivity::class.java).apply {
-                        putExtra(ComposeActivity.EXTRA_SCREEN, ComposeActivity.SCREEN_MOVIE_SELECTION)
-                        putExtra(ComposeActivity.EXTRA_GENRE_ID, item.id)
-                        putExtra(ComposeActivity.EXTRA_GENRE_NAME, item.name)
-                        putExtra(ComposeActivity.EXTRA_CONTENT_MODE, contentMode.name)
+                    val intent = Intent(requireContext(), LeanbackPickerActivity::class.java).apply {
+                        putExtra(LeanbackPickerActivity.EXTRA_GENRE_ID, item.id)
+                        putExtra(LeanbackPickerActivity.EXTRA_GENRE_NAME, item.name)
+                        putExtra(LeanbackPickerActivity.EXTRA_CONTENT_MODE, contentMode.name)
                     }
                     startActivity(intent)
                 }

@@ -42,11 +42,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.ContentMode
+import com.movierecommender.app.ui.leanback.LeanbackActionButton
+import com.movierecommender.app.ui.leanback.LeanbackPanel
+import com.movierecommender.app.ui.leanback.LeanbackTextButton
+import com.movierecommender.app.ui.leanback.LeanbackTopBar
 import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
 
 @Composable
@@ -65,97 +72,34 @@ fun GenreSelectionScreen(
     
     Scaffold(
         topBar = {
-            Column {
-                TopAppBar(
-                    title = { 
-                        Text(
-                            if (uiState.contentMode == ContentMode.MOVIES) "Movie Genres" 
-                            else "TV Show Genres",
-                            modifier = Modifier.padding(start = 32.dp)
-                        ) 
-                    },
-                    actions = {
-                        if (uiState.selectedMovies.isNotEmpty()) {
-                            // Clear selections button with focus indicator
-                            val clearInteraction = remember { MutableInteractionSource() }
-                            val clearFocused by clearInteraction.collectIsFocusedAsState()
-                            
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.padding(end = 4.dp)
-                            ) {
-                                Surface(
-                                    shape = MaterialTheme.shapes.small,
-                                    color = if (clearFocused) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
-                                    border = if (clearFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
-                                ) {
-                                    IconButton(
-                                        onClick = { viewModel.clearSelections() },
-                                        interactionSource = clearInteraction
-                                    ) {
-                                        Icon(
-                                            Icons.Default.DeleteSweep,
-                                            contentDescription = "Clear selections",
-                                            tint = if (clearFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
-                                            modifier = Modifier.size(if (clearFocused) 32.dp else 24.dp)
-                                        )
-                                    }
-                                }
-                                Text(
-                                    text = "clear selections",
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    fontSize = 8.sp,
-                                    modifier = Modifier.offset(y = (-8).dp)
-                                )
-                            }
-                        }
-                        
-                        val settingsInteraction = remember { MutableInteractionSource() }
-                        val settingsFocused by settingsInteraction.collectIsFocusedAsState()
+            LeanbackTopBar(
+                title = if (uiState.contentMode == ContentMode.MOVIES) "Movie Genres" else "TV Show Genres",
+                subtitle = if (uiState.selectedMovies.isNotEmpty()) {
+                    "${uiState.selectedMovies.size} movie picks ready"
+                } else {
+                    "Browse categories with the remote"
+                },
+                actions = {
+                    if (uiState.selectedMovies.isNotEmpty()) {
+                        LeanbackActionButton(
+                            icon = Icons.Default.DeleteSweep,
+                            label = "Clear",
+                            onClick = { viewModel.clearSelections() }
+                        )
+                    }
 
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(end = 32.dp)
-                        ) {
-                            Surface(
-                                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
-                                shape = MaterialTheme.shapes.small,
-                                color = if (settingsFocused) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
-                                border = if (settingsFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
-                            ) {
-                                IconButton(
-                                    onClick = { showSettingsDialog = true },
-                                    interactionSource = settingsInteraction
-                                ) {
-                                    Icon(
-                                        Icons.Default.Settings,
-                                        contentDescription = "Settings",
-                                        tint = if (settingsFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
-                                        modifier = Modifier.size(if (settingsFocused) 32.dp else 24.dp)
-                                    )
-                                }
-                            }
-
-                            Text(
-                                text = "settings",
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                fontSize = 8.sp,
-                                modifier = Modifier.offset(y = (-8).dp)
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    LeanbackActionButton(
+                        icon = Icons.Default.Settings,
+                        label = "Settings",
+                        onClick = { showSettingsDialog = true }
                     )
-                )
-                
-                // Movies / TV Tabs with D-pad focus support
+                }
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(horizontal = 32.dp, vertical = 8.dp),
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f), MaterialTheme.shapes.large)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     // Movies Tab
@@ -401,16 +345,25 @@ fun WelcomeDialog(
     onNameEntered: (String) -> Unit
 ) {
     var nameText by remember { mutableStateOf("") }
-    
-    AlertDialog(
-        onDismissRequest = { }, // Prevent dismissing without entering name
-        title = { 
+
+    Dialog(
+        onDismissRequest = { },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false
+        )
+    ) {
+        LeanbackPanel(
+            modifier = Modifier
+                .fillMaxWidth(0.62f)
+                .wrapContentHeight()
+        ) {
             Text(
                 "Welcome to Movie Recommender!",
                 style = MaterialTheme.typography.headlineSmall
             )
-        },
-        text = {
+
             Column(
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -436,27 +389,31 @@ fun WelcomeDialog(
                 
                 if (nameText.isNotEmpty()) {
                     Text(
-                        text = "Your personalized favorites will be called \"${nameText.trim()}'s Favorites\" 🎬",
+                        text = "Your personalized favorites will be called \"${nameText.trim()}'s Favorites\".",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(top = 12.dp)
                     )
                 }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = { 
-                    if (nameText.trim().isNotEmpty()) {
-                        onNameEntered(nameText.trim())
-                    }
-                },
-                enabled = nameText.trim().isNotEmpty()
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
             ) {
-                Text("Get Started")
+                LeanbackTextButton(
+                    label = "Get Started",
+                    onClick = {
+                        if (nameText.trim().isNotEmpty()) {
+                            onNameEntered(nameText.trim())
+                        }
+                    },
+                    emphasized = true,
+                    enabled = nameText.trim().isNotEmpty()
+                )
             }
         }
-    )
+    }
 }
 
 @Composable
@@ -589,43 +546,41 @@ fun PreferenceSettingsDialog(
     onDarkModeChange: (Boolean) -> Unit = {}
 ) {
     var nameText by remember { mutableStateOf(currentUserName) }
-    
-    AlertDialog(
+
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { 
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnClickOutside = false
+        )
+    ) {
+        LeanbackPanel(
+            modifier = Modifier
+                .fillMaxWidth(0.78f)
+                .fillMaxHeight(0.9f)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Settings")
-                
-                // Top Save button with focus indicator
-                val topSaveInteraction = remember { MutableInteractionSource() }
-                val topSaveFocused by topSaveInteraction.collectIsFocusedAsState()
-                
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = if (topSaveFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
-                    border = if (topSaveFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
-                ) {
-                    TextButton(
-                        onClick = onDismiss,
-                        interactionSource = topSaveInteraction
-                    ) {
-                        Text(
-                            "Save",
-                            color = if (topSaveFocused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer,
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                }
+                Text(
+                    text = "Settings",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+
+                LeanbackTextButton(
+                    label = "Done",
+                    onClick = onDismiss,
+                    emphasized = true
+                )
             }
-        },
-        text = {
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f, fill = false)
                     .verticalScroll(rememberScrollState())
             ) {
                 // Name field - TV friendly
@@ -779,31 +734,19 @@ fun PreferenceSettingsDialog(
                     onEnabledChange = onUseExperimentalChange
                 )
             }
-        },
-        confirmButton = {
-            // Bottom Save button with focus indicator
-            val saveInteraction = remember { MutableInteractionSource() }
-            val saveFocused by saveInteraction.collectIsFocusedAsState()
-            
-            Surface(
-                shape = MaterialTheme.shapes.small,
-                color = if (saveFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
-                border = if (saveFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
             ) {
-                TextButton(
+                LeanbackTextButton(
+                    label = "Done",
                     onClick = onDismiss,
-                    interactionSource = saveInteraction,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                ) {
-                    Text(
-                        "Save",
-                        color = if (saveFocused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer,
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                }
+                    emphasized = true
+                )
             }
         }
-    )
+    }
 }
 
 @Composable

@@ -5,13 +5,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.tv.material3.Surface
+import com.movierecommender.app.ui.leanback.LeanbackPanel
+import com.movierecommender.app.ui.leanback.LeanbackTextButton
 
 /**
  * GDPR/CCPA compliant consent dialog for LLM-based recommendations.
@@ -27,20 +28,25 @@ fun LlmConsentDialog(
     onDecline: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
+            usePlatformDefaultWidth = false,
             dismissOnBackPress = true,
             dismissOnClickOutside = false
-        ),
-        title = {
+        )
+    ) {
+        LeanbackPanel(
+            modifier = Modifier
+                .fillMaxWidth(0.74f)
+                .wrapContentHeight()
+        ) {
             Text(
                 text = "AI-Powered Recommendations",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
-        },
-        text = {
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -61,9 +67,9 @@ fun LlmConsentDialog(
                 )
                 
                 Text(
-                    text = "• Titles of movies you select (1-5 movies)\n" +
-                           "• Your genre preference\n" +
-                           "• Your recommendation preferences (indie/mainstream, tone, etc.)",
+                    text = "- Titles of movies you select (1-5 movies)\n" +
+                           "- Your genre preference\n" +
+                           "- Your recommendation preferences (indie/mainstream, tone, etc.)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -94,21 +100,22 @@ fun LlmConsentDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = onAccept,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
             ) {
-                Text("Accept AI Recommendations")
-            }
-        },
-        dismissButton = {
-            OutlinedButton(onClick = onDecline) {
-                Text("Use Standard Recommendations")
+                LeanbackTextButton(
+                    label = "Use Standard",
+                    onClick = onDecline,
+                    modifier = Modifier.padding(end = 12.dp)
+                )
+                LeanbackTextButton(
+                    label = "Accept AI",
+                    onClick = onAccept,
+                    emphasized = true
+                )
             }
         }
-    )
+    }
 }

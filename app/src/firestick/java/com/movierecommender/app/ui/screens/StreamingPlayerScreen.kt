@@ -9,6 +9,7 @@ import android.view.KeyEvent
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -46,6 +47,8 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.movierecommender.app.ui.leanback.LeanbackPanel
+import com.movierecommender.app.ui.leanback.LeanbackTextButton
 import com.movierecommender.app.torrent.TorrentStreamService
 import com.movierecommender.app.torrent.TorrentStreamState
 import kotlinx.coroutines.delay
@@ -527,33 +530,33 @@ fun StreamingPlayerScreen(
                                 .background(Color.Black.copy(alpha = 0.75f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
+                            LeanbackPanel(
+                                modifier = Modifier.fillMaxWidth(0.42f)
                             ) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(80.dp),
                                     color = MaterialTheme.colorScheme.primary,
                                     strokeWidth = 6.dp
                                 )
-                                Spacer(modifier = Modifier.height(24.dp))
                                 Text(
                                     text = "Buffering more content...",
                                     style = MaterialTheme.typography.headlineSmall,
-                                    color = Color.White
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Spacer(modifier = Modifier.height(12.dp))
                                 Text(
                                     text = "Downloaded: ${downloadProgress.toInt()}%",
-                                    color = Color.Gray,
-                                    fontSize = 16.sp
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 16.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                                 if (seeds > 0 || downloadSpeed > 0) {
-                                    Spacer(modifier = Modifier.height(8.dp))
                                     Text(
                                         text = "Seeds: $seeds • ${downloadSpeed / 1024} KB/s",
                                         color = Color(0xFF4CAF50),
-                                        fontSize = 14.sp
+                                        fontSize = 14.sp,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth()
                                     )
                                 }
                             }
@@ -598,42 +601,46 @@ private fun TVControlsOverlay(
             .background(Color.Black.copy(alpha = 0.5f))
     ) {
         // Top bar with title and back
-        Row(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
-                .background(Color.Black.copy(alpha = 0.7f))
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
         ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = Color.White,
-                    modifier = Modifier.size(32.dp)
+            Row(
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TVControlButton(
+                    icon = Icons.Default.ArrowBack,
+                    description = "Back",
+                    onClick = onBack,
+                    size = 58.dp
                 )
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text = movieTitle,
-                style = MaterialTheme.typography.headlineSmall,
-                color = Color.White,
-                maxLines = 1
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            // Streaming stats
-            Column(horizontalAlignment = Alignment.End) {
+                Spacer(modifier = Modifier.width(18.dp))
                 Text(
-                    text = "Seeds: $seeds",
-                    color = Color(0xFF4CAF50),
-                    fontSize = 14.sp
+                    text = movieTitle,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f)
                 )
-                Text(
-                    text = "${speed / 1024} KB/s • ${downloadProgress.toInt()}%",
-                    color = Color.Gray,
-                    fontSize = 12.sp
-                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "Seeds: $seeds",
+                        color = Color(0xFF4CAF50),
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = "${speed / 1024} KB/s • ${downloadProgress.toInt()}%",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
+                }
             }
         }
         
@@ -664,52 +671,53 @@ private fun TVControlsOverlay(
         }
         
         // Bottom progress bar
-        Column(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .background(Color.Black.copy(alpha = 0.7f))
-                .padding(16.dp)
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
         ) {
-            // Time display
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = formatTime(currentPosition),
-                    color = Color.White,
-                    fontSize = 14.sp
+            Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = formatTime(currentPosition),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = formatTime(duration),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 14.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                LinearProgressIndicator(
+                    progress = if (duration > 0) currentPosition.toFloat() / duration else 0f,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(5.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
                 )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
                 Text(
-                    text = formatTime(duration),
-                    color = Color.White,
-                    fontSize = 14.sp
+                    text = "Left rewind  •  Right forward  •  Center play/pause  •  Back exit",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
                 )
             }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Progress bar
-            LinearProgressIndicator(
-                progress = if (duration > 0) currentPosition.toFloat() / duration else 0f,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = Color.Gray
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // D-pad hint
-            Text(
-                text = "◀ Rewind  •  ▶ Forward  •  ⏸ Play/Pause  •  ⬅ Back",
-                color = Color.Gray,
-                fontSize = 12.sp,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center
-            )
         }
     }
 }
@@ -723,24 +731,25 @@ private fun TVControlButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    
-    IconButton(
+
+    Surface(
         onClick = onClick,
         modifier = Modifier
             .size(size)
-            .background(
-                if (isFocused) Color.White.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.5f),
-                shape = MaterialTheme.shapes.medium
-            )
             .focusable(interactionSource = interactionSource),
-        interactionSource = interactionSource
+        interactionSource = interactionSource,
+        shape = MaterialTheme.shapes.medium,
+        color = if (isFocused) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+        border = BorderStroke(if (isFocused) 3.dp else 1.dp, if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
     ) {
-        Icon(
-            icon,
-            contentDescription = description,
-            tint = Color.White,
-            modifier = Modifier.size(size * 0.6f)
-        )
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = description,
+                tint = if (isFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(size * 0.6f)
+            )
+        }
     }
 }
 
@@ -752,62 +761,63 @@ private fun TVLoadingOverlay(
     seeds: Int = 0,
     speed: Int = 0
 ) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .background(Color.Black.copy(alpha = 0.82f)),
+        contentAlignment = Alignment.Center
     ) {
-        if (progress != null) {
-            CircularProgressIndicator(
-                progress = progress,
-                modifier = Modifier.size(100.dp),
-                color = MaterialTheme.colorScheme.primary,
-                strokeWidth = 8.dp
+        LeanbackPanel(
+            modifier = Modifier.fillMaxWidth(0.46f)
+        ) {
+            if (progress != null) {
+                CircularProgressIndicator(
+                    progress = progress,
+                    modifier = Modifier.size(100.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 8.dp
+                )
+            } else {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(100.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 8.dp
+                )
+            }
+
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
-        } else {
-            CircularProgressIndicator(
-                modifier = Modifier.size(100.dp),
-                color = MaterialTheme.colorScheme.primary,
-                strokeWidth = 8.dp
+
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
             )
-        }
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineMedium,
-            color = Color.White
-        )
-        
-        Spacer(modifier = Modifier.height(12.dp))
-        
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodyLarge,
-            color = Color.Gray
-        )
-        
-        if (seeds > 0 || speed > 0) {
-            Spacer(modifier = Modifier.height(24.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(32.dp)
-            ) {
-                if (seeds > 0) {
-                    Text(
-                        text = "🌱 Seeds: $seeds",
-                        color = Color(0xFF4CAF50),
-                        fontSize = 18.sp
-                    )
-                }
-                if (speed > 0) {
-                    Text(
-                        text = "⬇ ${speed / 1024} KB/s",
-                        color = Color(0xFF2196F3),
-                        fontSize = 18.sp
-                    )
+
+            if (seeds > 0 || speed > 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    if (seeds > 0) {
+                        Text(
+                            text = "Seeds: $seeds",
+                            color = Color(0xFF4CAF50),
+                            fontSize = 18.sp
+                        )
+                    }
+                    if (speed > 0) {
+                        Text(
+                            text = "  ${speed / 1024} KB/s",
+                            color = Color(0xFF2196F3),
+                            fontSize = 18.sp
+                        )
+                    }
                 }
             }
         }
@@ -826,69 +836,47 @@ private fun TVErrorOverlay(
         retryFocusRequester.requestFocus()
     }
     
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
-            .padding(48.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .background(Color.Black.copy(alpha = 0.82f)),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = "❌",
-            fontSize = 80.sp
-        )
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        Text(
-            text = "Streaming Error",
-            style = MaterialTheme.typography.headlineMedium,
-            color = Color.White
-        )
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyLarge,
-            color = Color.Gray,
-            textAlign = TextAlign.Center
-        )
-        
-        Spacer(modifier = Modifier.height(48.dp))
-        
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(24.dp)
+        LeanbackPanel(
+            modifier = Modifier
+                .fillMaxWidth(0.5f)
+                .padding(48.dp)
         ) {
-            val backInteraction = remember { MutableInteractionSource() }
-            val backFocused by backInteraction.collectIsFocusedAsState()
-            
-            OutlinedButton(
-                onClick = onBack,
-                modifier = Modifier.focusable(interactionSource = backInteraction),
-                interactionSource = backInteraction,
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = if (backFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent
-                )
+            Text(
+                text = "Streaming Error",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
             ) {
-                Text("Go Back", fontSize = 18.sp)
-            }
-            
-            val retryInteraction = remember { MutableInteractionSource() }
-            val retryFocused by retryInteraction.collectIsFocusedAsState()
-            
-            Button(
-                onClick = onRetry,
-                modifier = Modifier
-                    .focusRequester(retryFocusRequester)
-                    .focusable(interactionSource = retryInteraction),
-                interactionSource = retryInteraction,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (retryFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
+                LeanbackTextButton(
+                    label = "Go Back",
+                    onClick = onBack,
+                    modifier = Modifier.padding(end = 12.dp)
                 )
-            ) {
-                Text("Retry", fontSize = 18.sp)
+
+                LeanbackTextButton(
+                    label = "Retry",
+                    onClick = onRetry,
+                    emphasized = true,
+                    modifier = Modifier.focusRequester(retryFocusRequester)
+                )
             }
         }
     }

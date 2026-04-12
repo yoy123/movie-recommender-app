@@ -37,6 +37,7 @@ class ComposeActivity : ComponentActivity() {
 
         const val SCREEN_MOVIE_SELECTION = "movie_selection"
         const val SCREEN_FAVORITES = "favorites"
+        const val SCREEN_RECOMMENDATIONS = "recommendations"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
