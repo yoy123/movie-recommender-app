@@ -22,6 +22,7 @@ Complete inventory of user-facing features with activation conditions, underlyin
 | Retry recommendations | ✅ | ✅ | MovieViewModel.kt |
 | Trailer playback (YouTube) | ✅ | ✅ | TrailerScreen.kt |
 | Torrent streaming | ✅ | ✅ | StreamingScreen.kt |
+| **Watch Options (streaming + torrent)** | ✅ | ✅ | WatchOptionsDialog.kt |
 | Dark mode toggle | ✅ | ✅ | SettingsRepository.kt |
 | DPAD navigation | ❌ | ✅ | Firestick UI layer |
 
@@ -422,6 +423,53 @@ Complete inventory of user-facing features with activation conditions, underlyin
 - **Fire TV:** DPAD controls (center = play/pause, left/right = seek)
 
 **Legal Warning:** See [MEDIA_PLAYBACK.md §11](MEDIA_PLAYBACK.md#11).
+
+---
+
+### Feature 9b: Watch Options (Streaming Providers + Torrent)
+
+**Purpose:** Present all available watch options (streaming apps and torrent) in a unified dialog, letting users choose how to watch.
+
+**Activation:** Play button on movie/TV show cards (MovieSelectionScreen) or "Watch Options" button on recommendation cards (RecommendationsScreen).
+
+**Data Source:**
+- **Streaming providers:** TMDB Watch Providers API (`GET /movie/{id}/watch/providers`, `GET /tv/{id}/watch/providers`), powered by JustWatch
+- **Torrent:** Existing torrent pipeline (YTS → PirateBay → TorrentGalaxy → 1337x)
+
+**Flow:**
+1. User taps play button / "Watch Options"
+2. Parallel fetch: TMDB watch providers (for user's country, default US) + torrent search
+3. `WatchOptionsDialog` opens showing all options grouped by type:
+   - FREE (Tubi, Pluto TV, etc.)
+   - SUBSCRIPTION (Netflix, Disney+, Hulu, etc.)
+   - ADS (ad-supported tiers)
+   - RENT (e.g., Apple TV $3.99)
+   - BUY (e.g., Google Play $14.99)
+   - TORRENT (with quality and seed count)
+4. User selects an option:
+   - **Streaming app:** `launchStreamingApp()` tries deep link → app launch → JustWatch link → toast fallback
+   - **Torrent:** Passes magnet URL to existing torrent streaming pipeline
+   - **Browse Episodes (TV only):** Opens EpisodePickerDialog for per-episode torrent selection
+
+**Code:**
+- [WatchOptionsDialog.kt](../app/src/firestick/java/com/movierecommender/app/ui/screens/WatchOptionsDialog.kt) (Firestick, DPAD-friendly)
+- [WatchOptionsDialog.kt](../app/src/mobile/java/com/movierecommender/app/ui/screens/WatchOptionsDialog.kt) (Mobile, touch-friendly)
+- [WatchProvider.kt](../app/src/main/java/com/movierecommender/app/data/model/WatchProvider.kt) (data models)
+- [StreamingAppRegistry.kt](../app/src/main/java/com/movierecommender/app/data/remote/StreamingAppRegistry.kt) (provider ID → package name mapping, 25+ apps)
+- [TmdbApiService.kt](../app/src/main/java/com/movierecommender/app/data/remote/TmdbApiService.kt) (`getMovieWatchProviders`, `getTvWatchProviders`)
+- [MovieRepository.kt](../app/src/main/java/com/movierecommender/app/data/repository/MovieRepository.kt) (`getMovieWatchOptions`, `getTvShowWatchOptions`, `searchTmdbIdByTitle`)
+
+**Supported Streaming Apps (via Intent):**
+Netflix, Amazon Prime Video, Disney+, Hulu, Max (HBO), Paramount+, Peacock, Apple TV+, Tubi, Pluto TV, Google Play Movies, Vudu, YouTube, Starz, Plex, AMC+, Kanopy, fuboTV, and more (25+ providers mapped).
+
+**Platform Differences:**
+- **Fire TV:** DPAD focus indicators, keyboard navigation, focus auto-land on first option
+- **Mobile:** Touch-based `clickable` interaction, standard Material3 AlertDialog
+
+**Error Handling:**
+- No TMDB ID found → Falls back to torrent-only options
+- API failure → Empty options list with toast notification
+- Streaming app not installed → Falls back to JustWatch link in browser
 
 ---
 

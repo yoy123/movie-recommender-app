@@ -21,6 +21,7 @@
         <activity
             android:name="com.movierecommender.app.firestick.MainActivity"
             android:banner="@drawable/ic_tv_banner"
+            android:theme="@style/Theme.MovieRecommender"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -33,6 +34,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Compose-based sub-screens (MovieSelection, Recommendations, etc.) -->
+        <activity
+            android:name="com.movierecommender.app.ui.leanback.ComposeActivity"
+            android:theme="@style/Theme.MovieRecommender.Compose"
+            android:exported="false" />
     </application>
 
 </manifest>

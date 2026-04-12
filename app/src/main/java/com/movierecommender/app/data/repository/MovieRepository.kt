@@ -19,6 +19,10 @@ import com.movierecommender.app.data.remote.TorrentGalaxyService
 import com.movierecommender.app.data.remote.LeetxService
 import com.movierecommender.app.data.remote.TorrentInfo
 import com.movierecommender.app.data.remote.EpisodeTorrentInfo
+import com.movierecommender.app.data.remote.StreamingAppRegistry
+import com.movierecommender.app.data.model.WatchOption
+import com.movierecommender.app.data.model.WatchOptionType
+import com.movierecommender.app.data.model.WatchProviderEntry
 import com.movierecommender.app.data.remote.PopcornTvShowDetails
 import com.movierecommender.app.data.remote.PopcornEpisode
 import com.movierecommender.app.data.remote.PopcornEpisodeTorrent
@@ -76,6 +80,26 @@ class MovieRepository(
         10770 to "TV Movie",
         53 to "Thriller",
         10752 to "War",
+        37 to "Western"
+    )
+
+    // TV genre IDs (TMDB uses different sets for movies vs TV)
+    private val tmdbTvGenreIdToName: Map<Int, String> = mapOf(
+        10759 to "Action & Adventure",
+        16 to "Animation",
+        35 to "Comedy",
+        80 to "Crime",
+        99 to "Documentary",
+        18 to "Drama",
+        10751 to "Family",
+        10762 to "Kids",
+        9648 to "Mystery",
+        10763 to "News",
+        10764 to "Reality",
+        10765 to "Sci-Fi & Fantasy",
+        10766 to "Soap",
+        10767 to "Talk",
+        10768 to "War & Politics",
         37 to "Western"
     )
     
@@ -200,6 +224,176 @@ class MovieRepository(
             emit(Resource.Success(response.results))
         } catch (e: Exception) {
             emit(Resource.Error(e.localizedMessage ?: "An error occurred"))
+        }
+    }
+
+    /**
+     * LLM-powered TV show recommendations, mirroring the movie recommendation pipeline.
+     * Uses TMDB similar/recommendations endpoints to generate candidates, then the LLM
+     * to rerank or generate recommendations with user preference settings.
+     */
+    suspend fun getTvShowRecommendationsLlm(
+        selectedShows: List<TvShow>,
+        genreName: String,
+        genreId: Int? = null,
+        indiePreference: Float,
+        useIndiePreference: Boolean,
+        popularityPreference: Float,
+        usePopularityPreference: Boolean,
+        releaseYearStart: Float,
+        releaseYearEnd: Float,
+        useReleaseYearPreference: Boolean,
+        tonePreference: Float,
+        useTonePreference: Boolean,
+        internationalPreference: Float,
+        useInternationalPreference: Boolean,
+        experimentalPreference: Float,
+        useExperimentalPreference: Boolean,
+        additionalExcludedTitles: List<String> = emptyList(),
+        useLlm: Boolean = true
+    ): Flow<Resource<String>> = flow {
+        emit(Resource.Loading())
+        try {
+            val effectiveGenreName = if (genreId != null && genreId > 0) {
+                tmdbTvGenreIdToName[genreId] ?: tmdbGenreIdToName[genreId] ?: genreName
+            } else {
+                genreName
+            }
+
+            android.util.Log.d(
+                "MovieRepository",
+                "TV LLM recs: genreName='$genreName' genreId=$genreId effectiveGenreName='$effectiveGenreName'"
+            )
+
+            // Format show titles for LLM
+            val showTitles = selectedShows.map { "${it.name} (${it.firstAirDate?.take(4) ?: ""})" }
+
+            // Build exclusion list from additional titles
+            val allExcluded = (showTitles + additionalExcludedTitles)
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
+
+            // Build TMDB candidate pool from similar + recommended shows
+            val candidateTitles = buildTmdbTvCandidateTitlesForRerank(
+                selectedShows = selectedShows,
+                excludedTitles = allExcluded,
+                genreId = genreId,
+                releaseYearStart = releaseYearStart,
+                releaseYearEnd = releaseYearEnd,
+                useReleaseYearPreference = useReleaseYearPreference,
+                indiePreference = indiePreference,
+                useIndiePreference = useIndiePreference,
+                popularityPreference = popularityPreference,
+                usePopularityPreference = usePopularityPreference,
+                tonePreference = tonePreference,
+                useTonePreference = useTonePreference
+            )
+
+            android.util.Log.d(
+                "MovieRepository",
+                "TV TMDB candidate pool: size=${candidateTitles.size} (first 10)=${candidateTitles.take(10)}"
+            )
+
+            val shouldUseCandidateRerank = candidateTitles.size >= 25
+
+            if (!useLlm) {
+                android.util.Log.d("MovieRepository", "TV LLM consent not given – using TMDB-only fallback")
+                val fallbackResponse = buildTvFallbackRecommendations(
+                    selectedShows = selectedShows,
+                    excludedTitles = allExcluded,
+                    genreId = genreId,
+                    releaseYearStart = releaseYearStart,
+                    releaseYearEnd = releaseYearEnd,
+                    useReleaseYearPreference = useReleaseYearPreference
+                )
+                emit(Resource.Success(fallbackResponse))
+                return@flow
+            }
+
+            // Use LLM with the TV show genre context
+            val llmGenre = "$effectiveGenreName TV Shows"
+            val llmResult = withContext(Dispatchers.IO) {
+                if (shouldUseCandidateRerank) {
+                    llmService.getRecommendationsFromLlmCandidates(
+                        selectedMovies = showTitles,
+                        candidates = candidateTitles,
+                        genre = llmGenre,
+                        apiKey = openAiApiKey,
+                        indiePreference = indiePreference,
+                        useIndiePreference = useIndiePreference,
+                        popularityPreference = popularityPreference,
+                        usePopularityPreference = usePopularityPreference,
+                        releaseYearStart = releaseYearStart,
+                        releaseYearEnd = releaseYearEnd,
+                        useReleaseYearPreference = useReleaseYearPreference,
+                        tonePreference = tonePreference,
+                        useTonePreference = useTonePreference,
+                        internationalPreference = internationalPreference,
+                        useInternationalPreference = useInternationalPreference,
+                        experimentalPreference = experimentalPreference,
+                        useExperimentalPreference = useExperimentalPreference,
+                        excludedMovies = allExcluded
+                    )
+                } else {
+                    llmService.getRecommendationsFromLlm(
+                        selectedMovies = showTitles,
+                        genre = llmGenre,
+                        apiKey = openAiApiKey,
+                        indiePreference = indiePreference,
+                        useIndiePreference = useIndiePreference,
+                        popularityPreference = popularityPreference,
+                        usePopularityPreference = usePopularityPreference,
+                        releaseYearStart = releaseYearStart,
+                        releaseYearEnd = releaseYearEnd,
+                        useReleaseYearPreference = useReleaseYearPreference,
+                        tonePreference = tonePreference,
+                        useTonePreference = useTonePreference,
+                        internationalPreference = internationalPreference,
+                        useInternationalPreference = useInternationalPreference,
+                        experimentalPreference = experimentalPreference,
+                        useExperimentalPreference = useExperimentalPreference,
+                        excludedMovies = allExcluded
+                    )
+                }
+            }
+
+            val llmResponse = llmResult.getOrNull()
+            android.util.Log.d("MovieRepository", "TV LLM Response received: ${llmResponse?.take(200)}")
+
+            val parsed = llmResponse?.let { parseNumberedRecommendations(it) }.orEmpty()
+            val structureOk = llmResponse?.isNotBlank() == true && isValidRecommendationStructure(llmResponse)
+            val candidateOk = if (shouldUseCandidateRerank && parsed.isNotEmpty()) {
+                passesCandidateConstraint(recs = parsed, allowedTitles = candidateTitles)
+            } else {
+                true
+            }
+
+            val isValid = structureOk && candidateOk
+            android.util.Log.d("MovieRepository", "TV LLM Response valid: $isValid")
+
+            val recommendationText = if (isValid) {
+                llmResponse!!
+            } else {
+                android.util.Log.d("MovieRepository", "TV using fallback - LLM failed validation")
+                buildTvFallbackRecommendations(
+                    selectedShows = selectedShows,
+                    excludedTitles = allExcluded,
+                    genreId = genreId,
+                    releaseYearStart = releaseYearStart,
+                    releaseYearEnd = releaseYearEnd,
+                    useReleaseYearPreference = useReleaseYearPreference
+                )
+            }
+
+            if (recommendationText.isNotBlank()) {
+                emit(Resource.Success(recommendationText))
+            } else {
+                emit(Resource.Error("No TV show recommendations found"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MovieRepository", "TV recommendation error: ${e.message}", e)
+            emit(Resource.Error(e.localizedMessage ?: "Failed to get TV recommendations"))
         }
     }
     
@@ -1028,6 +1222,244 @@ class MovieRepository(
             .map { it.movie }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────────
+    // TV Show Candidate Generation & Fallback
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Build a candidate list of TV show titles from TMDB for LLM reranking.
+     * Mirrors [buildTmdbCandidateTitlesForRerank] but uses TV-specific endpoints.
+     */
+    private suspend fun buildTmdbTvCandidateTitlesForRerank(
+        selectedShows: List<TvShow>,
+        excludedTitles: List<String>,
+        genreId: Int?,
+        releaseYearStart: Float,
+        releaseYearEnd: Float,
+        useReleaseYearPreference: Boolean,
+        indiePreference: Float,
+        useIndiePreference: Boolean,
+        popularityPreference: Float,
+        usePopularityPreference: Boolean,
+        tonePreference: Float,
+        useTonePreference: Boolean
+    ): List<String> = withContext(Dispatchers.IO) {
+        try {
+            val selectedIds = selectedShows.map { it.id }.toSet()
+            val excludedNormalized = excludedTitles.map { it.lowercase().replace(Regex("\\s*\\(\\d{4}\\)\\s*$"), "").trim() }.toSet()
+            val minYear = releaseYearStart.toInt()
+            val maxYear = releaseYearEnd.toInt()
+
+            val pool = mutableMapOf<Int, TvShow>()
+
+            // 1) Similar + Recommendations from each selected show
+            for (show in selectedShows) {
+                runCatching { apiService.getSimilarTvShows(show.id, page = 1) }.onSuccess { resp ->
+                    resp.results.forEach { pool[it.id] = it }
+                }
+                runCatching { apiService.getTvShowRecommendations(show.id, page = 1) }.onSuccess { resp ->
+                    resp.results.forEach { pool[it.id] = it }
+                }
+            }
+
+            // 2) Genre discovery for broader pool
+            if (genreId != null && genreId > 0) {
+                runCatching { apiService.getTvShowsByGenre(genreId = genreId, sortBy = "vote_average.desc", page = 1) }
+                    .onSuccess { resp -> resp.results.forEach { pool[it.id] = it } }
+                runCatching { apiService.getTvShowsByGenre(genreId = genreId, sortBy = "popularity.desc", page = 1) }
+                    .onSuccess { resp -> resp.results.forEach { pool[it.id] = it } }
+                // Page 2 for more variety
+                runCatching { apiService.getTvShowsByGenre(genreId = genreId, sortBy = "popularity.desc", page = 2) }
+                    .onSuccess { resp -> resp.results.forEach { pool[it.id] = it } }
+            }
+
+            val filtered = pool.values
+                .asSequence()
+                .filter { it.id !in selectedIds }
+                .filter { show ->
+                    show.firstAirDate?.take(4)?.toIntOrNull() != null
+                }
+                .filter { show ->
+                    val normalized = show.name.lowercase().trim()
+                    normalized !in excludedNormalized
+                }
+                .filter { show ->
+                    if (!useReleaseYearPreference) return@filter true
+                    val y = show.firstAirDate?.take(4)?.toIntOrNull() ?: return@filter false
+                    y in minYear..maxYear
+                }
+                .filter { show ->
+                    if (genreId == null || genreId <= 0) return@filter true
+                    show.genreIds.contains(genreId)
+                }
+                .distinctBy { it.id }
+                .toList()
+
+            if (filtered.isEmpty()) return@withContext emptyList()
+
+            // Rank candidates using TV-appropriate scoring
+            val ranked = rankTvCandidatesForRerank(
+                candidates = filtered,
+                indiePreference = indiePreference,
+                useIndiePreference = useIndiePreference,
+                popularityPreference = popularityPreference,
+                usePopularityPreference = usePopularityPreference,
+                tonePreference = tonePreference,
+                useTonePreference = useTonePreference
+            )
+
+            ranked
+                .take(80)
+                .mapNotNull { show ->
+                    val year = show.firstAirDate?.take(4)?.toIntOrNull() ?: return@mapNotNull null
+                    "${show.name} ($year)"
+                }
+                .distinct()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun rankTvCandidatesForRerank(
+        candidates: List<TvShow>,
+        indiePreference: Float,
+        useIndiePreference: Boolean,
+        popularityPreference: Float,
+        usePopularityPreference: Boolean,
+        tonePreference: Float,
+        useTonePreference: Boolean
+    ): List<TvShow> {
+        if (candidates.isEmpty()) return emptyList()
+
+        fun minMax(values: List<Double>): Pair<Double, Double> {
+            val min = values.minOrNull() ?: 0.0
+            val max = values.maxOrNull() ?: 1.0
+            return min to max
+        }
+        fun norm(x: Double, min: Double, max: Double): Double {
+            if (max <= min) return 0.5
+            return ((x - min) / (max - min)).coerceIn(0.0, 1.0)
+        }
+
+        val (popMin, popMax) = minMax(candidates.map { it.popularity })
+        val (vcMin, vcMax) = minMax(candidates.map { it.voteCount.toDouble() })
+
+        // TV genre tone mapping (dark vs light)
+        val darkTvGenreIds = setOf(80, 18, 9648, 10768) // Crime, Drama, Mystery, War & Politics
+        val lightTvGenreIds = setOf(35, 16, 10751, 10762, 10764) // Comedy, Animation, Family, Kids, Reality
+
+        fun toneProxy(show: TvShow): Double {
+            val ids = show.genreIds
+            if (ids.isEmpty()) return 0.5
+            val darkHits = ids.count { it in darkTvGenreIds }
+            val lightHits = ids.count { it in lightTvGenreIds }
+            val total = (darkHits + lightHits).coerceAtLeast(1)
+            return (darkHits.toDouble() / total.toDouble()).coerceIn(0.0, 1.0)
+        }
+
+        data class ScoredTv(val show: TvShow, val score: Double)
+        val scored = candidates.map { show ->
+            val nPop = norm(show.popularity, popMin, popMax)
+            val nVc = norm(show.voteCount.toDouble(), vcMin, vcMax)
+
+            var score = (show.voteAverage * 2.0) + (nVc * 0.7) + (nPop * 0.3)
+
+            if (usePopularityPreference) {
+                val match = 1.0 - abs(nPop - popularityPreference.toDouble())
+                score += match * 1.2
+            }
+
+            if (useIndiePreference) {
+                val indieProxy = ((1.0 - nPop) * 0.7) + ((1.0 - nVc) * 0.3)
+                val match = 1.0 - abs(indieProxy - indiePreference.toDouble())
+                score += match * 1.0
+            }
+
+            if (useTonePreference) {
+                val tProxy = toneProxy(show)
+                val match = 1.0 - abs(tProxy - tonePreference.toDouble())
+                score += match * 0.4
+            }
+
+            ScoredTv(show, score)
+        }
+
+        return scored
+            .sortedWith(compareByDescending<ScoredTv> { it.score }
+                .thenByDescending { it.show.voteAverage }
+                .thenByDescending { it.show.voteCount }
+                .thenByDescending { it.show.popularity })
+            .map { it.show }
+    }
+
+    /**
+     * TMDB-only fallback for TV show recommendations (no LLM).
+     */
+    private suspend fun buildTvFallbackRecommendations(
+        selectedShows: List<TvShow>,
+        excludedTitles: List<String>,
+        genreId: Int?,
+        releaseYearStart: Float,
+        releaseYearEnd: Float,
+        useReleaseYearPreference: Boolean
+    ): String {
+        return withContext(Dispatchers.IO) {
+            try {
+                val selectedIds = selectedShows.map { it.id }.toSet()
+                val minYear = releaseYearStart.toInt()
+                val maxYear = releaseYearEnd.toInt()
+
+                val pool = mutableMapOf<Int, TvShow>()
+                for (show in selectedShows) {
+                    runCatching { apiService.getSimilarTvShows(show.id) }.onSuccess { resp ->
+                        resp.results.forEach { pool[it.id] = it }
+                    }
+                    runCatching { apiService.getTvShowRecommendations(show.id) }.onSuccess { resp ->
+                        resp.results.forEach { pool[it.id] = it }
+                    }
+                }
+
+                val candidates = pool.values
+                    .filter { it.id !in selectedIds }
+                    .filter { show ->
+                        if (genreId == null || genreId <= 0) return@filter true
+                        show.genreIds.contains(genreId)
+                    }
+                    .filter { show ->
+                        if (!useReleaseYearPreference) return@filter true
+                        val year = show.firstAirDate?.take(4)?.toIntOrNull() ?: return@filter false
+                        year in minYear..maxYear
+                    }
+                    .distinctBy { it.id }
+                    .sortedWith(
+                        compareByDescending<TvShow> { it.voteAverage }
+                            .thenByDescending { it.popularity }
+                    )
+                    .take(15)
+
+                if (candidates.isEmpty()) return@withContext ""
+
+                val sb = StringBuilder()
+                sb.append("Analysis:\n")
+                sb.append("Based on your selected TV shows, here are 15 similar shows you might enjoy.")
+                sb.append("\n\n")
+                sb.append("RECOMMENDATIONS:\n\n")
+                candidates.forEachIndexed { idx, show ->
+                    val year = show.firstAirDate?.take(4)?.let { " ($it)" } ?: ""
+                    sb.append("${idx + 1}. ${show.name}$year\n")
+                    val desc = (show.overview.takeIf { it.isNotBlank() }
+                        ?: "A strong match based on your selections.")
+                        .trim()
+                        .replace("\n", " ")
+                    sb.append(truncateWords(desc, 75)).append("\n\n")
+                }
+                sb.toString().trim()
+            } catch (_: Exception) {
+                ""
+            }
+        }
+    }
+
     private fun truncateWords(text: String, maxWords: Int): String {
         val words = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
         return if (words.size <= maxWords) text.trim() else words.take(maxWords).joinToString(" ") + "…"
@@ -1392,6 +1824,217 @@ class MovieRepository(
             }
         }
         null
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Watch Options (Streaming Providers + Torrent)
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Get all watch options for a movie: streaming providers from TMDB + torrent sources.
+     * Streaming providers are fetched from TMDB's watch/providers endpoint (powered by JustWatch).
+     * Torrent source is fetched in parallel via the existing getTorrentInfo chain.
+     *
+     * @param tmdbId TMDB movie ID (for watch provider lookup)
+     * @param title Movie title (for torrent search)
+     * @param year Release year (for torrent search)
+     * @param country ISO 3166-1 country code (default "US")
+     * @return List of WatchOption sorted: FREE → SUBSCRIPTION → ADS → RENT → BUY → TORRENT
+     */
+    suspend fun getMovieWatchOptions(
+        tmdbId: Int,
+        title: String,
+        year: String?,
+        country: String = "US"
+    ): List<WatchOption> = withContext(Dispatchers.IO) {
+        val options = mutableListOf<WatchOption>()
+
+        // Fetch streaming providers and torrent in parallel
+        coroutineScope {
+            val providersDeferred = async {
+                try {
+                    val response = apiService.getMovieWatchProviders(tmdbId)
+                    response.results?.get(country)
+                } catch (e: Exception) {
+                    android.util.Log.e("MovieRepository", "Failed to fetch watch providers for movie $tmdbId", e)
+                    null
+                }
+            }
+
+            val torrentDeferred = async {
+                try {
+                    getTorrentInfo(title, year)
+                } catch (e: Exception) {
+                    android.util.Log.e("MovieRepository", "Failed to fetch torrent for $title", e)
+                    null
+                }
+            }
+
+            val countryProviders = providersDeferred.await()
+            val torrentInfo = torrentDeferred.await()
+
+            // Convert streaming providers to WatchOptions
+            if (countryProviders != null) {
+                fun addProviders(entries: List<WatchProviderEntry>?, type: WatchOptionType) {
+                    entries?.forEach { entry ->
+                        val deepLink = StreamingAppRegistry.buildDeepLink(entry.providerId, title, tmdbId, true)
+                        options.add(
+                            WatchOption(
+                                name = entry.providerName,
+                                type = type,
+                                logoPath = entry.logoPath,
+                                packageName = StreamingAppRegistry.getPackageName(entry.providerId),
+                                deepLinkUrl = deepLink,
+                                justWatchLink = countryProviders.link,
+                                magnetUrl = null,
+                                quality = null,
+                                seeds = null,
+                                provider = null,
+                                displayPriority = entry.displayPriority
+                            )
+                        )
+                    }
+                }
+
+                addProviders(countryProviders.free, WatchOptionType.FREE)
+                addProviders(countryProviders.flatrate, WatchOptionType.SUBSCRIPTION)
+                addProviders(countryProviders.ads, WatchOptionType.ADS)
+                addProviders(countryProviders.rent, WatchOptionType.RENT)
+                addProviders(countryProviders.buy, WatchOptionType.BUY)
+            }
+
+            // Add torrent option
+            if (torrentInfo != null) {
+                options.add(
+                    WatchOption(
+                        name = "Torrent${torrentInfo.quality?.let { " ($it)" } ?: ""}",
+                        type = WatchOptionType.TORRENT,
+                        logoPath = null,
+                        packageName = null,
+                        deepLinkUrl = null,
+                        justWatchLink = null,
+                        magnetUrl = torrentInfo.magnetUrl,
+                        quality = torrentInfo.quality,
+                        seeds = torrentInfo.seeds,
+                        provider = torrentInfo.provider,
+                        displayPriority = 999
+                    )
+                )
+            }
+        }
+
+        // Sort: FREE first, then SUBSCRIPTION, ADS, RENT, BUY, TORRENT last
+        // Within each type, sort by display priority
+        options.sortedWith(
+            compareBy<WatchOption> { option ->
+                when (option.type) {
+                    WatchOptionType.FREE -> 0
+                    WatchOptionType.SUBSCRIPTION -> 1
+                    WatchOptionType.ADS -> 2
+                    WatchOptionType.RENT -> 3
+                    WatchOptionType.BUY -> 4
+                    WatchOptionType.TORRENT -> 5
+                }
+            }.thenBy { it.displayPriority }
+        )
+    }
+
+    /**
+     * Get all watch options for a TV show.
+     * @param tmdbId TMDB TV series ID
+     * @param title Show title
+     * @param year First air date year
+     * @param country ISO 3166-1 country code
+     */
+    suspend fun getTvShowWatchOptions(
+        tmdbId: Int,
+        title: String,
+        year: String?,
+        country: String = "US"
+    ): List<WatchOption> = withContext(Dispatchers.IO) {
+        val options = mutableListOf<WatchOption>()
+
+        // Fetch streaming providers (no torrent for the show itself — that's per-episode)
+        try {
+            val response = apiService.getTvWatchProviders(tmdbId)
+            val countryProviders = response.results?.get(country)
+
+            if (countryProviders != null) {
+                fun addProviders(entries: List<WatchProviderEntry>?, type: WatchOptionType) {
+                    entries?.forEach { entry ->
+                        val deepLink = StreamingAppRegistry.buildDeepLink(entry.providerId, title, tmdbId, false)
+                        options.add(
+                            WatchOption(
+                                name = entry.providerName,
+                                type = type,
+                                logoPath = entry.logoPath,
+                                packageName = StreamingAppRegistry.getPackageName(entry.providerId),
+                                deepLinkUrl = deepLink,
+                                justWatchLink = countryProviders.link,
+                                magnetUrl = null,
+                                quality = null,
+                                seeds = null,
+                                provider = null,
+                                displayPriority = entry.displayPriority
+                            )
+                        )
+                    }
+                }
+
+                addProviders(countryProviders.free, WatchOptionType.FREE)
+                addProviders(countryProviders.flatrate, WatchOptionType.SUBSCRIPTION)
+                addProviders(countryProviders.ads, WatchOptionType.ADS)
+                addProviders(countryProviders.rent, WatchOptionType.RENT)
+                addProviders(countryProviders.buy, WatchOptionType.BUY)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MovieRepository", "Failed to fetch watch providers for TV show $tmdbId", e)
+        }
+
+        // Sort same as movies
+        options.sortedWith(
+            compareBy<WatchOption> { option ->
+                when (option.type) {
+                    WatchOptionType.FREE -> 0
+                    WatchOptionType.SUBSCRIPTION -> 1
+                    WatchOptionType.ADS -> 2
+                    WatchOptionType.RENT -> 3
+                    WatchOptionType.BUY -> 4
+                    WatchOptionType.TORRENT -> 5
+                }
+            }.thenBy { it.displayPriority }
+        )
+    }
+
+    /**
+     * Search TMDB to resolve a title+year to a TMDB ID.
+     * Tries exact match by title+year, falls back to first result.
+     */
+    suspend fun searchTmdbIdByTitle(title: String, year: String?, isTvMode: Boolean): Int? = withContext(Dispatchers.IO) {
+        try {
+            if (isTvMode) {
+                val response = apiService.searchTvShows(query = title)
+                val match = if (year != null) {
+                    response.results.firstOrNull { it.name.equals(title, ignoreCase = true) && it.firstAirDate?.startsWith(year) == true }
+                        ?: response.results.firstOrNull()
+                } else {
+                    response.results.firstOrNull()
+                }
+                match?.id
+            } else {
+                val response = apiService.searchMovies(query = title)
+                val match = if (year != null) {
+                    response.results.firstOrNull { it.title.equals(title, ignoreCase = true) && it.releaseDate?.startsWith(year) == true }
+                        ?: response.results.firstOrNull()
+                } else {
+                    response.results.firstOrNull()
+                }
+                match?.id
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MovieRepository", "Failed to search TMDB for: $title", e)
+            null
+        }
     }
 
     /**

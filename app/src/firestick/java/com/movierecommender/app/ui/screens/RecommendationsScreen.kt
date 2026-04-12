@@ -46,6 +46,8 @@ import coil.compose.AsyncImage
 import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.TvShow
 import com.movierecommender.app.data.model.ContentMode
+import com.movierecommender.app.ui.leanback.LeanbackActionButton
+import com.movierecommender.app.ui.leanback.LeanbackTopBar
 import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavController
@@ -77,108 +79,33 @@ fun RecommendationsScreen(
     
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { 
-                    Text(
-                        "Analysis",
-                        modifier = Modifier.padding(start = 16.dp)
-                    ) 
-                },
-                navigationIcon = {
-                    // TV-friendly back button with focus indicator
-                    val backInteraction = remember { MutableInteractionSource() }
-                    val backFocused by backInteraction.collectIsFocusedAsState()
-                    
-                    Surface(
-                        modifier = Modifier.padding(start = 32.dp, top = 4.dp, bottom = 4.dp),
-                        shape = MaterialTheme.shapes.small,
-                        color = if (backFocused) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                        border = if (backFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
-                    ) {
-                        IconButton(
-                            onClick = onBackClick,
-                            interactionSource = backInteraction
-                        ) {
-                            Icon(
-                                Icons.Default.ArrowBack, 
-                                "Back",
-                                tint = if (backFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(if (backFocused) 32.dp else 24.dp)
-                            )
-                        }
-                    }
-                },
+            LeanbackTopBar(
+                title = "Analysis",
+                subtitle = if (hasSelections) "Built from your current picks" else "Review the current recommendation pass",
+                onBackClick = onBackClick,
                 actions = {
-                    // Retry button (only when recommendations exist)
                     if (!uiState.isLoading && uiState.recommendationText != null) {
-                        val retryInteraction = remember { MutableInteractionSource() }
-                        val retryFocused by retryInteraction.collectIsFocusedAsState()
-
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(end = 4.dp)
-                        ) {
-                            Surface(
-                                shape = MaterialTheme.shapes.small,
-                                color = if (retryFocused) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                                border = if (retryFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
-                            ) {
-                                IconButton(
-                                    onClick = { 
-                                        if (isTvMode) viewModel.retryTvRecommendations() 
-                                        else viewModel.retryRecommendations() 
-                                    },
-                                    interactionSource = retryInteraction
-                                ) {
-                                    Icon(
-                                        Icons.Default.Autorenew,
-                                        contentDescription = "Retry recommendations",
-                                        tint = if (retryFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
-                                        modifier = Modifier.size(if (retryFocused) 32.dp else 24.dp)
-                                    )
-                                }
-                            }
-                            Text(
-                                text = "retry",
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                fontSize = 8.sp,
-                                modifier = Modifier.offset(y = (-8).dp)
-                            )
-                        }
-                    }
-
-                    // TV-friendly start over button with focus indicator
-                    val refreshInteraction = remember { MutableInteractionSource() }
-                    val refreshFocused by refreshInteraction.collectIsFocusedAsState()
-                    
-                    Surface(
-                        modifier = Modifier.padding(end = 32.dp, top = 4.dp, bottom = 4.dp),
-                        shape = MaterialTheme.shapes.small,
-                        color = if (refreshFocused) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                        border = if (refreshFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
-                    ) {
-                        IconButton(
+                        LeanbackActionButton(
+                            icon = Icons.Default.Autorenew,
+                            label = "Retry",
                             onClick = {
-                                viewModel.clearSelections()
-                                onStartOver()
-                            },
-                            interactionSource = refreshInteraction
-                        ) {
-                            Icon(
-                                Icons.Default.Refresh, 
-                                "Start Over",
-                                tint = if (refreshFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(if (refreshFocused) 32.dp else 24.dp)
-                            )
-                        }
+                                if (isTvMode) viewModel.retryTvRecommendations()
+                                else viewModel.retryRecommendations()
+                            }
+                        )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+
+                    LeanbackActionButton(
+                        icon = Icons.Default.Refresh,
+                        label = "Start over",
+                        onClick = {
+                            if (isTvMode) viewModel.clearTvShowSelections()
+                            else viewModel.clearSelections()
+                            onStartOver()
+                        },
+                        emphasized = true
+                    )
+                }
             )
         }
     ) { paddingValues ->
@@ -627,6 +554,14 @@ private fun RecommendationCard(
     var resolvedImdbId by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
     
+    // Watch options dialog state
+    var showWatchOptions by remember { mutableStateOf(false) }
+    var watchOptions by remember { mutableStateOf<List<com.movierecommender.app.data.model.WatchOption>>(emptyList()) }
+    var isLoadingWatchOptions by remember { mutableStateOf(false) }
+    
+    // Resolve TMDB ID for the recommendation by searching TMDB
+    var resolvedTmdbId by remember { mutableStateOf<Int?>(null) }
+    
     val rating by produceState<String?>(initialValue = null, key1 = item.title, key2 = item.year) {
         value = try { viewModel.getTmdbRatingByTitleYear(item.title, item.year) } catch (e: Exception) { null }
     }
@@ -730,48 +665,47 @@ private fun RecommendationCard(
                 
                 Button(
                     onClick = {
-                        if (isTvMode) {
-                            // TV mode: show episode picker
-                            if (!isLoadingSeasons) {
-                                isLoadingSeasons = true
-                                coroutineScope.launch {
-                                    try {
-                                        val result = viewModel.getSeasonsForTvShowByTitle(item.title, item.year)
-                                        if (result != null) {
-                                            resolvedImdbId = result.first
-                                            availableSeasons = result.second
-                                            selectedSeason = result.second.first()
-                                            showEpisodePicker = true
-                                        } else {
-                                            Toast.makeText(context, "No episodes available", Toast.LENGTH_SHORT).show()
-                                        }
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Error finding show", Toast.LENGTH_SHORT).show()
-                                    } finally {
-                                        isLoadingSeasons = false
+                        if (!isLoadingWatchOptions) {
+                            isLoadingWatchOptions = true
+                            showWatchOptions = true
+                            coroutineScope.launch {
+                                try {
+                                    // Search TMDB to resolve the ID
+                                    val tmdbId = resolvedTmdbId ?: run {
+                                        val id = viewModel.searchTmdbIdByTitle(item.title, item.year, isTvMode)
+                                        resolvedTmdbId = id
+                                        id
                                     }
-                                }
-                            }
-                        } else {
-                            // Movie mode: direct torrent lookup
-                            if (magnetUrl != null) {
-                                onWatchNow(item.title, magnetUrl!!)
-                            } else if (!isLoadingMagnet) {
-                                isLoadingMagnet = true
-                                coroutineScope.launch {
-                                    try {
-                                        val result = viewModel.getTorrentMagnetUrlForContent(item.title, item.year, false)
-                                        if (result != null) {
-                                            magnetUrl = result.first
-                                            onWatchNow(result.second, result.first)
+                                    if (tmdbId != null) {
+                                        val options = if (isTvMode) {
+                                            viewModel.getTvShowWatchOptions(tmdbId, item.title, item.year)
                                         } else {
-                                            Toast.makeText(context, "No streaming source found", Toast.LENGTH_SHORT).show()
+                                            viewModel.getMovieWatchOptions(tmdbId, item.title, item.year)
                                         }
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Error finding source", Toast.LENGTH_SHORT).show()
-                                    } finally {
-                                        isLoadingMagnet = false
+                                        watchOptions = options
+                                    } else {
+                                        // Fallback: just try torrent
+                                        if (!isTvMode) {
+                                            val torrentResult = viewModel.getTorrentMagnetUrlForContent(item.title, item.year, false)
+                                            watchOptions = if (torrentResult != null) {
+                                                listOf(
+                                                    com.movierecommender.app.data.model.WatchOption(
+                                                        name = "Torrent",
+                                                        type = com.movierecommender.app.data.model.WatchOptionType.TORRENT,
+                                                        logoPath = null, packageName = null, deepLinkUrl = null,
+                                                        justWatchLink = null, magnetUrl = torrentResult.first,
+                                                        quality = null, seeds = null, provider = null
+                                                    )
+                                                )
+                                            } else emptyList()
+                                        } else {
+                                            watchOptions = emptyList()
+                                        }
                                     }
+                                } catch (e: Exception) {
+                                    watchOptions = emptyList()
+                                } finally {
+                                    isLoadingWatchOptions = false
                                 }
                             }
                         }
@@ -787,9 +721,9 @@ private fun RecommendationCard(
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = if (watchNowFocused) 8.dp else 2.dp
                     ),
-                    enabled = !isLoadingMagnet && !isLoadingSeasons
+                    enabled = !isLoadingWatchOptions
                 ) {
-                    if (isLoadingMagnet || isLoadingSeasons) {
+                    if (isLoadingWatchOptions) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
                             color = Color.White,
@@ -798,7 +732,7 @@ private fun RecommendationCard(
                         Spacer(modifier = Modifier.width(8.dp))
                     }
                     Text(
-                        if (isLoadingMagnet || isLoadingSeasons) "Finding..." else if (isTvMode) "Browse Episodes" else "Watch Now",
+                        if (isLoadingWatchOptions) "Finding..." else "Watch Options",
                         fontSize = if (watchNowFocused) 18.sp else 16.sp,
                         fontWeight = if (watchNowFocused) FontWeight.Bold else FontWeight.Normal,
                         color = if (watchNowFocused) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
@@ -806,6 +740,48 @@ private fun RecommendationCard(
                 }
             }
         }
+    }
+    
+    // Watch Options Dialog
+    if (showWatchOptions) {
+        WatchOptionsDialog(
+            title = item.title,
+            options = watchOptions,
+            isLoading = isLoadingWatchOptions,
+            onDismiss = {
+                showWatchOptions = false
+                watchOptions = emptyList()
+            },
+            onTorrentSelected = { magnetUrl2 ->
+                showWatchOptions = false
+                watchOptions = emptyList()
+                onWatchNow(item.title, magnetUrl2)
+            },
+            onBrowseEpisodes = if (isTvMode) {
+                {
+                    showWatchOptions = false
+                    watchOptions = emptyList()
+                    isLoadingSeasons = true
+                    coroutineScope.launch {
+                        try {
+                            val result = viewModel.getSeasonsForTvShowByTitle(item.title, item.year)
+                            if (result != null) {
+                                resolvedImdbId = result.first
+                                availableSeasons = result.second
+                                selectedSeason = result.second.first()
+                                showEpisodePicker = true
+                            } else {
+                                Toast.makeText(context, "No episodes available", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Error finding show", Toast.LENGTH_SHORT).show()
+                        } finally {
+                            isLoadingSeasons = false
+                        }
+                    }
+                }
+            } else null
+        )
     }
 
     // Episode Picker Dialog for TV shows

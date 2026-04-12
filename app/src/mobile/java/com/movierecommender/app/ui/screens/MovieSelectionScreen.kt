@@ -332,6 +332,11 @@ fun MovieCard(
     var isLoadingMagnet by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     
+    // Watch options dialog state
+    var showWatchOptions by remember { mutableStateOf(false) }
+    var watchOptions by remember { mutableStateOf<List<com.movierecommender.app.data.model.WatchOption>>(emptyList()) }
+    var isLoadingWatchOptions by remember { mutableStateOf(false) }
+    
     Card(
         onClick = onClick,
         modifier = Modifier
@@ -375,21 +380,19 @@ fun MovieCard(
             if (viewModel != null) {
                 IconButton(
                     onClick = {
-                        if (!isLoadingMagnet) {
-                            isLoadingMagnet = true
+                        if (!isLoadingWatchOptions) {
+                            isLoadingWatchOptions = true
+                            showWatchOptions = true
                             coroutineScope.launch {
                                 try {
                                     val year = movie.releaseDate?.take(4)
-                                    val magnet = viewModel.getTorrentMagnetUrl(movie.title, year)
-                                    if (magnet != null) {
-                                        onWatchNow(movie.title, magnet)
-                                    } else {
-                                        Toast.makeText(context, "No streaming source found", Toast.LENGTH_SHORT).show()
-                                    }
+                                    val options = viewModel.getMovieWatchOptions(movie.id, movie.title, year)
+                                    watchOptions = options
                                 } catch (e: Exception) {
-                                    Toast.makeText(context, "Error finding source", Toast.LENGTH_SHORT).show()
+                                    watchOptions = emptyList()
+                                    Toast.makeText(context, "Error finding options", Toast.LENGTH_SHORT).show()
                                 } finally {
-                                    isLoadingMagnet = false
+                                    isLoadingWatchOptions = false
                                 }
                             }
                         }
@@ -398,9 +401,9 @@ fun MovieCard(
                         .align(Alignment.TopCenter)
                         .padding(8.dp)
                         .size(48.dp),
-                    enabled = !isLoadingMagnet
+                    enabled = !isLoadingWatchOptions
                 ) {
-                    if (isLoadingMagnet) {
+                    if (isLoadingWatchOptions) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
                             color = androidx.compose.ui.graphics.Color.White,
@@ -480,6 +483,24 @@ fun MovieCard(
             }
         }
     }
+    
+    // Watch Options Dialog
+    if (showWatchOptions) {
+        WatchOptionsDialog(
+            title = movie.title,
+            options = watchOptions,
+            isLoading = isLoadingWatchOptions,
+            onDismiss = {
+                showWatchOptions = false
+                watchOptions = emptyList()
+            },
+            onTorrentSelected = { magnetUrl ->
+                showWatchOptions = false
+                watchOptions = emptyList()
+                onWatchNow(movie.title, magnetUrl)
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -498,6 +519,11 @@ fun TvShowCard(
     var availableSeasons by remember { mutableStateOf<List<Int>>(emptyList()) }
     var selectedSeason by remember { mutableStateOf(1) }
     var isLoadingSeasons by remember { mutableStateOf(false) }
+    
+    // Watch options dialog state
+    var showWatchOptions by remember { mutableStateOf(false) }
+    var watchOptions by remember { mutableStateOf<List<com.movierecommender.app.data.model.WatchOption>>(emptyList()) }
+    var isLoadingWatchOptions by remember { mutableStateOf(false) }
     
     Card(
         onClick = onClick,
@@ -526,29 +552,19 @@ fun TvShowCard(
             if (viewModel != null) {
                 IconButton(
                     onClick = {
-                        if (!isLoadingMagnet && !isLoadingSeasons) {
-                            isLoadingSeasons = true
+                        if (!isLoadingWatchOptions) {
+                            isLoadingWatchOptions = true
+                            showWatchOptions = true
                             coroutineScope.launch {
                                 try {
-                                    // Get IMDB ID from TMDB
-                                    val imdbId = viewModel.getTvShowImdbId(tvShow.id)
-                                    if (imdbId != null) {
-                                        // Get available seasons from Popcorn Time
-                                        val seasons = viewModel.getTvShowSeasons(imdbId)
-                                        if (seasons.isNotEmpty()) {
-                                            availableSeasons = seasons
-                                            selectedSeason = seasons.first()
-                                            showEpisodePicker = true
-                                        } else {
-                                            Toast.makeText(context, "No episodes available for streaming", Toast.LENGTH_SHORT).show()
-                                        }
-                                    } else {
-                                        Toast.makeText(context, "Show not found on streaming service", Toast.LENGTH_SHORT).show()
-                                    }
+                                    val year = tvShow.firstAirDate?.take(4)
+                                    val options = viewModel.getTvShowWatchOptions(tvShow.id, tvShow.name, year)
+                                    watchOptions = options
                                 } catch (e: Exception) {
-                                    Toast.makeText(context, "Error finding show", Toast.LENGTH_SHORT).show()
+                                    watchOptions = emptyList()
+                                    Toast.makeText(context, "Error finding options", Toast.LENGTH_SHORT).show()
                                 } finally {
-                                    isLoadingSeasons = false
+                                    isLoadingWatchOptions = false
                                 }
                             }
                         }
@@ -557,9 +573,9 @@ fun TvShowCard(
                         .align(Alignment.TopCenter)
                         .padding(8.dp)
                         .size(48.dp),
-                    enabled = !isLoadingMagnet && !isLoadingSeasons
+                    enabled = !isLoadingWatchOptions && !isLoadingSeasons
                 ) {
-                    if (isLoadingMagnet || isLoadingSeasons) {
+                    if (isLoadingWatchOptions || isLoadingSeasons) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
                             color = androidx.compose.ui.graphics.Color.White,
@@ -673,6 +689,51 @@ fun TvShowCard(
             },
             onDismiss = { showEpisodePicker = false },
             viewModel = viewModel
+        )
+    }
+    
+    // Watch Options Dialog (streaming providers + torrent browse episodes)
+    if (showWatchOptions && viewModel != null) {
+        WatchOptionsDialog(
+            title = tvShow.name,
+            options = watchOptions,
+            isLoading = isLoadingWatchOptions,
+            onDismiss = {
+                showWatchOptions = false
+                watchOptions = emptyList()
+            },
+            onTorrentSelected = { magnetUrl ->
+                showWatchOptions = false
+                watchOptions = emptyList()
+                onWatchNow(tvShow.name, magnetUrl)
+            },
+            onBrowseEpisodes = {
+                showWatchOptions = false
+                watchOptions = emptyList()
+                // Open the episode picker for torrent
+                isLoadingSeasons = true
+                coroutineScope.launch {
+                    try {
+                        val imdbId = viewModel.getTvShowImdbId(tvShow.id)
+                        if (imdbId != null) {
+                            val seasons = viewModel.getTvShowSeasons(imdbId)
+                            if (seasons.isNotEmpty()) {
+                                availableSeasons = seasons
+                                selectedSeason = seasons.first()
+                                showEpisodePicker = true
+                            } else {
+                                Toast.makeText(context, "No episodes available for streaming", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "Show not found", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Error finding show", Toast.LENGTH_SHORT).show()
+                    } finally {
+                        isLoadingSeasons = false
+                    }
+                }
+            }
         )
     }
 }

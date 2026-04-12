@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.movierecommender.app.data.model.Movie
+import com.movierecommender.app.ui.leanback.LeanbackActionButton
+import com.movierecommender.app.ui.leanback.LeanbackTopBar
 import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
 
 
@@ -64,90 +66,34 @@ fun FavoritesScreen(
     
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("${uiState.userName}'s Favorites") },
-                navigationIcon = {
-                    val backInteraction = remember { MutableInteractionSource() }
-                    val backFocused by backInteraction.collectIsFocusedAsState()
-
-                    Surface(
-                        modifier = Modifier.padding(start = 32.dp, top = 4.dp, bottom = 4.dp),
-                        shape = MaterialTheme.shapes.small,
-                        color = if (backFocused) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
-                        border = if (backFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
-                    ) {
-                        IconButton(
-                            onClick = onBackClick,
-                            interactionSource = backInteraction
-                        ) {
-                            Icon(
-                                Icons.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                tint = if (backFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(if (backFocused) 32.dp else 24.dp)
-                            )
-                        }
-                    }
+            LeanbackTopBar(
+                title = "${uiState.userName}'s Favorites",
+                subtitle = if (hasSelections) {
+                    "${uiState.selectedMovies.size} picks ready for recommendations"
+                } else {
+                    "Save titles here before starting analysis"
                 },
+                onBackClick = onBackClick,
                 actions = {
-                    val settingsInteraction = remember { MutableInteractionSource() }
-                    val settingsFocused by settingsInteraction.collectIsFocusedAsState()
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(end = 32.dp)
-                    ) {
-                        Surface(
-                            modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
-                            shape = MaterialTheme.shapes.small,
-                            color = if (settingsFocused) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
-                            border = if (settingsFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.onPrimary) else null
-                        ) {
-                            IconButton(
-                                onClick = { showSettingsDialog = true },
-                                interactionSource = settingsInteraction
-                            ) {
-                                Icon(
-                                    Icons.Default.Settings,
-                                    contentDescription = "Settings",
-                                    tint = if (settingsFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(if (settingsFocused) 32.dp else 24.dp)
-                                )
-                            }
-                        }
-                        Text(
-                            text = "settings",
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontSize = 8.sp,
-                            modifier = Modifier.offset(y = (-8).dp)
+                    if (hasSelections) {
+                        LeanbackActionButton(
+                            icon = Icons.Default.Check,
+                            label = "Analyze",
+                            onClick = {
+                                viewModel.generateRecommendations()
+                                onGenerateRecommendations()
+                            },
+                            emphasized = true
                         )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
-        },
-        floatingActionButton = {
-            if (hasSelections) {
-                val fabInteraction = remember { MutableInteractionSource() }
-                val fabFocused by fabInteraction.collectIsFocusedAsState()
 
-                ExtendedFloatingActionButton(
-                    onClick = {
-                        viewModel.generateRecommendations()
-                        onGenerateRecommendations()
-                    },
-                    icon = { Icon(Icons.Default.Check, contentDescription = "Generate") },
-                    text = { Text("Get Recommendations") },
-                    containerColor = if (fabFocused) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.focusable(interactionSource = fabInteraction),
-                    interactionSource = fabInteraction
-                )
-            }
+                    LeanbackActionButton(
+                        icon = Icons.Default.Settings,
+                        label = "Settings",
+                        onClick = { showSettingsDialog = true }
+                    )
+                }
+            )
         },
     ) { paddingValues ->
         Box(

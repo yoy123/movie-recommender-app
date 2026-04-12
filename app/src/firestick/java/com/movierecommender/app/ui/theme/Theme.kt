@@ -3,6 +3,7 @@ package com.movierecommender.app.ui.theme.firestick
 import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -18,17 +19,33 @@ import androidx.core.view.WindowCompat
 private val DarkColorScheme = darkColorScheme(
     primary = MoviePrimary,
     secondary = MovieSecondary,
-    tertiary = Pink80,
+    tertiary = MovieTertiary,
     background = MovieBackground,
     surface = MovieSurface,
+    surfaceVariant = MovieSurfaceVariant,
+    primaryContainer = MoviePanel,
     onPrimary = MovieOnPrimary,
-    onBackground = MovieOnBackground
+    onPrimaryContainer = MovieOnBackground,
+    onBackground = MovieOnBackground,
+    onSurface = MovieOnSurface,
+    onSurfaceVariant = MovieOnSurfaceVariant,
+    outline = MovieOutline
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
+    primary = MoviePrimary,
+    secondary = MovieSecondary,
+    tertiary = MovieTertiary,
+    background = MovieOnBackground,
+    surface = Color.White,
+    surfaceVariant = Color(0xFFE7EEF7),
+    primaryContainer = Color(0xFFCCF3F8),
+    onPrimary = MovieOnPrimary,
+    onPrimaryContainer = MovieBackground,
+    onBackground = MovieBackground,
+    onSurface = MovieBackground,
+    onSurfaceVariant = Color(0xFF40506D),
+    outline = Color(0xFF70819F)
 )
 
 @Composable
@@ -50,7 +67,8 @@ fun MovieRecommenderTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.primary.toArgb()
+            window.statusBarColor = colorScheme.background.toArgb()
+            window.navigationBarColor = colorScheme.surfaceVariant.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }

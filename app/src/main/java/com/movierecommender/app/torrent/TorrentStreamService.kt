@@ -90,6 +90,7 @@ class TorrentStreamService : Service(), TorrentListener {
     private var currentTorrent: Torrent? = null
     private var currentMagnetUrl: String? = null
     private var currentPlaybackPosition = 0L
+    private var currentPlaybackDuration = 0L
     private var cacheDir: File? = null
     private var isCleaningCache = false
     private var isDownloadPaused = false
@@ -147,14 +148,36 @@ class TorrentStreamService : Service(), TorrentListener {
     }
     
     /**
-     * Update playback position for intelligent cache management.
-     * Older chunks are deleted as playback progresses.
+     * Update playback position for intelligent cache management AND torrent piece prioritization.
+     * This is critical: it tells the torrent to prioritize downloading data near the playback position.
+     * Without this, the torrent may download pieces out of order after the initial buffer.
      * File operations run on IO dispatcher to prevent UI freeze.
      */
     fun updatePlaybackPosition(positionMs: Long) {
         currentPlaybackPosition = positionMs
+        
+        // Tell the torrent to prioritize pieces near the current playback position.
+        // Convert time position to approximate byte offset using file size and duration.
+        currentTorrent?.let { torrent ->
+            try {
+                val videoFile = torrent.videoFile ?: return@let
+                if (!videoFile.exists()) return@let
+                val fileSize = videoFile.length()
+                // We need duration to convert time → bytes.
+                if (currentPlaybackDuration > 0L && positionMs > 0L) {
+                    val byteOffset = (positionMs.toDouble() / currentPlaybackDuration * fileSize).toLong()
+                    // Add margin: prioritize data starting from current position + 30 seconds ahead
+                    val aheadBytes = (30000.0 / currentPlaybackDuration * fileSize).toLong()
+                    val targetOffset = (byteOffset + aheadBytes).coerceAtMost(fileSize)
+                    torrent.setInterestedBytes(targetOffset)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("TorrentStreamService", "Failed to set interested bytes", e)
+            }
+        }
+        
         val now = System.currentTimeMillis()
-        // Throttle all file operations to every 10 seconds to prevent freeze
+        // Throttle file operations to every 10 seconds to prevent freeze
         if (currentPlaybackPosition > 0L && now - lastCleanupMs > 10000) {
             lastCleanupMs = now
             serviceScope.launch {
@@ -165,6 +188,40 @@ class TorrentStreamService : Service(), TorrentListener {
                 }
             }
         }
+    }
+    
+    /**
+     * Update the media duration so we can convert time positions to byte offsets.
+     * Must be called once ExoPlayer determines the actual duration.
+     */
+    fun updatePlaybackDuration(durationMs: Long) {
+        if (durationMs > 0L) {
+            currentPlaybackDuration = durationMs
+        }
+    }
+    
+    /**
+     * Check if the torrent has downloaded the data at the given byte offset.
+     * Returns true if the piece containing that byte is available.
+     */
+    fun hasBytesAt(byteOffset: Long): Boolean {
+        return try {
+            currentTorrent?.hasBytes(byteOffset) ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    /**
+     * Check if the torrent has downloaded data for a given time position.
+     * Converts time to byte offset using file size and duration.
+     */
+    fun hasBytesAtTime(positionMs: Long): Boolean {
+        if (currentPlaybackDuration <= 0L || positionMs < 0L) return false
+        val videoFile = currentTorrent?.videoFile ?: return false
+        val fileSize = videoFile.length()
+        val byteOffset = (positionMs.toDouble() / currentPlaybackDuration * fileSize).toLong()
+        return hasBytesAt(byteOffset)
     }
     
     /**

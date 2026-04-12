@@ -7,6 +7,7 @@ import com.movierecommender.app.data.model.Genre
 import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.TvShow
 import com.movierecommender.app.data.model.ContentMode
+import com.movierecommender.app.data.model.WatchOption
 import com.movierecommender.app.data.repository.MovieRepository
 import com.movierecommender.app.data.settings.SettingsRepository
 import com.movierecommender.app.data.repository.Resource
@@ -486,57 +487,62 @@ class MovieViewModel(
     }
     
     /**
-     * Generate TV show recommendations based on selected shows.
-     * Uses TMDB's similar TV shows endpoint for each selected show.
+     * Generate TV show recommendations using LLM + user preference settings.
+     * Mirrors the movie recommendation pipeline: TMDB candidates → LLM rerank → validated output.
      */
-    fun generateTvRecommendations() {
+    fun generateTvRecommendations(additionalExcludedTitles: List<String> = emptyList()) {
         val selectedShows = _uiState.value.selectedTvShows
         if (selectedShows.isEmpty() || selectedShows.size > 5) return
         
+        val genreName = _uiState.value.selectedGenreName ?: "TV Shows"
+        val genreId = _uiState.value.selectedGenreId
+        val state = _uiState.value
+        
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null, recommendedTvShows = emptyList())
-            
-            try {
-                val allRecommendations = mutableListOf<TvShow>()
-                val selectedIds = selectedShows.map { it.id }.toSet()
-                
-                // Get similar shows for each selected show
-                for (show in selectedShows) {
-                    repository.getSimilarTvShows(show.id).collect { resource ->
-                        if (resource is Resource.Success) {
-                            allRecommendations.addAll(resource.data)
-                        }
+            repository.getTvShowRecommendationsLlm(
+                selectedShows = selectedShows,
+                genreName = genreName,
+                genreId = genreId,
+                indiePreference = state.indiePreference,
+                useIndiePreference = state.useIndiePreference,
+                popularityPreference = state.popularityPreference,
+                usePopularityPreference = state.usePopularityPreference,
+                releaseYearStart = state.releaseYearStart,
+                releaseYearEnd = state.releaseYearEnd,
+                useReleaseYearPreference = state.useReleaseYearPreference,
+                tonePreference = state.tonePreference,
+                useTonePreference = state.useTonePreference,
+                internationalPreference = state.internationalPreference,
+                useInternationalPreference = state.useInternationalPreference,
+                experimentalPreference = state.experimentalPreference,
+                useExperimentalPreference = state.useExperimentalPreference,
+                additionalExcludedTitles = (additionalExcludedTitles + sessionRecommendedTitles.toList()).distinct(),
+                useLlm = state.llmConsentGiven
+            ).collect { resource ->
+                when (resource) {
+                    is Resource.Loading -> {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = true,
+                            error = null,
+                            recommendedTvShows = emptyList(),
+                            recommendationText = null
+                        )
+                    }
+                    is Resource.Success -> {
+                        sessionRecommendedTitles.addAll(extractRecommendedTitlesFromText(resource.data))
+                        _uiState.value = _uiState.value.copy(
+                            recommendationText = resource.data,
+                            isLoading = false,
+                            error = null
+                        )
+                    }
+                    is Resource.Error -> {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = resource.message
+                        )
                     }
                 }
-                
-                // Deduplicate, remove already selected, and take top 15
-                val recommendations = allRecommendations
-                    .distinctBy { it.id }
-                    .filter { it.id !in selectedIds }
-                    .sortedByDescending { it.popularity }
-                    .take(15)
-                
-                // Build recommendation text
-                val recommendationText = buildString {
-                    appendLine("Based on your selections, here are TV shows you might enjoy:")
-                    appendLine()
-                    recommendations.forEachIndexed { index, show ->
-                        val year = show.firstAirDate?.take(4) ?: "N/A"
-                        appendLine("${index + 1}. ${show.name} ($year)")
-                    }
-                }
-                
-                _uiState.value = _uiState.value.copy(
-                    recommendedTvShows = recommendations,
-                    recommendationText = recommendationText,
-                    isLoading = false,
-                    error = null
-                )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.localizedMessage ?: "Failed to get TV recommendations"
-                )
             }
         }
     }
@@ -623,12 +629,13 @@ class MovieViewModel(
     }
     
     fun retryTvRecommendations() {
-        // Clear current recommendations and regenerate with new random selection
+        val current = _uiState.value.recommendationText ?: return
+        val additionalExcluded = extractRecommendedTitlesFromText(current)
         _uiState.value = _uiState.value.copy(
             recommendedTvShows = emptyList(),
             recommendationText = null
         )
-        generateTvRecommendations()
+        generateTvRecommendations(additionalExcludedTitles = additionalExcluded)
     }
 
     fun generateRecommendations(additionalExcludedTitles: List<String> = emptyList()) {
@@ -837,6 +844,30 @@ class MovieViewModel(
 
     suspend fun getTmdbRatingByTitleYear(title: String, year: String?): String? {
         return repository.getTmdbRatingByTitleYear(title, year)
+    }
+
+    /**
+     * Get all watch options (streaming providers + torrent) for a movie.
+     * Returns a sorted list: FREE → SUBSCRIPTION → RENT → BUY → TORRENT.
+     */
+    suspend fun getMovieWatchOptions(tmdbId: Int, title: String, year: String?): List<WatchOption> {
+        return repository.getMovieWatchOptions(tmdbId, title, year)
+    }
+
+    /**
+     * Get all watch options (streaming providers) for a TV show.
+     * Torrent is handled per-episode via the episode picker.
+     */
+    suspend fun getTvShowWatchOptions(tmdbId: Int, title: String, year: String?): List<WatchOption> {
+        return repository.getTvShowWatchOptions(tmdbId, title, year)
+    }
+
+    /**
+     * Search TMDB to resolve a title+year to a TMDB ID.
+     * Used when we only have a title from recommendations.
+     */
+    suspend fun searchTmdbIdByTitle(title: String, year: String?, isTvMode: Boolean): Int? {
+        return repository.searchTmdbIdByTitle(title, year, isTvMode)
     }
 
     /**

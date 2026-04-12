@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.MovieRecommender" parent="android:Theme.Material.Light.NoActionBar">
+    <style name="Theme.MovieRecommender" parent="Theme.Leanback">
+        <item name="android:windowOverscan">true</item>
+        <item name="android:colorPrimary">@color/lb_browse_title_color</item>
+    </style>
+
+    <!-- Theme for Compose-based sub-activities (MovieSelection, Recommendations, etc.) -->
+    <style name="Theme.MovieRecommender.Compose" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowOverscan">true</item>
     </style>
 </resources>

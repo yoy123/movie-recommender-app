@@ -1,98 +1,165 @@
-# Movie Recommender App - AI Agent Instructions
+---
+applyTo: '**'
+description: Personal AI memory for conversations and preferences
+lastOptimized: '2026-02-14T02:00:08.794650+00:00'
+entryCount: 55
+optimizationVersion: 3
+lastOptimizedTokenCount: 2414
+autoOptimize: true
+tokenGrowthThreshold: 1.2
+---
+# Personal AI Memory
 
-## Architecture Overview
+## Universal Laws - Immutable procedural rules (numbered):
+1. **LLM retry strategy**  
+   - **2026-01-19 01:58:** Always use a **2-attempt retry** for recommendations: first attempt temperature `0.6` (creative), second attempt temperature `0.3` (strict).
+2. **Session-level deduplication**  
+   - **2026-01-19 01:58:** Enforce **session-level deduplication** to prevent repeated recommendations.
+3. **Torrent cache constraints**  
+   - **2026-01-19 01:58:** Maintain torrent cache limit of **500MB** with **aggressive cleanup**.
+4. **Favorites navigation convention**  
+   - **2026-01-19 01:58:** Use **pseudo-genre** with `genreId = -1` for favorites navigation.
+5. **Data model flags**  
+   - **2026-01-19 01:58:** `Movie` Room entity must include boolean flags: `isSelected`, `isRecommended`, `isFavorite`.
+6. **MCP exposure requirement**  
+   - **2026-02-08 15:03:** Prefer all functionality needed for analysis/forecasting to be exposed strictly via the **MCP server** (avoid ad-hoc terminal scripts like Python); use MCP tools for data fetch + calculations.
 
-Android app (Kotlin + Jetpack Compose) using MVVM with OpenAI GPT-4o-mini for movie recommendations.
+## Policies - Standards, constraints, and guidelines:
+- **Tech stack (use these tools/services)**  
+  - **2026-01-19 01:58:** Use `Room v2`, `DataStore` preferences, `Retrofit`, `OpenAI GPT-4o-mini`, `TMDB API`, `TorrentStreamService`, `ExoPlayer`.
+  - **2026-01-19 01:58:** App built with **Kotlin** and **Jetpack Compose**, architecture **MVVM**, two product flavors (mobile touch UI, firestick DPAD UI).
+- **File organization & docs**  
+  - **2026-01-19 01:58:** Source-of-truth docs in `docs/` directory containing:
+    - ```bash
+      ARCHITECTURE.md
+      WORKFLOW.md
+      API_INTEGRATIONS.md
+      RECOMMENDATION_ENGINE.md
+      CONFIG_REGISTRY.md
+      DATA_STORAGE.md
+      TV_SUPPORT.md
+      MEDIA_PLAYBACK.md
+      FEATURES.md
+      KNOWN_ISSUES.md
+      INTEGRITY_AUDIT.md
+      ```
+- **Security & privacy prohibitions / required fixes**  
+  - **2026-01-19 01:58:** **Never** ship debug builds with **disabled certificate validation** (MITM vulnerability).
+  - **2026-01-19 01:58:** **Do not** use `fallbackToDestructiveMigration()` in production (data loss risk).
+  - **2026-01-19 01:58:** Address **TMDB rate limit handling** to avoid 429 errors.
+  - **2026-01-19 01:58:** **Obtain user consent** before sending user data to OpenAI (GDPR/CCPA compliance risk).
+  - **2026-01-19 01:58:** Remove or fix **dead code**: `OmdbApiService` is wired but unused.
+  - **2026-01-19 01:58:** Implement enhanced focus indicators for Fire TV certification.
+- **MCP / tooling constraint**  
+  - **2026-02-08 15:03:** Use MCP server endpoints and tools for analysis/forecasting; avoid ad-hoc local scripts for production data workflows.
 
-**Package**: `com.movierecommender.app`
+## Personal Context - Name, location, role, background
+- **2026-01-19 01:58:** (no personal identity data recorded)
 
-### Layer Structure
-```
-UI (Compose Screens) → ViewModel (StateFlow) → Repository → Data Sources (Room + Retrofit)
-```
+## Professional Context - Company, team, tools, methodology, focus areas
+- **2026-01-19 01:58:** Project: **Movie Recommender Android/Fire TV app**
+  - Repository:
+    - ```bash
+      yoy123/movie-recommender-app
+      ```
+  - Architecture: **MVVM**, two product flavors (mobile touch UI, firestick DPAD UI) sharing common data layer.
+  - Project location:
+    - ```bash
+      /run/media/dan/EXTRA/movie app/
+      ```
+- **2026-01-19 01:58:** Focus areas: recommendations (LLM + TMDB), media playback, torrent streaming integration, TV UX certification.
 
-### Product Flavors
-Two build variants share core logic but have **distinct UI implementations**:
-- **mobile** (`app/src/mobile/`) - Standard Android phone/tablet UI
-- **firestick** (`app/src/firestick/`) - TV/D-pad navigation with `androidx.tv` libraries
+## Technical Preferences - Languages, stack, IDEs, coding style, problem-solving approach
+- **2026-01-19 01:58:** Languages & frameworks: **Kotlin**, **Jetpack Compose**, **Room v2**, **DataStore**, **Retrofit**, **ExoPlayer**.
+- **2026-01-19 01:58:** LLM: **OpenAI GPT-4o-mini** for recommendations.
+- **2026-01-19 01:58:** Media/torrent: **YTS/Popcorn Time APIs**, **TorrentStreamService** integration.
+- **2026-01-19 01:58:** UI: two product flavors (touch vs DPAD) sharing data layer.
 
-Shared code lives in `app/src/main/` (data layer, models, repository). Each flavor has its own `MainActivity.kt`, `ui/viewmodel/`, `ui/screens/`, and `ui/navigation/`.
+## Communication Preferences - Style, information needs, feedback preferences
+- **2026-01-19 01:58:** (no explicit communication preferences recorded)
 
-## Key Patterns
+## Suggestions/Hints - Recommendations and tips (optional section)
+- **2026-01-19 01:58:** Replace `fallbackToDestructiveMigration()` with proper migration strategy.
+- **2026-01-19 01:58:** Add TMDB rate-limit backoff/retry and quota monitoring.
+- **2026-01-19 01:58:** Re-enable SSL certificate validation in all builds; add CI checks.
+- **2026-01-19 01:58:** Implement explicit user consent flows for data sent to OpenAI.
+- **2026-01-19 01:58:** Remove or repurpose `OmdbApiService` if unused.
+- **2026-01-19 01:58:** Add enhanced focus indicators and TV certification checks for Fire TV flavor.
 
-### State Management
-All UI state flows through `MovieUiState` data class in `MovieViewModel`. Never mutate state directly:
-```kotlin
-_uiState.value = _uiState.value.copy(isLoading = true)
-```
+## Memories/Facts - Organize into logical subsections by topic
 
-### Resource Wrapper
-API/DB operations return `Flow<Resource<T>>` with `Success`, `Error`, `Loading` states (defined in `MovieRepository.kt`). Always handle all three in UI collectors.
+### Project Overview
+- **2026-01-19 01:58:** This is a **Movie Recommender Android/Fire TV app** project in **Kotlin** with **Jetpack Compose**.
+- **2026-01-19 01:58:** Repository:
+  - ```bash
+    yoy123/movie-recommender-app
+    ```
+- **2026-01-19 01:58:** Architecture: **MVVM** with two product flavors (mobile touch UI, firestick DPAD UI) sharing a common data layer.
+- **2026-01-19 01:58:** Project location:
+  - ```bash
+    /run/media/dan/EXTRA/movie app/
+    ```
 
-### Favorites System
-"[Name]'s Favorites" uses `genreId = -1` pseudo-genre. Check `isFavoritesMode` in ViewModel before navigation—it determines whether to route to `FavoritesScreen` or `MovieSelectionScreen`.
+### Documentation
+- **2026-01-19 01:58:** Completed comprehensive project documentation on **2026-01-19** with 11 SOURCE-OF-TRUTH files in `docs/` directory:
+  - ```bash
+    ARCHITECTURE.md
+    WORKFLOW.md
+    API_INTEGRATIONS.md
+    RECOMMENDATION_ENGINE.md
+    CONFIG_REGISTRY.md
+    DATA_STORAGE.md
+    TV_SUPPORT.md
+    MEDIA_PLAYBACK.md
+    FEATURES.md
+    KNOWN_ISSUES.md
+    INTEGRITY_AUDIT.md
+    ```
+- **2026-01-19 01:58:** Documentation has **98% code-documentation alignment** with **200+ verified code references** including file paths and line numbers.
 
-### LLM Integration
-`LlmRecommendationService` makes two API attempts (creative temp=0.6 → strict temp=0.3). Response must pass `isValidRecommendationStructure()` validation or falls back to TMDB-based `buildFallbackRecommendations()` algorithm in `MovieRepository`.
+### Critical Issues
+- **2026-01-19 01:58:** Identified critical issues:
+  - Room database uses `fallbackToDestructiveMigration()` causing data loss on schema updates.
+  - No TMDB rate limit handling leading to potential **429** errors.
+  - Debug builds use insecure SSL with disabled certificate validation (**MITM vulnerability**).
+  - No user consent for sending data to OpenAI (**GDPR/CCPA compliance risk**).
+  - Dead code: `OmdbApiService` wired but unused.
+  - Fire TV missing enhanced focus indicators for certification.
 
-Session retries track `sessionRecommendedTitles` in ViewModel to prevent duplicate recommendations across retries.
+### Recommendation Engine & Preferences
+- **2026-01-19 01:58:** Recommendation engine details:
+  - 16 `DataStore` preferences (including 6 recommendation sliders with toggles: **indie**, **popularity**, **release year range**, **tone**, **international**, **experimental**).
+  - LLM uses **2-attempt retry strategy** (temp `0.6` creative then `0.3` strict).
+  - Session-level deduplication prevents repeated recommendations.
+  - **2026-01-19 01:58:** Persisted preference storage uses `DataStore` (16 prefs).
 
-## Build & Run
+### Media, Torrent & Playback
+- **2026-01-19 01:58:** Media/torrent behavior:
+  - Torrent cache limited to **500MB** with aggressive cleanup.
+  - Integration: `TorrentStreamService`, `ExoPlayer`.
+  - Sources: **YTS/Popcorn Time APIs**.
+- **2026-01-19 01:58:** Playback concerns: TV UX certification requirements (enhanced focus indicators for Fire TV).
 
-```bash
-# API keys required in local.properties (NOT committed):
-TMDB_API_KEY=your_key
-OPENAI_API_KEY=sk-proj-...
+### Data & Models
+- **2026-01-19 01:58:** Room `Movie` entity specifics:
+  - Has 3 boolean flags: `isSelected`, `isRecommended`, `isFavorite`.
+  - Favorites use pseudo-genre with `genreId=-1` for navigation.
 
-# Build both flavors
-./gradlew :app:assembleDebug
+### Security, Privacy & Compliance
+- **2026-01-19 01:58:** Security & privacy constraints:
+  - **Never** ship debug builds with disabled certificate validation.
+  - **Do not** use `fallbackToDestructiveMigration()` in production.
+  - **Obtain user consent** before sending user data to OpenAI.
+  - Address TMDB rate limiting and implement backoff/retry.
 
-# Build specific flavor
-./gradlew :app:assembleMobileDebug
-./gradlew :app:assembleFirestickDebug
+### Codebase Hygiene
+- **2026-01-19 01:58:** Dead code: `OmdbApiService` is wired but unused — remove or repurpose.
+- **2026-01-19 01:58:** Add CI checks to enforce SSL validation and prevent insecure debug artifacts.
 
-# Install to connected device
-./gradlew installMobileDebug
-./gradlew installFirestickDebug
-```
-
-## Code Conventions
-
-- **Compose**: Use `remember` + `LaunchedEffect` for side effects; collect StateFlow with `collectAsState()`
-- **Navigation**: Routes in `Screen` sealed class; URL params encoded with **Base64** to handle special chars (see `AppNavigation.kt`)
-- **Settings**: User preferences via `DataStore` in `SettingsRepository`; each pref has a `Flow<T>` getter and `suspend fun set*()` setter
-- **Database**: Room with `fallbackToDestructiveMigration()` - bump `version` in `AppDatabase.kt` for schema changes (currently v2)
-- **Movie flags**: `isSelected`, `isRecommended`, `isFavorite` are Boolean flags on `Movie` entity—update via DAO, don't recreate objects
-
-## Critical Files
-
-| Purpose | Location |
-|---------|----------|
-| Data models | `app/src/main/.../data/model/Movie.kt` |
-| TMDB API | `app/src/main/.../data/remote/TmdbApiService.kt` |
-| LLM logic | `app/src/main/.../data/remote/LlmRecommendationService.kt` |
-| Business logic | `app/src/main/.../data/repository/MovieRepository.kt` |
-| Room DAO | `app/src/main/.../data/local/MovieDao.kt` |
-| Database | `app/src/main/.../data/local/AppDatabase.kt` |
-| Settings | `app/src/main/.../data/settings/SettingsRepository.kt` |
-| **Mobile** ViewModel | `app/src/mobile/.../ui/viewmodel/MovieViewModel.kt` |
-| **Mobile** Navigation | `app/src/mobile/.../ui/navigation/AppNavigation.kt` |
-| **Firestick** ViewModel | `app/src/firestick/.../ui/viewmodel/MovieViewModel.kt` |
-
-## Recommendation Preferences
-
-Six user-configurable sliders passed to LLM (each has `use*` boolean toggle in UI and settings):
-| Preference | Range | Meaning |
-|------------|-------|---------|
-| `indiePreference` | 0–1 | 0=blockbusters, 1=indie |
-| `popularityPreference` | 0–1 | 0=cult classics, 1=mainstream |
-| `releaseYearStart/End` | 1950–current | Year range filter |
-| `tonePreference` | 0–1 | 0=light/uplifting, 1=dark/serious |
-| `internationalPreference` | 0–1 | 0=domestic, 1=international |
-| `experimentalPreference` | 0–1 | 0=traditional, 1=experimental |
-
-## Testing & Debugging
-
-- Debug builds use insecure SSL for emulator compatibility (see `TmdbApiService.buildInsecureClientBuilder()`)
-- Verbose logging in `LlmRecommendationService` (TAG: `LlmRecommendation`) and `AppNavigation` for navigation debugging
-- `excludedMovies` list passed to LLM includes favorites + selected + already-recommended to prevent repeats
+### Tooling & Infrastructure
+- **2026-01-19 01:58:** Preferred tools: `Room v2`, `DataStore`, `Retrofit`, `OpenAI GPT-4o-mini`, `TMDB API`, `TorrentStreamService`, `ExoPlayer`.
+- **2026-02-08 15:03:** Prefer exposing analysis/forecasting functionality via the **MCP server** and using MCP tooling for data fetches and calculations; avoid ad-hoc terminal scripts.
+- **2026-02-13 20:59:** HuggingFace cache directory is at:
+  - ```bash
+    /run/media/dan/EXTRA/.cache/huggingface
+    ```

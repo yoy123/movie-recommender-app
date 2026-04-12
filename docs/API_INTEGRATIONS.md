@@ -175,6 +175,43 @@ Primary source for movie metadata (genres, titles, posters, trailers, ratings, s
 
 ---
 
+#### 1.8 Get Movie Watch Providers
+
+**Endpoint:** `GET /movie/{movie_id}/watch/providers`
+**Params:**
+
+- `api_key`: TMDB API key
+- `movie_id`: TMDB movie ID
+
+**Response:** `WatchProviderResponse` → `Map<String, CountryWatchProviders>` keyed by country code (e.g., "US")
+**Usage:**
+
+- Fetch streaming/rent/buy options for a movie
+- Populate WatchOptionsDialog with streaming app options alongside torrent
+- Data sourced from JustWatch (no extra API required)
+
+**Code:** [TmdbApiService.kt](../app/src/main/java/com/movierecommender/app/data/remote/TmdbApiService.kt) `getMovieWatchProviders()`
+
+---
+
+#### 1.9 Get TV Show Watch Providers
+
+**Endpoint:** `GET /tv/{series_id}/watch/providers`
+**Params:**
+
+- `api_key`: TMDB API key
+- `series_id`: TMDB TV show ID
+
+**Response:** `WatchProviderResponse` → `Map<String, CountryWatchProviders>` keyed by country code
+**Usage:**
+
+- Same as 1.8 but for TV shows
+- Combined with "Browse Episodes (Torrent)" option in WatchOptionsDialog
+
+**Code:** [TmdbApiService.kt](../app/src/main/java/com/movierecommender/app/data/remote/TmdbApiService.kt) `getTvWatchProviders()`
+
+---
+
 ### Rate Limiting (TMDB)
 
 **TMDB Limit:** 40 requests per 10 seconds (free tier)

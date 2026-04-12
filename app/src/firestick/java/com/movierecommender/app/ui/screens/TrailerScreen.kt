@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.movierecommender.app.ui.leanback.LeanbackTopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
@@ -271,18 +272,10 @@ private fun DirectVideoPlayer(
 private fun NoTrailerAvailable(title: String, onBackClick: () -> Unit) {
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(text = title, maxLines = 1) },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+            LeanbackTopBar(
+                title = title,
+                subtitle = "Trailer unavailable",
+                onBackClick = onBackClick
             )
         }
     ) { paddingValues ->
@@ -321,18 +314,10 @@ private fun NoTrailerAvailable(title: String, onBackClick: () -> Unit) {
 private fun ErrorScreen(title: String, errorMessage: String, onBackClick: () -> Unit) {
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(text = title, maxLines = 1) },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+            LeanbackTopBar(
+                title = title,
+                subtitle = "Playback issue",
+                onBackClick = onBackClick
             )
         }
     ) { paddingValues ->

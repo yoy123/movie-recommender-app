@@ -9,6 +9,7 @@ import com.movierecommender.app.data.model.TvShowResponse
 import com.movierecommender.app.data.model.TvShowDetails
 import com.movierecommender.app.data.model.TvShowExternalIds
 import com.movierecommender.app.data.model.VideoResponse
+import com.movierecommender.app.data.model.WatchProviderResponse
 import okhttp3.Cache
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -139,7 +140,23 @@ interface TmdbApiService {
         @Path("series_id") seriesId: Int,
         @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY
     ): TvShowExternalIds
-    
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Watch Providers API (powered by JustWatch)
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    @GET("movie/{movie_id}/watch/providers")
+    suspend fun getMovieWatchProviders(
+        @Path("movie_id") movieId: Int,
+        @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY
+    ): WatchProviderResponse
+
+    @GET("tv/{series_id}/watch/providers")
+    suspend fun getTvWatchProviders(
+        @Path("series_id") seriesId: Int,
+        @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY
+    ): WatchProviderResponse
+
     companion object {
         /** HTTP cache size: 10 MB */
         private const val CACHE_SIZE_BYTES = 10L * 1024 * 1024

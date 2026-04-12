@@ -154,9 +154,10 @@ Mobile/Firestick UI → MovieViewModel → MovieRepository → [Data Sources + P
    - All network/DB calls emit Loading → Success/Error
 
 3. **Repository → Data Sources**
-   - `TmdbApiService`: genre list, movie search, similar/recommendations
+   - `TmdbApiService`: genre list, movie search, similar/recommendations, **watch providers**
    - `LlmRecommendationService`: OpenAI GPT-4o-mini prompt + validation
-   - `YtsApiService`, `PopcornApiService`: torrent metadata
+   - `YtsApiService`, `PopcornApiService`, `PirateBayApiService`, `TorrentGalaxyService`, `LeetxService`: torrent metadata
+   - `StreamingAppRegistry`: maps TMDB provider IDs to Android package names and deep links (25+ streaming apps)
    - `OmdbApiService`, `ImdbScraperService`: IMDB ratings/trailers (unused in current UI)
 
 4. **Repository → Persistence**

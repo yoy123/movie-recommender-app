@@ -548,12 +548,12 @@ private fun RecommendationRow(
     val trailerUrl by produceState<String?>(initialValue = null, key1 = item.title, key2 = item.year) {
         value = try { viewModel.getTrailerUrlByTitle(item.title, item.year, isTvMode) } catch (e: Exception) { null }
     }
-    // Only pre-fetch torrent for movies; TV shows use episode picker
-    val torrentResult by produceState<Pair<String, String>?>(initialValue = null, key1 = item.title, key2 = item.year) {
-        value = if (!isTvMode) {
-            try { viewModel.getTorrentMagnetUrlForContent(item.title, item.year, false) } catch (e: Exception) { null }
-        } else null
-    }
+
+    // Watch options dialog state
+    var showWatchOptions by remember { mutableStateOf(false) }
+    var watchOptions by remember { mutableStateOf<List<com.movierecommender.app.data.model.WatchOption>>(emptyList()) }
+    var isLoadingWatchOptions by remember { mutableStateOf(false) }
+    var resolvedTmdbId by remember { mutableStateOf<Int?>(null) }
 
     // TV show episode picker state
     var showEpisodePicker by remember { mutableStateOf(false) }
@@ -617,9 +617,80 @@ private fun RecommendationRow(
             }
             
             TextButton(onClick = {
-                if (isTvMode) {
-                    // TV mode: show episode picker
-                    if (!isLoadingSeasons) {
+                if (!isLoadingWatchOptions) {
+                    isLoadingWatchOptions = true
+                    showWatchOptions = true
+                    coroutineScope.launch {
+                        try {
+                            val tmdbId = resolvedTmdbId ?: run {
+                                val id = viewModel.searchTmdbIdByTitle(item.title, item.year, isTvMode)
+                                resolvedTmdbId = id
+                                id
+                            }
+                            if (tmdbId != null) {
+                                val options = if (isTvMode) {
+                                    viewModel.getTvShowWatchOptions(tmdbId, item.title, item.year)
+                                } else {
+                                    viewModel.getMovieWatchOptions(tmdbId, item.title, item.year)
+                                }
+                                watchOptions = options
+                            } else {
+                                // Fallback: try torrent only for movies
+                                if (!isTvMode) {
+                                    val torrentResult = try {
+                                        viewModel.getTorrentMagnetUrlForContent(item.title, item.year, false)
+                                    } catch (e: Exception) { null }
+                                    watchOptions = if (torrentResult != null) {
+                                        listOf(com.movierecommender.app.data.model.WatchOption(
+                                            name = "Torrent: ${torrentResult.second}",
+                                            type = com.movierecommender.app.data.model.WatchOptionType.TORRENT,
+                                            logoPath = null,
+                                            packageName = null,
+                                            deepLinkUrl = null,
+                                            justWatchLink = null,
+                                            magnetUrl = torrentResult.first,
+                                            quality = torrentResult.second,
+                                            seeds = null,
+                                            provider = null
+                                        ))
+                                    } else {
+                                        emptyList()
+                                    }
+                                } else {
+                                    watchOptions = emptyList()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            watchOptions = emptyList()
+                        } finally {
+                            isLoadingWatchOptions = false
+                        }
+                    }
+                }
+            }, enabled = !isLoadingWatchOptions) {
+                Text(if (isLoadingWatchOptions) "Finding..." else "Watch Options")
+            }
+        }
+
+        // Watch Options Dialog
+        if (showWatchOptions) {
+            WatchOptionsDialog(
+                title = item.title,
+                options = watchOptions,
+                isLoading = isLoadingWatchOptions,
+                onDismiss = {
+                    showWatchOptions = false
+                    watchOptions = emptyList()
+                },
+                onTorrentSelected = { magnetUrl ->
+                    showWatchOptions = false
+                    watchOptions = emptyList()
+                    onWatchNow(item.title, magnetUrl)
+                },
+                onBrowseEpisodes = if (isTvMode) {
+                    {
+                        showWatchOptions = false
+                        watchOptions = emptyList()
                         isLoadingSeasons = true
                         coroutineScope.launch {
                             try {
@@ -639,21 +710,8 @@ private fun RecommendationRow(
                             }
                         }
                     }
-                } else {
-                    // Movie mode: use pre-fetched torrent
-                    val result = torrentResult
-                    android.util.Log.d("RecommendationsScreen", "Watch Now button clicked: title=${item.title}")
-                    if (result != null && result.first.isNotBlank()) {
-                        android.util.Log.d("RecommendationsScreen", "Calling onWatchNow with magnet")
-                        onWatchNow(result.second, result.first)
-                    } else {
-                        android.util.Log.w("RecommendationsScreen", "No streaming source available")
-                        Toast.makeText(context, "No streaming source available", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }, enabled = !isLoadingSeasons) {
-                Text(if (isLoadingSeasons) "Finding..." else if (isTvMode) "Browse Episodes" else "Watch Now")
-            }
+                } else null
+            )
         }
 
         // Episode Picker Dialog for TV shows

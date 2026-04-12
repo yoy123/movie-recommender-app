@@ -123,6 +123,14 @@ dependencies {
     implementation("androidx.tv:tv-foundation:1.0.0-alpha10")
     implementation("androidx.tv:tv-material:1.0.0-alpha10")
     
+    // Leanback for traditional Android TV UI
+    implementation("androidx.leanback:leanback:1.0.0")
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("androidx.fragment:fragment-ktx:1.6.2")
+    
+    // Glide for Leanback ImageCardView
+    implementation("com.github.bumptech.glide:glide:4.16.0")
+    
     // Room dependencies
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")

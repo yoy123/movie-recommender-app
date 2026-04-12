@@ -51,10 +51,17 @@ fun StreamingPlayerScreen(
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var isPlayerReady by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
+    var duration by remember { mutableLongStateOf(0L) }
     var shouldStopStream by remember { mutableStateOf(true) }
     var lastProgress by remember { mutableStateOf(0f) }
     var lastProgressTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var stallRetries by remember { mutableIntStateOf(0) }
+    
+    // Rebuffering state: when player outruns the torrent download
+    var isWaitingForData by remember { mutableStateOf(false) }
+    var dataWaitTrigger by remember { mutableIntStateOf(0) }
+    var pendingResumePosition by remember { mutableLongStateOf(0L) }
+    var lastSaveTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     
     // Load saved playback position
     val savedPosition = remember(magnetUrl) {
@@ -146,9 +153,12 @@ fun StreamingPlayerScreen(
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
-                        // Update last good position when actually playing
+                        // Update last good position using the player's actual position
                         if (playing) {
-                            lastGoodPosition = exoPlayer?.currentPosition ?: lastGoodPosition
+                            val playerPos = this@apply.currentPosition
+                            if (playerPos > 0L) {
+                                lastGoodPosition = playerPos
+                            }
                         }
                     }
                     
@@ -166,17 +176,26 @@ fun StreamingPlayerScreen(
                                 if (playWhenReady && !isPlaying) {
                                     play()
                                 }
-                                // Update last good position when playback is ready
-                                lastGoodPosition = currentPosition
+                                // Update last good position using the player's actual position
+                                val playerPos = this@apply.currentPosition
+                                if (playerPos > 0L) {
+                                    lastGoodPosition = playerPos
+                                }
                             }
                             Player.STATE_ENDED -> {
+                                // When ExoPlayer outruns the torrent download, it hits EOF → STATE_ENDED.
+                                // DO NOT re-prepare immediately. Defer to wait-for-data mechanism.
+                                // CRITICAL: Use lastGoodPosition, NOT currentPosition.
+                                // At STATE_ENDED, currentPosition is at/near the EOF boundary
+                                // which would cause immediate re-failure on resume.
                                 val latestProgress = torrentService?.downloadProgress?.value ?: 0f
                                 val stillDownloading = latestProgress < 100f
                                 if (stillDownloading) {
-                                    val resumePosition = exoPlayer?.currentPosition ?: 0L
-                                    setMediaItem(mediaItem, resumePosition)
-                                    prepare()
-                                    playWhenReady = true
+                                    val safePos = (lastGoodPosition - 5000L).coerceAtLeast(0L)
+                                    android.util.Log.d("StreamingPlayer", "STATE_ENDED while downloading (${latestProgress}%), deferring resume from $safePos (lastGood=$lastGoodPosition)")
+                                    pendingResumePosition = safePos
+                                    isWaitingForData = true
+                                    dataWaitTrigger++
                                 }
                             }
                             else -> {}
@@ -184,16 +203,15 @@ fun StreamingPlayerScreen(
                     }
                     
                     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                        // Handle source errors (e.g., Invalid NAL length when seeking past downloaded content)
+                        // Torrent file may have incomplete data causing codec/source errors.
+                        // Use lastGoodPosition with safety margin — NOT player.currentPosition
                         android.util.Log.e("StreamingPlayer", "Player error: ${error.message}", error)
                         
-                        // Re-prepare from last known good position
-                        val fallbackPosition = lastGoodPosition.coerceAtLeast(0L)
-                        android.util.Log.d("StreamingPlayer", "Recovering from error, seeking to last good position: $fallbackPosition")
-                        
-                        setMediaItem(mediaItem, fallbackPosition)
-                        prepare()
-                        playWhenReady = true
+                        val safePos = (lastGoodPosition - 5000L).coerceAtLeast(0L)
+                        android.util.Log.d("StreamingPlayer", "Player error, deferring resume from $safePos (lastGood=$lastGoodPosition)")
+                        pendingResumePosition = safePos
+                        isWaitingForData = true
+                        dataWaitTrigger++
                     }
                 })
             }
@@ -201,14 +219,91 @@ fun StreamingPlayerScreen(
         }
     }
     
-    // Update playback position for intelligent cache management
+    // Update playback position and lastGoodPosition for intelligent cache management
     LaunchedEffect(isPlayerReady) {
         while (isPlayerReady) {
             exoPlayer?.let { player ->
+                duration = player.duration.coerceAtLeast(0L)
+                // Continuously track last good position during active playback
+                if (player.isPlaying && player.currentPosition > 0L) {
+                    lastGoodPosition = player.currentPosition
+                    // Periodically save position to SharedPreferences for crash recovery
+                    val now = System.currentTimeMillis()
+                    if (now - lastSaveTime > 10000L) {
+                        val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+                        val posKey = "position_${magnetUrl.hashCode()}"
+                        prefs.edit().putLong(posKey, player.currentPosition).apply()
+                        lastSaveTime = now
+                    }
+                }
                 torrentService?.updatePlaybackPosition(player.currentPosition)
+                // Feed duration to torrent service for byte offset calculations
+                if (duration > 0L) {
+                    torrentService?.updatePlaybackDuration(duration)
+                }
             }
             delay(500)
         }
+    }
+    
+    // Wait for more torrent data before re-preparing player.
+    // Uses piece-level checking (hasBytesAtTime) to wait for the SPECIFIC data
+    // ExoPlayer needs, not just overall download progress. Also uses exponential backoff.
+    LaunchedEffect(dataWaitTrigger) {
+        if (dataWaitTrigger == 0) return@LaunchedEffect
+        
+        val resumePos = pendingResumePosition
+        android.util.Log.d("StreamingPlayer", "Waiting for data at position $resumePos ms (trigger #$dataWaitTrigger)")
+        
+        // Save position immediately in case of crash/kill
+        val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+        val posKey = "position_${magnetUrl.hashCode()}"
+        if (resumePos > 0L) {
+            prefs.edit().putLong(posKey, resumePos).apply()
+        }
+        
+        // Tell the torrent to prioritize data around our resume position
+        torrentService?.updatePlaybackDuration(duration)
+        torrentService?.updatePlaybackPosition(resumePos)
+        
+        // Exponential backoff: wait longer on repeated rebuffers at the same area
+        val backoffMultiplier = dataWaitTrigger.coerceAtMost(5)
+        val minWaitSeconds = 5 * backoffMultiplier
+        val maxWaitSeconds = 60
+        
+        // Wait until the torrent has downloaded the specific bytes we need.
+        // Check: bytes at resumePos and resumePos + 60 seconds ahead.
+        var elapsed = 0
+        val aheadMs = 60000L * backoffMultiplier.coerceAtMost(3)
+        while (elapsed < maxWaitSeconds) {
+            delay(2000)
+            elapsed += 2
+            
+            val hasResumeBytes = torrentService?.hasBytesAtTime(resumePos) ?: false
+            val hasAheadBytes = torrentService?.hasBytesAtTime(resumePos + aheadMs) ?: false
+            val currentProg = torrentService?.downloadProgress?.value ?: 0f
+            android.util.Log.d("StreamingPlayer", "Rebuffering... hasResumeBytes=$hasResumeBytes, hasAheadBytes=$hasAheadBytes, progress=$currentProg% (${elapsed}s elapsed, backoff=${backoffMultiplier}x)")
+            
+            if (elapsed >= minWaitSeconds && hasResumeBytes && hasAheadBytes) {
+                break
+            }
+            if (currentProg >= 100f) {
+                break
+            }
+        }
+        
+        // Re-prepare player from the (now more complete) file
+        val videoPath = torrentService?.getVideoFilePath()
+        if (videoPath != null && exoPlayer != null) {
+            exoPlayer?.let { player ->
+                val newMediaItem = MediaItem.fromUri("file://$videoPath")
+                android.util.Log.d("StreamingPlayer", "Re-preparing player at position $resumePos after waiting ${elapsed}s (backoff=${backoffMultiplier}x)")
+                player.setMediaItem(newMediaItem, resumePos)
+                player.prepare()
+                player.playWhenReady = true
+            }
+        }
+        isWaitingForData = false
     }
     
     // Handle lifecycle
@@ -320,6 +415,47 @@ fun StreamingPlayerScreen(
                                         color = Color.White,
                                         fontSize = 12.sp
                                     )
+                                }
+                            }
+                        }
+                        
+                        // Rebuffering overlay when waiting for more torrent data
+                        if (isWaitingForData) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.75f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(64.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        strokeWidth = 5.dp
+                                    )
+                                    Spacer(modifier = Modifier.height(20.dp))
+                                    Text(
+                                        text = "Buffering more content...",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color.White
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Downloaded: ${downloadProgress.toInt()}%",
+                                        color = Color.Gray,
+                                        fontSize = 14.sp
+                                    )
+                                    if (seeds > 0 || downloadSpeed > 0) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "Seeds: $seeds • ${downloadSpeed / 1024} KB/s",
+                                            color = Color(0xFF4CAF50),
+                                            fontSize = 12.sp
+                                        )
+                                    }
                                 }
                             }
                         }
