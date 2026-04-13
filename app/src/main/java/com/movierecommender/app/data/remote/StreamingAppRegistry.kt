@@ -224,6 +224,18 @@ object StreamingAppRegistry {
 
     fun hasApp(providerId: Int): Boolean = providerPackages.containsKey(providerId)
 
+    /**
+     * Fire TV streaming apps tested so far ignore or misroute third-party SEARCH intents,
+     * so we currently disable app-driven search entirely and only open the provider app.
+     */
+    fun supportsInAppSearch(providerId: Int): Boolean = false
+
+    /**
+     * Browser-backed search URLs are a weak fallback on Fire TV because they often
+     * resolve to Silk instead of the provider app.
+     */
+    fun shouldUseBrowserFallback(providerId: Int): Boolean = providerId in browserFallbackProviderIds
+
     fun getTypeLabel(type: String): String = when (type) {
         "flatrate" -> "Stream"
         "free" -> "Free"
@@ -234,9 +246,9 @@ object StreamingAppRegistry {
     }
 
     /**
-     * Build a deep link URL for a movie/show on streaming services.
-     * These https:// URLs are launched via ACTION_VIEW without setPackage()
-     * on Fire TV, which routes them to the correct installed app.
+     * Build a browser fallback URL for a movie/show on streaming services.
+     * On Fire TV these often resolve to Silk, so callers should not use them as
+     * the primary launch path.
      */
     fun buildDeepLink(providerId: Int, title: String, tmdbId: Int, isMovie: Boolean): String? {
         val encoded = android.net.Uri.encode(title)
@@ -289,4 +301,22 @@ object StreamingAppRegistry {
         2442, 2443, 2444, 2445, 2446, 2448, 2452, 2454,
         2462, 2464, 2465, 2466, 2467, 2468, 2470, 2668,
     )
+
+    private val browserFallbackProviderIds = setOf(
+        8, 1796, 175,
+        9, 10, 1825,
+        15,
+        1899, 384, 616,
+        2303, 2616, 531, 153,
+        337,
+        386, 387, 1771,
+        73,
+        300,
+        283,
+        350, 2,
+        192, 188, 2528,
+        43,
+        257,
+        538,
+    ) + amazonChannelProviderIds
 }

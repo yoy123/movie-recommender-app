@@ -1885,6 +1885,7 @@ class MovieRepository(
                         options.add(
                             WatchOption(
                                 name = entry.providerName,
+                                providerId = entry.providerId,
                                 type = type,
                                 logoPath = entry.logoPath,
                                 packageName = StreamingAppRegistry.getPackageName(entry.providerId),
@@ -1974,6 +1975,7 @@ class MovieRepository(
                         options.add(
                             WatchOption(
                                 name = entry.providerName,
+                                providerId = entry.providerId,
                                 type = type,
                                 logoPath = entry.logoPath,
                                 packageName = StreamingAppRegistry.getPackageName(entry.providerId),

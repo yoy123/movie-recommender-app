@@ -59,6 +59,8 @@ data class WatchProviderEntry(
 data class WatchOption(
     /** Display name (e.g., "Netflix", "Hulu", "Torrent (1080p)") */
     val name: String,
+    /** TMDB provider ID for streaming options, null for torrent */
+    val providerId: Int? = null,
     /** Type of watch option */
     val type: WatchOptionType,
     /** TMDB provider logo path (for streaming), null for torrent */

@@ -1,5 +1,6 @@
 package com.movierecommender.app.ui.screens.firestick
 
+import android.app.SearchManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -38,6 +39,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.movierecommender.app.data.model.WatchOption
 import com.movierecommender.app.data.model.WatchOptionType
+import com.movierecommender.app.data.remote.StreamingAppRegistry
 
 /**
  * DPAD-friendly dialog presenting watch options for a movie or TV show.
@@ -465,76 +467,94 @@ private fun BrowseEpisodesTorrentRow(
 private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle: String) {
     val TAG = "WatchOptions"
     android.util.Log.w(TAG, "=== Launch: ${option.name} ===")
+    android.util.Log.w(TAG, "  providerId=${option.providerId}")
     android.util.Log.w(TAG, "  packageName=${option.packageName}")
     android.util.Log.w(TAG, "  deepLinkUrl=${option.deepLinkUrl}")
     android.util.Log.w(TAG, "  movieTitle=$movieTitle")
 
     val pkg = option.packageName
+    val providerId = option.providerId
     if (pkg == null) {
         Toast.makeText(context, "${option.name} is not available on this device.", Toast.LENGTH_SHORT).show()
         return
     }
 
-    // 1. Try deep link via ACTION_VIEW.
-    //    For https:// URLs on Fire TV, do NOT use setPackage() — the OS routes
-    //    them to the correct installed app (Netflix, Hulu, etc.) and setPackage()
-    //    actually prevents matching. For custom schemes (nflx://, amzn://), use setPackage().
+    // 1. Try ACTION_SEARCH only if a provider is explicitly verified to support it.
+    if (providerId != null && StreamingAppRegistry.supportsInAppSearch(providerId)) {
+        try {
+            val searchIntent = Intent(Intent.ACTION_SEARCH).apply {
+                setPackage(pkg)
+                putExtra(SearchManager.QUERY, movieTitle)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            android.util.Log.w(TAG, "  Step 1: ACTION_SEARCH for $pkg")
+            context.startActivity(searchIntent)
+            return
+        } catch (e: ActivityNotFoundException) {
+            android.util.Log.w(TAG, "  Step 1 FAILED (ActivityNotFound): ACTION_SEARCH for $pkg")
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "  Step 1 FAILED: ACTION_SEARCH for $pkg", e)
+        }
+    }
+
+    // 2. Try custom-scheme deep links only. Browser URLs are intentionally not
+    // first on Fire TV because they often resolve to Silk instead of the app.
     option.deepLinkUrl?.let { deepLink ->
         try {
             val uri = Uri.parse(deepLink)
-            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                // Only set package for non-https schemes
-                if (uri.scheme != "https" && uri.scheme != "http") {
+            if (uri.scheme != "https" && uri.scheme != "http") {
+                val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     setPackage(pkg)
                 }
+                android.util.Log.w(TAG, "  Step 2: ACTION_VIEW custom scheme → $deepLink")
+                context.startActivity(intent)
+                return
             }
-            android.util.Log.w(TAG, "  Step 1: ACTION_VIEW → $deepLink (setPackage=${uri.scheme != "https" && uri.scheme != "http"})")
-            context.startActivity(intent)
-            return
+            Unit
         } catch (e: ActivityNotFoundException) {
-            android.util.Log.w(TAG, "  Step 1 FAILED (ActivityNotFound): $deepLink")
+            android.util.Log.w(TAG, "  Step 2 FAILED (ActivityNotFound): $deepLink")
         } catch (e: Exception) {
-            android.util.Log.w(TAG, "  Step 1 FAILED: $deepLink", e)
+            android.util.Log.w(TAG, "  Step 2 FAILED: $deepLink", e)
         }
     }
 
-    // 2. Try standard getLaunchIntentForPackage (MAIN + LAUNCHER)
+    // 3. Try standard getLaunchIntentForPackage (MAIN + LAUNCHER)
     try {
         val launchIntent = context.packageManager.getLaunchIntentForPackage(pkg)
-        android.util.Log.w(TAG, "  Step 2: getLaunchIntent for $pkg → ${launchIntent != null}")
+        android.util.Log.w(TAG, "  Step 3: getLaunchIntent for $pkg → ${launchIntent != null}")
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(launchIntent)
-            Toast.makeText(context, "Opening ${option.name}…\nSearch for \"$movieTitle\" there.", Toast.LENGTH_LONG).show()
-            return
-        }
-    } catch (e: Exception) {
-        android.util.Log.w(TAG, "  Step 2 FAILED for $pkg", e)
-    }
-
-    // 3. Fire TV fallback: query for MAIN + LEANBACK_LAUNCHER
-    try {
-        val leanbackIntent = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-            setPackage(pkg)
-        }
-        val resolveInfo = context.packageManager.resolveActivity(leanbackIntent, 0)
-        android.util.Log.w(TAG, "  Step 3: LEANBACK_LAUNCHER for $pkg → resolveInfo=${resolveInfo?.activityInfo?.name}")
-        if (resolveInfo != null) {
-            leanbackIntent.apply {
-                setClassName(pkg, resolveInfo.activityInfo.name)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(leanbackIntent)
-            Toast.makeText(context, "Opening ${option.name}…\nSearch for \"$movieTitle\" there.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Opening ${option.name}…\nSearch for \"$movieTitle\" manually in the app.", Toast.LENGTH_LONG).show()
             return
         }
     } catch (e: Exception) {
         android.util.Log.w(TAG, "  Step 3 FAILED for $pkg", e)
     }
 
-    // 4. queryIntentActivities with MATCH_ALL — catches apps invisible to resolveActivity
+    // 4. Fire TV fallback: query for MAIN + LEANBACK_LAUNCHER
+    try {
+        val leanbackIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+            setPackage(pkg)
+        }
+        val resolveInfo = context.packageManager.resolveActivity(leanbackIntent, 0)
+        android.util.Log.w(TAG, "  Step 4: LEANBACK_LAUNCHER for $pkg → resolveInfo=${resolveInfo?.activityInfo?.name}")
+        if (resolveInfo != null) {
+            leanbackIntent.apply {
+                setClassName(pkg, resolveInfo.activityInfo.name)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(leanbackIntent)
+            Toast.makeText(context, "Opening ${option.name}…\nSearch for \"$movieTitle\" manually in the app.", Toast.LENGTH_LONG).show()
+            return
+        }
+    } catch (e: Exception) {
+        android.util.Log.w(TAG, "  Step 4 FAILED for $pkg", e)
+    }
+
+    // 5. queryIntentActivities with MATCH_ALL — catches apps invisible to resolveActivity
     try {
         val queryIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
@@ -542,28 +562,28 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
         }
         @Suppress("DEPRECATION")
         val activities = context.packageManager.queryIntentActivities(queryIntent, android.content.pm.PackageManager.MATCH_ALL)
-        android.util.Log.w(TAG, "  Step 4: queryIntentActivities MATCH_ALL for $pkg → ${activities.size} results")
+        android.util.Log.w(TAG, "  Step 5: queryIntentActivities MATCH_ALL for $pkg → ${activities.size} results")
         if (activities.isNotEmpty()) {
             val actInfo = activities[0].activityInfo
-            android.util.Log.w(TAG, "  Step 4: launching ${actInfo.packageName}/${actInfo.name}")
+            android.util.Log.w(TAG, "  Step 5: launching ${actInfo.packageName}/${actInfo.name}")
             val intent = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
                 setClassName(actInfo.packageName, actInfo.name)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-            Toast.makeText(context, "Opening ${option.name}…\nSearch for \"$movieTitle\" there.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Opening ${option.name}…\nSearch for \"$movieTitle\" manually in the app.", Toast.LENGTH_LONG).show()
             return
         }
     } catch (e: Exception) {
-        android.util.Log.w(TAG, "  Step 4 FAILED for $pkg", e)
+        android.util.Log.w(TAG, "  Step 5 FAILED for $pkg", e)
     }
 
-    // 5. Last resort — check if package exists at all via getPackageInfo
+    // 6. Last resort — check if package exists at all via getPackageInfo
     try {
         @Suppress("DEPRECATION")
         val pkgInfo = context.packageManager.getPackageInfo(pkg, 0)
-        android.util.Log.w(TAG, "  Step 5: Package $pkg EXISTS (version=${pkgInfo.versionName})")
+        android.util.Log.w(TAG, "  Step 6: Package $pkg EXISTS (version=${pkgInfo.versionName})")
         // Package is installed but none of the above launch methods worked.
         // Try plain MAIN intent without any category.
         val plainIntent = Intent(Intent.ACTION_MAIN).apply {
@@ -572,22 +592,44 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
         }
         @Suppress("DEPRECATION")
         val plainActivities = context.packageManager.queryIntentActivities(plainIntent, android.content.pm.PackageManager.MATCH_ALL)
-        android.util.Log.w(TAG, "  Step 5: plain MAIN query → ${plainActivities.size} results")
+        android.util.Log.w(TAG, "  Step 6: plain MAIN query → ${plainActivities.size} results")
         if (plainActivities.isNotEmpty()) {
             val actInfo = plainActivities[0].activityInfo
-            android.util.Log.w(TAG, "  Step 5: launching ${actInfo.packageName}/${actInfo.name}")
+            android.util.Log.w(TAG, "  Step 6: launching ${actInfo.packageName}/${actInfo.name}")
             plainIntent.setClassName(actInfo.packageName, actInfo.name)
             context.startActivity(plainIntent)
-            Toast.makeText(context, "Opening ${option.name}…\nSearch for \"$movieTitle\" there.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Opening ${option.name}…\nSearch for \"$movieTitle\" manually in the app.", Toast.LENGTH_LONG).show()
             return
         }
     } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
-        android.util.Log.w(TAG, "  Step 5: Package $pkg NOT FOUND on device")
+        android.util.Log.w(TAG, "  Step 6: Package $pkg NOT FOUND on device")
     } catch (e: Exception) {
-        android.util.Log.w(TAG, "  Step 5 FAILED for $pkg", e)
+        android.util.Log.w(TAG, "  Step 6 FAILED for $pkg", e)
     }
 
-    // 6. App is not installed or not launchable
-    android.util.Log.w(TAG, "  Step 6: All launch methods exhausted for $pkg")
+    // 7. Browser fallback for providers where we have a search URL. This is last
+    // on Fire TV because it often opens Silk instead of the target app.
+    if (providerId != null && StreamingAppRegistry.shouldUseBrowserFallback(providerId)) {
+        option.deepLinkUrl?.let { deepLink ->
+            try {
+                val uri = Uri.parse(deepLink)
+                if (uri.scheme == "https" || uri.scheme == "http") {
+                    android.util.Log.w(TAG, "  Step 7: browser fallback → $deepLink")
+                    val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(browserIntent)
+                    Toast.makeText(context, "Opening ${option.name} in Silk as a fallback.", Toast.LENGTH_LONG).show()
+                    return
+                }
+                Unit
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "  Step 7 FAILED for browser fallback", e)
+            }
+        }
+    }
+
+    // 8. App is not installed or not launchable
+    android.util.Log.w(TAG, "  Step 8: All launch methods exhausted for $pkg")
     Toast.makeText(context, "${option.name} is not installed.\nInstall it from the Fire TV app store.", Toast.LENGTH_LONG).show()
 }
