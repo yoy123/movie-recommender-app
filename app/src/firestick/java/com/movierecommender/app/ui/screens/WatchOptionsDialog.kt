@@ -457,34 +457,41 @@ private fun BrowseEpisodesTorrentRow(
 
 /**
  * Launch a streaming app via Intent for the given watch option.
- * Tries: deep link → app launch → JustWatch link → fallback toast.
+ * On Fire TV, prioritizes native app launch over web URLs that would open in Silk.
+ * Order: custom-scheme deep link → app launch → web deep link → JustWatch → toast.
  */
 private fun launchStreamingApp(context: Context, option: WatchOption) {
-    // 1. Try deep link if available
-    option.deepLinkUrl?.let { deepLink ->
+    val deepLink = option.deepLinkUrl
+    val isCustomScheme = deepLink != null &&
+        !deepLink.startsWith("http://", ignoreCase = true) &&
+        !deepLink.startsWith("https://", ignoreCase = true)
+
+    // 1. Try custom-scheme deep link first (nflx://, hulu://, peacock://, etc.)
+    //    These open the actual app's search directly.
+    if (isCustomScheme && deepLink != null) {
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)).apply {
-                // If we know the package, target it specifically
                 option.packageName?.let { setPackage(it) }
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
             return
         } catch (e: ActivityNotFoundException) {
-            android.util.Log.w("WatchOptions", "Deep link failed for ${option.name}: $deepLink", e)
+            android.util.Log.w("WatchOptions", "Custom deep link failed for ${option.name}: $deepLink", e)
         } catch (e: Exception) {
-            android.util.Log.w("WatchOptions", "Deep link error for ${option.name}", e)
+            android.util.Log.w("WatchOptions", "Custom deep link error for ${option.name}", e)
         }
     }
 
-    // 2. Try launching the app directly (without deep link)
+    // 2. Try launching the app directly — this opens the actual Fire TV app
+    //    instead of falling through to Silk browser with https:// URLs.
     option.packageName?.let { pkg ->
         try {
             val launchIntent = context.packageManager.getLaunchIntentForPackage(pkg)
             if (launchIntent != null) {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(launchIntent)
-                Toast.makeText(context, "Opening ${option.name}...\nSearch for the title there.", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Opening ${option.name}…\nSearch for the title there.", Toast.LENGTH_LONG).show()
                 return
             }
         } catch (e: Exception) {
@@ -493,7 +500,23 @@ private fun launchStreamingApp(context: Context, option: WatchOption) {
         Unit
     }
 
-    // 3. Try JustWatch link in browser
+    // 3. Try web deep link with package targeting (last resort before JustWatch)
+    if (!isCustomScheme && deepLink != null) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)).apply {
+                option.packageName?.let { setPackage(it) }
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            return
+        } catch (e: ActivityNotFoundException) {
+            android.util.Log.w("WatchOptions", "Web deep link failed for ${option.name}: $deepLink", e)
+        } catch (e: Exception) {
+            android.util.Log.w("WatchOptions", "Web deep link error for ${option.name}", e)
+        }
+    }
+
+    // 4. Try JustWatch link in browser
     option.justWatchLink?.let { justWatchUrl ->
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(justWatchUrl)).apply {
@@ -506,6 +529,6 @@ private fun launchStreamingApp(context: Context, option: WatchOption) {
         }
     }
 
-    // 4. Fallback
+    // 5. Fallback
     Toast.makeText(context, "${option.name} app not installed", Toast.LENGTH_SHORT).show()
 }

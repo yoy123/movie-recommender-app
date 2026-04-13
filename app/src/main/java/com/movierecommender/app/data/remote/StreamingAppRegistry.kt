@@ -76,23 +76,31 @@ object StreamingAppRegistry {
 
     /**
      * Build a deep link URL for a movie/show on popular streaming services.
-     * Falls back to the JustWatch link if no deep link pattern is known.
+     * Only returns custom URI schemes (nflx://, hulu://, etc.) that reliably
+     * open the actual app on Fire TV. Web URLs (https://) are omitted because
+     * they open in Amazon Silk instead of the target app.
+     * When this returns null, launchStreamingApp() falls back to
+     * getLaunchIntentForPackage() which opens the real app directly.
      */
     fun buildDeepLink(providerId: Int, title: String, tmdbId: Int, isMovie: Boolean): String? {
+        val encoded = android.net.Uri.encode(title)
         return when (providerId) {
-            8, 1796 -> "nflx://www.netflix.com/search?q=${android.net.Uri.encode(title)}"
-            9, 10, 1825 -> {
-                // Amazon Prime Video — search
-                "intent://www.amazon.com/s?k=${android.net.Uri.encode(title)}&i=instant-video#Intent;scheme=https;package=com.amazon.avod;end"
-            }
-            337 -> "https://www.disneyplus.com/search/${android.net.Uri.encode(title)}"
-            15 -> "hulu://search?query=${android.net.Uri.encode(title)}"
-            1899 -> "https://play.max.com/search?q=${android.net.Uri.encode(title)}"
-            531 -> "https://www.paramountplus.com/search/?q=${android.net.Uri.encode(title)}"
-            386 -> "peacock://search/${android.net.Uri.encode(title)}"
-            350, 2 -> "https://tv.apple.com/search?term=${android.net.Uri.encode(title)}"
-            73 -> "tubitv://search/${android.net.Uri.encode(title)}"
-            300 -> "pluto://search/${android.net.Uri.encode(title)}"
+            8, 1796 -> "nflx://www.netflix.com/search?q=$encoded"
+            // Amazon Prime Video — always installed on Fire TV, launched directly via package
+            9, 10, 1825 -> null
+            // Disney+ — no reliable custom scheme on Fire TV, launched via package
+            337 -> null
+            15 -> "hulu://search?query=$encoded"
+            // Max (HBO) — no reliable custom scheme on Fire TV, launched via package
+            1899 -> null
+            // Paramount+ — no reliable custom scheme on Fire TV, launched via package
+            531 -> null
+            386 -> "peacock://search/$encoded"
+            // Apple TV+ — no reliable custom scheme on Fire TV, launched via package
+            350, 2 -> null
+            73 -> "tubitv://search/$encoded"
+            300 -> "pluto://search/$encoded"
+            283 -> "crunchyroll://search?q=$encoded"
             else -> null
         }
     }
