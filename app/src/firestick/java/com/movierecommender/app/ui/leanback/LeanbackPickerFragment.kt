@@ -1,10 +1,18 @@
 package com.movierecommender.app.ui.leanback
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Toast
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
 import androidx.core.os.bundleOf
+import androidx.fragment.app.DialogFragment
 import androidx.leanback.app.BrowseSupportFragment
 import androidx.leanback.widget.ArrayObjectAdapter
 import androidx.leanback.widget.HeaderItem
@@ -23,6 +31,9 @@ import com.movierecommender.app.MovieRecommenderApplication
 import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.TvShow
+import com.movierecommender.app.data.model.WatchOption
+import com.movierecommender.app.ui.screens.firestick.WatchOptionsDialog
+import com.movierecommender.app.ui.theme.firestick.MovieRecommenderTheme
 import com.movierecommender.app.firestick.LeanbackPickerActivity
 import com.movierecommender.app.ui.viewmodel.firestick.MovieUiState
 import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
@@ -41,6 +52,7 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
 
         private const val ACTION_TOGGLE_PICK = "toggle_pick"
         private const val ACTION_TOGGLE_FAVORITE = "toggle_favorite"
+        private const val ACTION_WATCH_OPTIONS = "watch_options"
         private const val ACTION_ANALYZE = "analyze"
         private const val ACTION_CLEAR = "clear"
 
@@ -242,6 +254,12 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
                 description = "Library shortcut",
                 accentColor = 0xFF8B1E3F.toInt()
             )
+            rows += PickerActionItem(
+                id = ACTION_WATCH_OPTIONS,
+                title = "Watch Options",
+                description = movie.title,
+                accentColor = 0xFF6D28D9.toInt()
+            )
         }
 
         currentTvShow?.let { show ->
@@ -251,6 +269,12 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
                 title = if (isSelected) "Remove Pick" else "Add Pick",
                 description = show.name,
                 accentColor = 0xFF0E7490.toInt()
+            )
+            rows += PickerActionItem(
+                id = ACTION_WATCH_OPTIONS,
+                title = "Watch Options",
+                description = show.name,
+                accentColor = 0xFF6D28D9.toInt()
             )
         }
 
@@ -295,6 +319,8 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
                 }
             }
 
+            ACTION_WATCH_OPTIONS -> openWatchOptions()
+
             ACTION_ANALYZE -> launchRecommendationsIfReady()
 
             ACTION_CLEAR -> {
@@ -337,6 +363,106 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
             state.tvShows.map { it.id }
         } else {
             state.movies.map { it.id }
+        }
+    }
+
+    private fun openWatchOptions() {
+        val movie = latestState.movies.firstOrNull { it.id == currentMediaId }
+        val tvShow = latestState.tvShows.firstOrNull { it.id == currentMediaId }
+        val mediaTitle = movie?.title ?: tvShow?.name
+        if (mediaTitle == null) {
+            Toast.makeText(requireContext(), "Focus a title first", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val dialog = WatchOptionsDialogFragment().apply {
+            configure(
+                viewModel = this@LeanbackPickerFragment.viewModel,
+                movieId = movie?.id,
+                tvShowId = tvShow?.id,
+                title = mediaTitle,
+                year = movie?.releaseDate?.take(4) ?: tvShow?.firstAirDate?.take(4),
+                onTorrentSelected = { title, magnetUrl ->
+                    val encodedTitle = Uri.encode(title)
+                    val encodedMagnet = Uri.encode(magnetUrl)
+                    val intent = Intent(requireContext(), ComposeActivity::class.java).apply {
+                        putExtra(ComposeActivity.EXTRA_SCREEN, "streaming/$encodedTitle/$encodedMagnet")
+                    }
+                    startActivity(intent)
+                }
+            )
+        }
+        dialog.show(childFragmentManager, "watch_options")
+    }
+
+    class WatchOptionsDialogFragment : DialogFragment() {
+
+        private lateinit var vm: MovieViewModel
+        private var mediaTitle: String = ""
+        private var mediaYear: String? = null
+        private var movieId: Int? = null
+        private var tvShowId: Int? = null
+        private var onTorrent: (String, String) -> Unit = { _, _ -> }
+
+        fun configure(
+            viewModel: MovieViewModel,
+            movieId: Int?,
+            tvShowId: Int?,
+            title: String,
+            year: String?,
+            onTorrentSelected: (title: String, magnetUrl: String) -> Unit
+        ) {
+            vm = viewModel
+            this.movieId = movieId
+            this.tvShowId = tvShowId
+            mediaTitle = title
+            mediaYear = year
+            onTorrent = onTorrentSelected
+        }
+
+        override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+            return ComposeView(requireContext()).apply {
+                setContent {
+                    var options by mutableStateOf<List<WatchOption>>(emptyList())
+                    var isLoading by mutableStateOf(true)
+
+                    androidx.compose.runtime.LaunchedEffect(Unit) {
+                        options = try {
+                            if (movieId != null) {
+                                vm.getMovieWatchOptions(movieId!!, mediaTitle, mediaYear)
+                            } else if (tvShowId != null) {
+                                vm.getTvShowWatchOptions(tvShowId!!, mediaTitle, mediaYear)
+                            } else {
+                                emptyList()
+                            }
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                        isLoading = false
+                    }
+
+                    MovieRecommenderTheme(darkTheme = true) {
+                        WatchOptionsDialog(
+                            title = mediaTitle,
+                            options = options,
+                            isLoading = isLoading,
+                            onDismiss = { dismissAllowingStateLoss() },
+                            onTorrentSelected = { magnetUrl ->
+                                dismissAllowingStateLoss()
+                                onTorrent(mediaTitle, magnetUrl)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        override fun onStart() {
+            super.onStart()
+            dialog?.window?.apply {
+                setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                setBackgroundDrawableResource(android.R.color.transparent)
+            }
         }
     }
 }
