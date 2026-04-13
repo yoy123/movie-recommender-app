@@ -1877,6 +1877,10 @@ class MovieRepository(
             if (countryProviders != null) {
                 fun addProviders(entries: List<WatchProviderEntry>?, type: WatchOptionType) {
                     entries?.forEach { entry ->
+                        val pkg = StreamingAppRegistry.getPackageName(entry.providerId)
+                        if (pkg == null) {
+                            android.util.Log.w("WatchOptions", "UNMAPPED provider: id=${entry.providerId} name='${entry.providerName}'")
+                        }
                         val deepLink = StreamingAppRegistry.buildDeepLink(entry.providerId, title, tmdbId, true)
                         options.add(
                             WatchOption(
@@ -1962,6 +1966,10 @@ class MovieRepository(
             if (countryProviders != null) {
                 fun addProviders(entries: List<WatchProviderEntry>?, type: WatchOptionType) {
                     entries?.forEach { entry ->
+                        val pkg = StreamingAppRegistry.getPackageName(entry.providerId)
+                        if (pkg == null) {
+                            android.util.Log.w("WatchOptions", "UNMAPPED provider: id=${entry.providerId} name='${entry.providerName}'")
+                        }
                         val deepLink = StreamingAppRegistry.buildDeepLink(entry.providerId, title, tmdbId, false)
                         options.add(
                             WatchOption(

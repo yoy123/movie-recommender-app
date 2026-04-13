@@ -4,67 +4,226 @@ package com.movierecommender.app.data.remote
  * Maps TMDB Watch Provider IDs to Android/Fire TV app package names and deep link patterns.
  * Used to launch the appropriate streaming app via Intent when the user selects a provider.
  *
- * Provider IDs sourced from TMDB API: https://api.themoviedb.org/3/watch/providers/movie?language=en-US
- * Package names verified against Fire TV app store listings.
+ * Provider IDs sourced from TMDB API watch/providers endpoint (US region).
+ * Package names verified against Fire TV and standard Android app stores.
+ *
+ * Strategy:
+ *  - "X Amazon Channel" variants all launch Amazon Prime Video (com.amazon.firebat on Fire TV)
+ *  - "X Apple TV Channel" variants all launch Apple TV (com.apple.atv)
+ *  - "X Roku Premium Channel" variants all launch The Roku Channel app
+ *  - Standard apps use their own Fire TV or Android package names
  */
 object StreamingAppRegistry {
 
     /**
-     * TMDB provider ID → Android package name.
-     * These are the most common streaming apps available on Fire TV.
+     * TMDB provider ID → Android/Fire TV package name.
+     * Covers all US providers returned by TMDB that have a known app.
      */
-    private val providerPackages = mapOf(
-        // ── Subscription (FLATRATE) ─────────────────────────────────────────
-        8    to "com.netflix.ninja",                     // Netflix (Fire TV)
-        9    to "com.amazon.avod",                       // Amazon Prime Video
-        337  to "com.disney.disneyplus",                 // Disney+
-        15   to "com.hulu.plus",                         // Hulu
-        1899 to "com.hbo.hbonow",                        // Max (HBO)
-        531  to "com.paramount.paramount",               // Paramount+
-        386  to "com.peacocktv.peacockandroid",           // Peacock
-        350  to "com.apple.atv",                          // Apple TV+
-        283  to "com.crunchyroll.crunchyroid",            // Crunchyroll
-        2    to "com.apple.atv",                          // Apple TV (same app as Apple TV+)
-        
-        // ── Free / Ad-supported ─────────────────────────────────────────────
-        73   to "com.tubitv",                             // Tubi
-        300  to "tv.pluto.android",                       // Pluto TV
-        457  to "com.amazon.ftv.freevee",                 // Amazon Freevee
-        1770 to "com.amazon.ftv.freevee",                 // Freevee (alt ID)
-        
-        // ── Rent/Buy ────────────────────────────────────────────────────────
-        3    to "com.google.android.videos",              // Google Play Movies
-        10   to "com.amazon.avod",                        // Amazon Video (rent/buy)
-        7    to "com.vudu.air",                           // Vudu / Fandango at Home
-        192  to "com.youtube.tv",                         // YouTube (rent/buy)
-        
-        // ── Other notable services ──────────────────────────────────────────
-        43   to "com.starz.starzplay.android",            // Starz
-        37   to "com.showtime.showtimeanytime",           // Showtime
-        521  to "com.amazon.amazonvideo.livingroom",      // Amazon Channels
-        1796 to "com.netflix.ninja",                      // Netflix basic with Ads (same app)
-        1825 to "com.amazon.avod",                        // Amazon Prime with Ads
-        538  to "com.plex.android",                       // Plex
-        526  to "com.amcplus.amcfiretv",                  // AMC+
-        636  to "com.kanopy.firetv",                      // Kanopy
-        258  to "air.com.vudu.FubiTV",                    // fuboTV
-        188  to "com.gotv.crackle.handset",               // Youtube Free (Crackle)
-    )
+    private val providerPackages: Map<Int, String> = buildMap {
+        // ═══════════════════════════════════════════════════════════════
+        // Major streaming services (direct apps)
+        // ═══════════════════════════════════════════════════════════════
+        put(8,    "com.netflix.ninja")          // Netflix
+        put(1796, "com.netflix.ninja")          // Netflix basic with Ads
+        put(175,  "com.netflix.ninja")          // Netflix Kids
 
-    /**
-     * Get the Android package name for a TMDB provider ID.
-     * Returns null if the provider is not mapped.
-     */
+        put(9,    "com.amazon.firebat")         // Amazon Prime Video (Fire TV)
+        put(10,   "com.amazon.firebat")         // Amazon Video (rent/buy)
+        put(1825, "com.amazon.firebat")         // Amazon Prime with Ads
+
+        put(337,  "com.disney.disneyplus")      // Disney+
+
+        put(15,   "com.hulu.plus")              // Hulu
+
+        put(1899, "com.hbo.hbonow")             // Max (HBO)
+        put(384,  "com.hbo.hbonow")             // HBO Max (alt ID)
+        put(616,  "com.hbo.hbonow")             // HBO Max Free
+
+        put(386,  "com.peacock.peacockfiretv")   // Peacock Premium
+        put(387,  "com.peacock.peacockfiretv")   // Peacock Premium Plus
+        put(1771, "com.peacock.peacockfiretv")   // Peacock Free
+
+        put(2303, "com.cbs.ott")                // Paramount Plus Premium
+        put(2616, "com.cbs.ott")                // Paramount Plus Essential
+        put(531,  "com.cbs.ott")                // Paramount+ (base)
+        put(153,  "com.cbs.ott")                // CBS → now Paramount+
+
+        put(350,  "com.apple.atv")              // Apple TV
+        put(2,    "com.apple.atv")              // Apple TV Store (rent/buy)
+
+        put(283,  "com.crunchyroll.crunchyroid") // Crunchyroll
+
+        put(192,  "com.google.android.youtube")  // YouTube
+        put(188,  "com.google.android.youtube")  // YouTube Premium
+        put(2528, "com.google.android.youtube")  // YouTube TV
+
+        put(3,    "com.google.android.videos")   // Google Play Movies
+
+        // ═══════════════════════════════════════════════════════════════
+        // Free / Ad-supported
+        // ═══════════════════════════════════════════════════════════════
+        put(73,   "com.tubitv.ott")              // Tubi TV
+        put(300,  "tv.pluto.android")            // Pluto TV
+        put(457,  "com.vix.vixtv")               // ViX
+        put(1770, "com.amazon.ftv.freevee")      // Freevee
+
+        // ═══════════════════════════════════════════════════════════════
+        // Rent/Buy
+        // ═══════════════════════════════════════════════════════════════
+        put(7,    "com.vudu.air")                // Fandango At Home (Vudu)
+        put(332,  "com.vudu.air")                // Fandango at Home Free
+
+        // ═══════════════════════════════════════════════════════════════
+        // Cable/Network apps
+        // ═══════════════════════════════════════════════════════════════
+        put(43,   "com.starz.starzplay.firetv")  // Starz
+        put(37,   "com.showtime.showtimeanytime") // Showtime
+        put(34,   "com.mgm.mgmplus")             // MGM+
+        put(526,  "com.amcplus.amcfiretv")        // AMC+
+        put(80,   "com.amctve.amcfullepisodes")   // AMC (network)
+        put(123,  "com.fxnetworks.fxnow")         // FXNow
+        put(79,   "com.nbcuni.nbc")               // NBC
+        put(83,   "com.cw.fulfillment.android")   // The CW
+        put(148,  "com.abc.abcvideo")             // ABC
+        put(156,  "com.aetn.aetv")                // A&E
+        put(157,  "com.aetn.lifetime")            // Lifetime
+        put(211,  "com.disney.datg.videoplatforms.android.abc.freeform") // Freeform
+        put(155,  "com.aetn.history")             // History
+        put(209,  "com.pbs.video")                // PBS
+
+        // ═══════════════════════════════════════════════════════════════
+        // Specialty / Niche streaming
+        // ═══════════════════════════════════════════════════════════════
+        put(538,  "com.plexapp.android")          // Plex
+        put(191,  "com.kanopy.firetv")            // Kanopy
+        put(212,  "com.hoopladigital.android")    // Hoopla
+        put(257,  "com.fubo.firetv")              // fuboTV
+        put(258,  "com.criterionchannel")          // Criterion Channel
+        put(11,   "com.mubi")                      // MUBI
+        put(190,  "com.curiositystream.curiositystream") // CuriosityStream
+        put(99,   "com.shudder.android")           // Shudder
+        put(87,   "com.acorn.acorntv")             // Acorn TV
+        put(143,  "com.sundancenow.sundancenow")   // Sundance Now
+        put(151,  "com.britbox.us")                // BritBox
+        put(251,  "com.amcnetworks.allblk")        // ALLBLK
+        put(278,  "com.pureflix.pureflixapp")      // Pure Flix
+        put(284,  "com.aetn.lifetimemovieclub")    // Lifetime Movie Club
+        put(430,  "com.sentaifilmworks.android")   // HiDive
+        put(2383, "com.philo.philo")               // Philo
+        put(100,  "com.guidedoc.android")           // GuideDoc
+        put(207,  "com.roku.web.trc")               // The Roku Channel
+        put(464,  "com.kocowa.android")              // Kocowa
+        put(260,  "com.wwe.universe")                // WWE Network
+
+        // ═══════════════════════════════════════════════════════════════
+        // Amazon Channel variants → all launch Prime Video (Fire TV)
+        // ═══════════════════════════════════════════════════════════════
+        val amazonChannelIds = intArrayOf(
+            582,   // Paramount+ Amazon Channel
+            583,   // MGM+ Amazon Channel
+            584,   // Discovery+ Amazon Channel
+            528,   // AMC+ Amazon Channel
+            1968,  // Crunchyroll Amazon Channel
+            1825,  // HBO Max Amazon Channel (already mapped above, put is idempotent)
+            289,   // Cinemax Amazon Channel
+            290,   // Hallmark+ Amazon Channel
+            291,   // MZ Choice Amazon Channel
+            293,   // PBS Kids Amazon Channel
+            294,   // PBS Masterpiece Amazon Channel
+            295,   // RetroCrush Amazon Channel
+            521,   // Amazon Channels (generic)
+            600,   // Shout! Factory Amazon Channel
+            602,   // FilmBox Live Amazon Channel
+            603,   // CuriosityStream Amazon Channel
+            619,   // Starz Amazon Channel
+            1715,  // Britbox Amazon Channel
+            1746,  // Hallmark TV Amazon Channel
+            2066,  // UP Faith & Family Amazon Channel
+            2068,  // Tastemade Amazon Channel
+            2069,  // ScreenPix Amazon Channel
+            2164,  // Gaia Amazon Channel
+            2266,  // Qello Concerts Amazon Channel
+            2296,  // Viaplay Amazon Channel
+            2376,  // DocCom Amazon Channel
+            2377,  // Docurama Amazon Channel
+            2378,  // Dove Amazon Channel
+            2379,  // Dox Amazon Channel
+            2390,  // Hidive Amazon Channel
+            2392,  // Echoboom Amazon Channel
+            2394,  // Fear Factory Amazon Channel
+            2395,  // Film Movement Plus Amazon Channel
+            2396,  // Fitfusion Amazon Channel
+            2398,  // Food Matters Amazon Channel
+            2401,  // Fuse+ Amazon Channel
+            2403,  // Hi-YAH Amazon Channel
+            2404,  // Indie Club Amazon Channel
+            2405,  // IndieFlix Shorts Amazon Channel
+            2406,  // Here TV Amazon Channel
+            2400,  // France Channel Amazon Channel
+            2407,  // IndiePix Amazon Channel
+            2408,  // Doki Amazon Channel
+            2414,  // Kartoon Channel Amazon Channel
+            2415,  // Kidstream Amazon Channel
+            2418,  // Magnolia Selects Amazon Channel
+            2419,  // Monsters and Nightmares Amazon Channel
+            2420,  // Marquee TV Amazon Channel
+            2424,  // Outside TV Features Amazon Channel
+            2427,  // Passionflix Amazon Channel
+            2428,  // Pinoy Box Office Amazon Channel
+            2430,  // PBS Documentaries Amazon Channel
+            2431,  // PBS Living Amazon Channel
+            2432,  // PixL Amazon Channel
+            2433,  // Pure Flix Amazon Channel
+            2435,  // Revry Amazon Channel
+            2436,  // Ryan and Friends Plus Amazon Channel
+            2438,  // Sensical Amazon Channel
+            2439,  // ZenLIFE Amazon Channel
+            2442,  // Demand Africa Amazon Channel
+            2443,  // Surf Network Amazon Channel
+            2444,  // Toku Amazon Channel
+            2445,  // MovieSphere+ Amazon Channel
+            2446,  // True Royalty Amazon Channel
+            2448,  // FUEL TV+ Amazon Channel
+            2452,  // Dreamscape Kids Amazon Channel
+            2454,  // Green Planet Stream Amazon Channel
+            2462,  // Yoga and Fitness TV Amazon Channel
+            2464,  // Young Hollywood Amazon Channel
+            2465,  // Vemox Cine Amazon Channel
+            2466,  // Warriors and Gangsters Amazon Channel
+            2467,  // Xive TV Documentaries Amazon Channel
+            2468,  // XLTV Amazon Channel
+            2470,  // Yipee Kids TV Amazon Channel
+            2668,  // Wonder Project Amazon Channel
+        )
+        for (id in amazonChannelIds) put(id, "com.amazon.firebat")
+
+        // ═══════════════════════════════════════════════════════════════
+        // Apple TV Channel variants → all launch Apple TV
+        // ═══════════════════════════════════════════════════════════════
+        val appleTvChannelIds = intArrayOf(
+            1853,  // Paramount Plus Apple TV Channel
+            1854,  // AMC Plus Apple TV Channel
+            1855,  // Starz Apple TV Channel
+            1852,  // Britbox Apple TV Channel
+        )
+        for (id in appleTvChannelIds) put(id, "com.apple.atv")
+
+        // ═══════════════════════════════════════════════════════════════
+        // Roku Premium Channel variants → Roku Channel app
+        // ═══════════════════════════════════════════════════════════════
+        val rokuChannelIds = intArrayOf(
+            633,   // Paramount+ Roku Premium Channel
+            634,   // Starz Roku Premium Channel
+            635,   // AMC+ Roku Premium Channel
+            636,   // MGM Plus Roku Premium Channel
+        )
+        for (id in rokuChannelIds) put(id, "com.roku.web.trc")
+    }
+
     fun getPackageName(providerId: Int): String? = providerPackages[providerId]
 
-    /**
-     * Check if we have a known app for this provider.
-     */
     fun hasApp(providerId: Int): Boolean = providerPackages.containsKey(providerId)
 
-    /**
-     * Get a user-friendly label for the watch option type.
-     */
     fun getTypeLabel(type: String): String = when (type) {
         "flatrate" -> "Stream"
         "free" -> "Free"
@@ -75,33 +234,59 @@ object StreamingAppRegistry {
     }
 
     /**
-     * Build a deep link URL for a movie/show on popular streaming services.
-     * Only returns custom URI schemes (nflx://, hulu://, etc.) that reliably
-     * open the actual app on Fire TV. Web URLs (https://) are omitted because
-     * they open in Amazon Silk instead of the target app.
-     * When this returns null, launchStreamingApp() falls back to
-     * getLaunchIntentForPackage() which opens the real app directly.
+     * Build a deep link URL for a movie/show on streaming services.
+     * These https:// URLs are launched via ACTION_VIEW without setPackage()
+     * on Fire TV, which routes them to the correct installed app.
      */
     fun buildDeepLink(providerId: Int, title: String, tmdbId: Int, isMovie: Boolean): String? {
         val encoded = android.net.Uri.encode(title)
         return when (providerId) {
-            8, 1796 -> "nflx://www.netflix.com/search?q=$encoded"
-            // Amazon Prime Video — always installed on Fire TV, launched directly via package
-            9, 10, 1825 -> null
-            // Disney+ — no reliable custom scheme on Fire TV, launched via package
-            337 -> null
-            15 -> "hulu://search?query=$encoded"
-            // Max (HBO) — no reliable custom scheme on Fire TV, launched via package
-            1899 -> null
-            // Paramount+ — no reliable custom scheme on Fire TV, launched via package
-            531 -> null
-            386 -> "peacock://search/$encoded"
-            // Apple TV+ — no reliable custom scheme on Fire TV, launched via package
-            350, 2 -> null
-            73 -> "tubitv://search/$encoded"
-            300 -> "pluto://search/$encoded"
-            283 -> "crunchyroll://search?q=$encoded"
+            // Netflix
+            8, 1796, 175 -> "https://www.netflix.com/search?q=$encoded"
+            // Amazon Prime Video & all Amazon Channel variants
+            9, 10, 1825 -> "https://www.amazon.com/s?k=$encoded&i=instant-video"
+            // Hulu
+            15 -> "https://www.hulu.com/search?q=$encoded"
+            // Max (HBO)
+            1899, 384, 616 -> "https://play.max.com/search?q=$encoded"
+            // Paramount+
+            2303, 2616, 531, 153 -> "https://www.paramountplus.com/search/?q=$encoded"
+            // Disney+
+            337 -> "https://www.disneyplus.com/search?q=$encoded"
+            // Peacock
+            386, 387, 1771 -> "https://www.peacocktv.com/search?q=$encoded"
+            // Tubi
+            73 -> "https://tubitv.com/search/$encoded"
+            // Pluto TV
+            300 -> "https://pluto.tv/search/$encoded"
+            // Crunchyroll
+            283 -> "https://www.crunchyroll.com/search?q=$encoded"
+            // Apple TV
+            350, 2 -> "https://tv.apple.com/search?term=$encoded"
+            // YouTube
+            192, 188, 2528 -> "https://www.youtube.com/results?search_query=$encoded"
+            // Starz
+            43 -> "https://www.starz.com/search?q=$encoded"
+            // fuboTV
+            257 -> "https://www.fubo.tv/search?q=$encoded"
+            // Plex
+            538 -> "https://watch.plex.tv/search?q=$encoded"
+            // Amazon Channel variants → open Prime Video search
+            in amazonChannelProviderIds -> "https://www.amazon.com/s?k=$encoded&i=instant-video"
             else -> null
         }
     }
+
+    /** Provider IDs that are Amazon Channel subscriptions. */
+    private val amazonChannelProviderIds = setOf(
+        582, 583, 584, 528, 1968, 289, 290, 291, 293, 294, 295,
+        521, 600, 602, 603, 619, 1715, 1746,
+        2066, 2068, 2069, 2164, 2266, 2296,
+        2376, 2377, 2378, 2379, 2390, 2392, 2394, 2395, 2396, 2398,
+        2400, 2401, 2403, 2404, 2405, 2406, 2407, 2408,
+        2414, 2415, 2418, 2419, 2420, 2424, 2427, 2428,
+        2430, 2431, 2432, 2433, 2435, 2436, 2438, 2439,
+        2442, 2443, 2444, 2445, 2446, 2448, 2452, 2454,
+        2462, 2464, 2465, 2466, 2467, 2468, 2470, 2668,
+    )
 }

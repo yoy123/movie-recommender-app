@@ -12,6 +12,78 @@
         android:name="android.hardware.faketouch"
         android:required="false" />
 
+    <!--
+        Package visibility: on Android 11+ (API 30), the OS hides other apps
+        by default. Explicit <package> declarations are the most reliable way
+        to make streaming apps visible to getLaunchIntentForPackage(),
+        resolveActivity(), etc. on Fire TV.
+    -->
+    <queries>
+        <!-- Streaming apps – explicit package visibility (Android 11+) -->
+        <!-- Major services -->
+        <package android:name="com.netflix.ninja" />
+        <package android:name="com.amazon.firebat" />
+        <package android:name="com.disney.disneyplus" />
+        <package android:name="com.hulu.plus" />
+        <package android:name="com.hbo.hbonow" />
+        <package android:name="com.cbs.ott" />
+        <package android:name="com.peacock.peacockfiretv" />
+        <package android:name="com.apple.atv" />
+        <package android:name="com.crunchyroll.crunchyroid" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.google.android.videos" />
+        <!-- Free / Ad-supported -->
+        <package android:name="com.tubitv.ott" />
+        <package android:name="tv.pluto.android" />
+        <package android:name="com.vix.vixtv" />
+        <package android:name="com.amazon.ftv.freevee" />
+        <!-- Rent / Buy -->
+        <package android:name="com.vudu.air" />
+        <!-- Cable / Network -->
+        <package android:name="com.starz.starzplay.firetv" />
+        <package android:name="com.showtime.showtimeanytime" />
+        <package android:name="com.mgm.mgmplus" />
+        <package android:name="com.amcplus.amcfiretv" />
+        <package android:name="com.amctve.amcfullepisodes" />
+        <package android:name="com.fxnetworks.fxnow" />
+        <package android:name="com.nbcuni.nbc" />
+        <package android:name="com.cw.fulfillment.android" />
+        <package android:name="com.abc.abcvideo" />
+        <package android:name="com.aetn.aetv" />
+        <package android:name="com.aetn.lifetime" />
+        <package android:name="com.disney.datg.videoplatforms.android.abc.freeform" />
+        <package android:name="com.aetn.history" />
+        <package android:name="com.pbs.video" />
+        <!-- Specialty / Niche -->
+        <package android:name="com.plexapp.android" />
+        <package android:name="com.kanopy.firetv" />
+        <package android:name="com.hoopladigital.android" />
+        <package android:name="com.fubo.firetv" />
+        <package android:name="com.criterionchannel" />
+        <package android:name="com.mubi" />
+        <package android:name="com.curiositystream.curiositystream" />
+        <package android:name="com.shudder.android" />
+        <package android:name="com.acorn.acorntv" />
+        <package android:name="com.sundancenow.sundancenow" />
+        <package android:name="com.britbox.us" />
+        <package android:name="com.amcnetworks.allblk" />
+        <package android:name="com.pureflix.pureflixapp" />
+        <package android:name="com.aetn.lifetimemovieclub" />
+        <package android:name="com.sentaifilmworks.android" />
+        <package android:name="com.philo.philo" />
+        <package android:name="com.guidedoc.android" />
+        <package android:name="com.roku.web.trc" />
+        <package android:name="com.kocowa.android" />
+        <package android:name="com.wwe.universe" />
+        <package android:name="com.turner.tnt.android.networkapp" />
+        <!-- Intent queries for deep links -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
     <application
         android:banner="@drawable/ic_tv_banner">
         <!--
