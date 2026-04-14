@@ -240,12 +240,21 @@ object StreamingAppRegistry {
         return when (providerId) {
             // Netflix — nflx:// scheme (verified on Fire TV)
             8, 1796, 175 -> "nflx://www.netflix.com/search?q=$encoded"
-            // Hulu — hulu:// scheme
-            15 -> "hulu://search?query=$encoded"
-            // Tubi — tubitv:// scheme
+            // Hulu — hulu:// with hulu.com authority (verified on Fire TV)
+            15 -> "hulu://hulu.com/search?query=$encoded"
+            // Tubi — tubitv:// scheme (verified on Fire TV)
             73 -> "tubitv://media-browse?search=$encoded"
-            // YouTube — youtube:// scheme (verified on Fire TV)
-            192, 188, 2528 -> "youtube://www.youtube.com/results?search_query=$encoded"
+            // YouTube — Cobalt app on Fire TV ignores search deep links; only /watch?v= works.
+            // Returning null lets the cascade fall to Step 3 (launch to home + toast).
+            192, 188, 2528 -> null
+            // Amazon Prime Video — firebat:// scheme with search-v2 (Fire TV internal)
+            9, 10, 1825 -> "firebat://search-v2?searchPhrase=$encoded"
+            // Pluto TV — plutotv:// scheme
+            300 -> "plutotv://on-demand?search=$encoded"
+            // Starz — starz:// scheme with search authority
+            43 -> "starz://search?query=$encoded"
+            // Plex — plex:// scheme
+            538 -> "plex://search?query=$encoded"
             else -> null
         }
     }
@@ -273,38 +282,38 @@ object StreamingAppRegistry {
     fun buildDeepLink(providerId: Int, title: String, tmdbId: Int, isMovie: Boolean): String? {
         val encoded = android.net.Uri.encode(title)
         return when (providerId) {
-            // Netflix
+            // Netflix — app registers https://www.netflix.com (verified)
             8, 1796, 175 -> "https://www.netflix.com/search?q=$encoded"
-            // Amazon Prime Video & all Amazon Channel variants
-            9, 10, 1825 -> "https://www.amazon.com/s?k=$encoded&i=instant-video"
-            // Hulu
+            // Amazon Prime Video — app registers https://app.primevideo.com with /search path (verified)
+            9, 10, 1825 -> "https://app.primevideo.com/search?phrase=$encoded"
+            // Hulu — app registers https://hulu.com (verified)
             15 -> "https://www.hulu.com/search?q=$encoded"
-            // Max (HBO)
+            // Max (HBO) — app registers https://play.max.com (verified)
             1899, 384, 616 -> "https://play.max.com/search?q=$encoded"
             // Paramount+
             2303, 2616, 531, 153 -> "https://www.paramountplus.com/search/?q=$encoded"
             // Disney+
             337 -> "https://www.disneyplus.com/search?q=$encoded"
-            // Peacock
-            386, 387, 1771 -> "https://www.peacocktv.com/search?q=$encoded"
-            // Tubi
+            // Peacock — no deep link handlers, will fall to app launch
+            386, 387, 1771 -> null
+            // Tubi — app registers https://tubitv.com (verified)
             73 -> "https://tubitv.com/search/$encoded"
-            // Pluto TV
+            // Pluto TV — app registers https://pluto.tv
             300 -> "https://pluto.tv/search/$encoded"
             // Crunchyroll
             283 -> "https://www.crunchyroll.com/search?q=$encoded"
             // Apple TV
             350, 2 -> "https://tv.apple.com/search?term=$encoded"
-            // YouTube
-            192, 188, 2528 -> "https://www.youtube.com/results?search_query=$encoded"
-            // Starz
+            // YouTube — Cobalt app ignores search URLs, opens to home regardless.
+            192, 188, 2528 -> null
+            // Starz — app registers https://www.starz.com
             43 -> "https://www.starz.com/search?q=$encoded"
             // fuboTV
             257 -> "https://www.fubo.tv/search?q=$encoded"
-            // Plex
+            // Plex — app registers https://watch.plex.tv
             538 -> "https://watch.plex.tv/search?q=$encoded"
-            // Amazon Channel variants → open Prime Video search
-            in amazonChannelProviderIds -> "https://www.amazon.com/s?k=$encoded&i=instant-video"
+            // Amazon Channel variants → Prime Video search
+            in amazonChannelProviderIds -> "https://app.primevideo.com/search?phrase=$encoded"
             else -> null
         }
     }
