@@ -79,6 +79,23 @@ data class MovieDetails(
     val imdbId: String?
 )
 
+/**
+ * External IDs for a movie (IMDb, Wikidata, social IDs).
+ */
+data class MovieExternalIds(
+    val id: Int,
+    @SerializedName("imdb_id")
+    val imdbId: String?,
+    @SerializedName("wikidata_id")
+    val wikidataId: String?,
+    @SerializedName("facebook_id")
+    val facebookId: String?,
+    @SerializedName("instagram_id")
+    val instagramId: String?,
+    @SerializedName("twitter_id")
+    val twitterId: String?
+)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TV Shows Models
 // ─────────────────────────────────────────────────────────────────────────────

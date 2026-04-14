@@ -4,6 +4,7 @@ import android.content.Context
 import com.movierecommender.app.BuildConfig
 import com.movierecommender.app.data.model.GenreResponse
 import com.movierecommender.app.data.model.MovieDetails
+import com.movierecommender.app.data.model.MovieExternalIds
 import com.movierecommender.app.data.model.MovieResponse
 import com.movierecommender.app.data.model.TvShowResponse
 import com.movierecommender.app.data.model.TvShowDetails
@@ -76,6 +77,12 @@ interface TmdbApiService {
         @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY,
         @Query("language") language: String = "en-US"
     ): VideoResponse
+
+    @GET("movie/{movie_id}/external_ids")
+    suspend fun getMovieExternalIds(
+        @Path("movie_id") movieId: Int,
+        @Query("api_key") apiKey: String = BuildConfig.TMDB_API_KEY
+    ): MovieExternalIds
     
     // ─────────────────────────────────────────────────────────────────────────────
     // TV Shows API

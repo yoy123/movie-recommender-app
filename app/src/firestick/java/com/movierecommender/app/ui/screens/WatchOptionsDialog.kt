@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ShoppingCart
@@ -39,7 +40,9 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.movierecommender.app.data.model.WatchOption
 import com.movierecommender.app.data.model.WatchOptionType
+import com.movierecommender.app.data.remote.ProviderContentResolverRegistry
 import com.movierecommender.app.data.remote.StreamingAppRegistry
+import kotlinx.coroutines.launch
 
 /**
  * DPAD-friendly dialog presenting watch options for a movie or TV show.
@@ -53,17 +56,44 @@ fun WatchOptionsDialog(
     title: String,
     options: List<WatchOption>,
     isLoading: Boolean = false,
+    onImportProviderLink: (suspend (option: WatchOption, rawContentIdOrUrl: String) -> List<WatchOption>?)? = null,
     onDismiss: () -> Unit,
     onTorrentSelected: (magnetUrl: String) -> Unit,
     onBrowseEpisodes: (() -> Unit)? = null // For TV shows — open episode picker with torrent
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val firstOptionFocusRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
+    var displayedOptions by remember { mutableStateOf(options) }
+    var showImportDialog by remember { mutableStateOf(false) }
+    var importInput by remember { mutableStateOf("") }
+    var selectedImportProviderId by remember { mutableStateOf<Int?>(null) }
+    var isImporting by remember { mutableStateOf(false) }
+
+    LaunchedEffect(options) {
+        displayedOptions = options
+    }
+
+    val importableOptions = remember(displayedOptions) {
+        displayedOptions.filter {
+            it.type != WatchOptionType.TORRENT &&
+                it.providerId != null &&
+                ProviderContentResolverRegistry.getResolver(it.providerId) != null
+        }.sortedBy { it.displayPriority }
+    }
+
+    LaunchedEffect(showImportDialog, importableOptions) {
+        if (showImportDialog && importableOptions.isNotEmpty()) {
+            if (selectedImportProviderId == null || importableOptions.none { it.providerId == selectedImportProviderId }) {
+                selectedImportProviderId = importableOptions.first().providerId
+            }
+        }
+    }
 
     // Auto-focus first option when loaded
-    LaunchedEffect(options, isLoading) {
-        if (!isLoading && options.isNotEmpty()) {
+    LaunchedEffect(displayedOptions, isLoading) {
+        if (!isLoading && displayedOptions.isNotEmpty()) {
             try { firstOptionFocusRequester.requestFocus() } catch (_: Exception) {}
         }
     }
@@ -104,6 +134,33 @@ fun WatchOptionsDialog(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
+                    if (onImportProviderLink != null && importableOptions.isNotEmpty()) {
+                        val importInteraction = remember { MutableInteractionSource() }
+                        val importFocused by importInteraction.collectIsFocusedAsState()
+                        OutlinedButton(
+                            onClick = {
+                                importInput = ""
+                                selectedImportProviderId = importableOptions.firstOrNull()?.providerId
+                                showImportDialog = true
+                            },
+                            interactionSource = importInteraction,
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .focusable(interactionSource = importInteraction),
+                            border = BorderStroke(
+                                width = if (importFocused) 2.dp else 1.dp,
+                                color = if (importFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Edit,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Exact Link")
+                        }
+                    }
                     val closeInteraction = remember { MutableInteractionSource() }
                     val closeFocused by closeInteraction.collectIsFocusedAsState()
                     IconButton(
@@ -150,7 +207,7 @@ fun WatchOptionsDialog(
                             )
                         }
                     }
-                } else if (options.isEmpty()) {
+                } else if (displayedOptions.isEmpty()) {
                     // No options found
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -170,7 +227,7 @@ fun WatchOptionsDialog(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         // Group options by type for section headers
-                        val grouped = options.groupBy { it.type }
+                        val grouped = displayedOptions.groupBy { it.type }
                         val typeOrder = listOf(
                             WatchOptionType.FREE,
                             WatchOptionType.SUBSCRIPTION,
@@ -254,6 +311,106 @@ fun WatchOptionsDialog(
                 }
             }
         }
+    }
+
+    if (showImportDialog && onImportProviderLink != null) {
+        val selectedOption = importableOptions.firstOrNull { it.providerId == selectedImportProviderId }
+        AlertDialog(
+            onDismissRequest = {
+                if (!isImporting) showImportDialog = false
+            },
+            title = { Text("Import Exact Provider Link") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Choose a supported provider and paste its exact content URL or provider ID.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        importableOptions.forEach { option ->
+                            val interaction = remember { MutableInteractionSource() }
+                            val focused by interaction.collectIsFocusedAsState()
+                            OutlinedButton(
+                                onClick = { selectedImportProviderId = option.providerId },
+                                interactionSource = interaction,
+                                border = BorderStroke(
+                                    width = if (selectedImportProviderId == option.providerId || focused) 2.dp else 1.dp,
+                                    color = if (selectedImportProviderId == option.providerId || focused) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.outline
+                                    }
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(option.name)
+                            }
+                        }
+                    }
+                    selectedOption?.let { option ->
+                        Text(
+                            text = providerImportHint(option),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                    OutlinedTextField(
+                        value = importInput,
+                        onValueChange = { importInput = it },
+                        label = { Text("Provider URL or ID") },
+                        singleLine = true,
+                        enabled = !isImporting,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isImporting && selectedOption != null && importInput.isNotBlank(),
+                    onClick = {
+                        val option = selectedOption ?: return@TextButton
+                        coroutineScope.launch {
+                            isImporting = true
+                            val updatedOptions = try {
+                                onImportProviderLink(option, importInput.trim())
+                            } catch (e: Exception) {
+                                android.util.Log.e("WatchOptions", "Failed to import provider link", e)
+                                null
+                            }
+                            if (updatedOptions != null) {
+                                displayedOptions = updatedOptions
+                                showImportDialog = false
+                                importInput = ""
+                                Toast.makeText(context, "Saved exact link for ${option.name}", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Could not parse or save that provider link", Toast.LENGTH_LONG).show()
+                            }
+                            isImporting = false
+                        }
+                    }
+                ) {
+                    Text(if (isImporting) "Saving..." else "Save")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isImporting,
+                    onClick = { showImportDialog = false }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+private fun providerImportHint(option: WatchOption): String {
+    return when (ProviderContentResolverRegistry.getResolver(option.providerId ?: -1)?.providerKey) {
+        "netflix" -> "Netflix: paste a title URL like https://www.netflix.com/title/80057281 or just the numeric title ID."
+        "prime_video" -> "Prime Video: paste a detail URL like https://www.amazon.com/gp/video/detail/B08... or the 10-character ASIN."
+        "hulu" -> "Hulu: paste the exact hulu.com movie/series URL or the path portion after hulu.com/."
+        "youtube" -> "YouTube: paste a watch URL like https://www.youtube.com/watch?v=... or the 11-character video ID."
+        else -> "Paste the provider's exact content URL or provider-native content ID."
     }
 }
 

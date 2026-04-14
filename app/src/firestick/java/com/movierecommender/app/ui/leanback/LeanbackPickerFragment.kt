@@ -446,6 +446,40 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
                             title = mediaTitle,
                             options = options,
                             isLoading = isLoading,
+                            onImportProviderLink = if (movieId != null || tvShowId != null) {
+                                { option, rawContentIdOrUrl ->
+                                    val providerId = option.providerId
+                                    if (providerId == null) {
+                                        null
+                                    } else if (movieId != null) {
+                                        val updated = vm.importMovieProviderLink(
+                                            tmdbId = movieId!!,
+                                            title = mediaTitle,
+                                            year = mediaYear,
+                                            providerId = providerId,
+                                            rawContentIdOrUrl = rawContentIdOrUrl
+                                        )
+                                        if (updated != null) {
+                                            options = updated
+                                        }
+                                        updated
+                                    } else if (tvShowId != null) {
+                                        val updated = vm.importTvShowProviderLink(
+                                            tmdbId = tvShowId!!,
+                                            title = mediaTitle,
+                                            year = mediaYear,
+                                            providerId = providerId,
+                                            rawContentIdOrUrl = rawContentIdOrUrl
+                                        )
+                                        if (updated != null) {
+                                            options = updated
+                                        }
+                                        updated
+                                    } else {
+                                        null
+                                    }
+                                }
+                            } else null,
                             onDismiss = { dismissAllowingStateLoss() },
                             onTorrentSelected = { magnetUrl ->
                                 dismissAllowingStateLoss()

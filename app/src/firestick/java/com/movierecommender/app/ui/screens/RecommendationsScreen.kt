@@ -748,6 +748,30 @@ private fun RecommendationCard(
             title = item.title,
             options = watchOptions,
             isLoading = isLoadingWatchOptions,
+            onImportProviderLink = resolvedTmdbId?.let { tmdbId ->
+                { option, rawContentIdOrUrl ->
+                    val providerId = option.providerId
+                    if (providerId == null) {
+                        null
+                    } else if (isTvMode) {
+                        viewModel.importTvShowProviderLink(
+                            tmdbId = tmdbId,
+                            title = item.title,
+                            year = item.year,
+                            providerId = providerId,
+                            rawContentIdOrUrl = rawContentIdOrUrl
+                        )
+                    } else {
+                        viewModel.importMovieProviderLink(
+                            tmdbId = tmdbId,
+                            title = item.title,
+                            year = item.year,
+                            providerId = providerId,
+                            rawContentIdOrUrl = rawContentIdOrUrl
+                        )
+                    }
+                }
+            },
             onDismiss = {
                 showWatchOptions = false
                 watchOptions = emptyList()

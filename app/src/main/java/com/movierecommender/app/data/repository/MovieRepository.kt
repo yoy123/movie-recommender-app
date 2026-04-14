@@ -2,10 +2,13 @@ package com.movierecommender.app.data.repository
 
 import com.movierecommender.app.BuildConfig
 import com.movierecommender.app.data.local.MovieDao
+import com.movierecommender.app.data.local.ProviderContentCrosswalkDao
 import com.movierecommender.app.data.model.Genre
 import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.MovieDetails
+import com.movierecommender.app.data.model.MovieExternalIds
 import com.movierecommender.app.data.model.MovieResponse
+import com.movierecommender.app.data.model.ProviderContentCrosswalk
 import com.movierecommender.app.data.model.TvShow
 import com.movierecommender.app.data.model.TvShowResponse
 import com.movierecommender.app.data.remote.TmdbApiService
@@ -20,9 +23,11 @@ import com.movierecommender.app.data.remote.LeetxService
 import com.movierecommender.app.data.remote.TorrentInfo
 import com.movierecommender.app.data.remote.EpisodeTorrentInfo
 import com.movierecommender.app.data.remote.StreamingAppRegistry
+import com.movierecommender.app.data.remote.ProviderContentResolverRegistry
 import com.movierecommender.app.data.model.WatchOption
 import com.movierecommender.app.data.model.WatchOptionType
 import com.movierecommender.app.data.model.WatchProviderEntry
+import com.movierecommender.app.data.model.TvShowExternalIds
 import com.movierecommender.app.data.remote.PopcornTvShowDetails
 import com.movierecommender.app.data.remote.PopcornEpisode
 import com.movierecommender.app.data.remote.PopcornEpisodeTorrent
@@ -46,6 +51,7 @@ sealed class Resource<T> {
 
 class MovieRepository(
     private val movieDao: MovieDao,
+    private val providerContentCrosswalkDao: ProviderContentCrosswalkDao,
     private val apiService: TmdbApiService,
     private val llmService: LlmRecommendationService = LlmRecommendationService(),
     private val imdbScraper: ImdbScraperService = ImdbScraperService(),
@@ -1848,6 +1854,7 @@ class MovieRepository(
         country: String = "US"
     ): List<WatchOption> = withContext(Dispatchers.IO) {
         val options = mutableListOf<WatchOption>()
+        val crosswalksByProviderId = getStoredProviderCrosswalks(tmdbId, isMovie = true)
 
         // Fetch streaming providers and torrent in parallel
         coroutineScope {
@@ -1881,7 +1888,13 @@ class MovieRepository(
                         if (pkg == null) {
                             android.util.Log.w("WatchOptions", "UNMAPPED provider: id=${entry.providerId} name='${entry.providerName}'")
                         }
-                        val deepLink = StreamingAppRegistry.buildDeepLink(entry.providerId, title, tmdbId, true)
+                        val deepLink = buildWatchOptionDeepLink(
+                            providerId = entry.providerId,
+                            title = title,
+                            tmdbId = tmdbId,
+                            isMovie = true,
+                            crosswalk = crosswalksByProviderId[entry.providerId]
+                        )
                         options.add(
                             WatchOption(
                                 name = entry.providerName,
@@ -1958,6 +1971,7 @@ class MovieRepository(
         country: String = "US"
     ): List<WatchOption> = withContext(Dispatchers.IO) {
         val options = mutableListOf<WatchOption>()
+        val crosswalksByProviderId = getStoredProviderCrosswalks(tmdbId, isMovie = false)
 
         // Fetch streaming providers (no torrent for the show itself — that's per-episode)
         try {
@@ -1971,7 +1985,13 @@ class MovieRepository(
                         if (pkg == null) {
                             android.util.Log.w("WatchOptions", "UNMAPPED provider: id=${entry.providerId} name='${entry.providerName}'")
                         }
-                        val deepLink = StreamingAppRegistry.buildDeepLink(entry.providerId, title, tmdbId, false)
+                        val deepLink = buildWatchOptionDeepLink(
+                            providerId = entry.providerId,
+                            title = title,
+                            tmdbId = tmdbId,
+                            isMovie = false,
+                            crosswalk = crosswalksByProviderId[entry.providerId]
+                        )
                         options.add(
                             WatchOption(
                                 name = entry.providerName,
@@ -2016,6 +2036,90 @@ class MovieRepository(
         )
     }
 
+
+    suspend fun getMovieExternalIds(tmdbId: Int): MovieExternalIds? = withContext(Dispatchers.IO) {
+        try {
+            apiService.getMovieExternalIds(tmdbId)
+        } catch (e: Exception) {
+            android.util.Log.e("MovieRepository", "Failed to fetch movie external IDs for $tmdbId", e)
+            null
+        }
+    }
+
+    suspend fun getTvShowExternalIds(tmdbId: Int): TvShowExternalIds? = withContext(Dispatchers.IO) {
+        try {
+            apiService.getTvShowExternalIds(tmdbId)
+        } catch (e: Exception) {
+            android.util.Log.e("MovieRepository", "Failed to fetch TV external IDs for $tmdbId", e)
+            null
+        }
+    }
+
+    suspend fun saveProviderContentCrosswalk(
+        tmdbId: Int,
+        providerId: Int,
+        rawContentIdOrUrl: String,
+        isMovie: Boolean,
+        source: String = ProviderContentCrosswalk.SOURCE_MANUAL,
+        confidence: Double = 1.0
+    ): ProviderContentCrosswalk? = withContext(Dispatchers.IO) {
+        val resolved = ProviderContentResolverRegistry.resolve(providerId, rawContentIdOrUrl, isMovie)
+        if (resolved == null) {
+            android.util.Log.w(
+                "MovieRepository",
+                "No provider content resolver available for providerId=$providerId value='$rawContentIdOrUrl'"
+            )
+            return@withContext null
+        }
+
+        val crosswalk = ProviderContentCrosswalk(
+            tmdbId = tmdbId,
+            mediaType = if (isMovie) ProviderContentCrosswalk.MEDIA_TYPE_MOVIE else ProviderContentCrosswalk.MEDIA_TYPE_TV,
+            providerId = providerId,
+            providerKey = resolved.providerKey,
+            providerContentId = resolved.providerContentId,
+            canonicalUrl = resolved.canonicalUrl,
+            appDeepLink = resolved.appDeepLink,
+            source = source,
+            confidence = confidence,
+            lastVerifiedAt = System.currentTimeMillis()
+        )
+        providerContentCrosswalkDao.upsert(crosswalk)
+        crosswalk
+    }
+
+    suspend fun getProviderContentCrosswalks(
+        tmdbId: Int,
+        isMovie: Boolean
+    ): List<ProviderContentCrosswalk> = withContext(Dispatchers.IO) {
+        providerContentCrosswalkDao.getCrosswalksForContent(
+            tmdbId = tmdbId,
+            mediaType = if (isMovie) ProviderContentCrosswalk.MEDIA_TYPE_MOVIE else ProviderContentCrosswalk.MEDIA_TYPE_TV
+        )
+    }
+
+    private suspend fun getStoredProviderCrosswalks(
+        tmdbId: Int,
+        isMovie: Boolean
+    ): Map<Int, ProviderContentCrosswalk> {
+        return providerContentCrosswalkDao.getCrosswalksForContent(
+            tmdbId = tmdbId,
+            mediaType = if (isMovie) ProviderContentCrosswalk.MEDIA_TYPE_MOVIE else ProviderContentCrosswalk.MEDIA_TYPE_TV
+        ).associateBy { it.providerId }
+    }
+
+    private fun buildWatchOptionDeepLink(
+        providerId: Int,
+        title: String,
+        tmdbId: Int,
+        isMovie: Boolean,
+        crosswalk: ProviderContentCrosswalk?
+    ): String? {
+        if (crosswalk != null) {
+            return crosswalk.appDeepLink ?: crosswalk.canonicalUrl
+        }
+        return StreamingAppRegistry.buildDeepLink(providerId, title, tmdbId, isMovie)
+    }
     /**
      * Search TMDB to resolve a title+year to a TMDB ID.
      * Tries exact match by title+year, falls back to first result.

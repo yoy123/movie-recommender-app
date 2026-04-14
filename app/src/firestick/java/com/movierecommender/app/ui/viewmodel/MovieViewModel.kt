@@ -862,6 +862,46 @@ class MovieViewModel(
         return repository.getTvShowWatchOptions(tmdbId, title, year)
     }
 
+    suspend fun importMovieProviderLink(
+        tmdbId: Int,
+        title: String,
+        year: String?,
+        providerId: Int,
+        rawContentIdOrUrl: String
+    ): List<WatchOption>? {
+        val saved = repository.saveProviderContentCrosswalk(
+            tmdbId = tmdbId,
+            providerId = providerId,
+            rawContentIdOrUrl = rawContentIdOrUrl,
+            isMovie = true
+        ) ?: return null
+        android.util.Log.i(
+            "MovieViewModel",
+            "Imported movie provider link: tmdbId=$tmdbId providerId=$providerId providerContentId=${saved.providerContentId}"
+        )
+        return repository.getMovieWatchOptions(tmdbId, title, year)
+    }
+
+    suspend fun importTvShowProviderLink(
+        tmdbId: Int,
+        title: String,
+        year: String?,
+        providerId: Int,
+        rawContentIdOrUrl: String
+    ): List<WatchOption>? {
+        val saved = repository.saveProviderContentCrosswalk(
+            tmdbId = tmdbId,
+            providerId = providerId,
+            rawContentIdOrUrl = rawContentIdOrUrl,
+            isMovie = false
+        ) ?: return null
+        android.util.Log.i(
+            "MovieViewModel",
+            "Imported TV provider link: tmdbId=$tmdbId providerId=$providerId providerContentId=${saved.providerContentId}"
+        )
+        return repository.getTvShowWatchOptions(tmdbId, title, year)
+    }
+
     /**
      * Search TMDB to resolve a title+year to a TMDB ID.
      * Used when we only have a title from recommendations.
