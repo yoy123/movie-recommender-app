@@ -66,6 +66,7 @@ object StreamingAppRegistry {
         put(300,  "tv.pluto.android")            // Pluto TV
         put(457,  "com.vix.vixtv")               // ViX
         put(1770, "com.amazon.ftv.freevee")      // Freevee
+        put(422,  "com.amazon.ftv.freevee")      // Amazon Freevee (alt ID)
 
         // ═══════════════════════════════════════════════════════════════
         // Rent/Buy
@@ -90,6 +91,16 @@ object StreamingAppRegistry {
         put(211,  "com.disney.datg.videoplatforms.android.abc.freeform") // Freeform
         put(155,  "com.aetn.history")             // History
         put(209,  "com.pbs.video")                // PBS
+        put(215,  "com.sling")                    // Sling TV
+        put(158,  "com.univision.unow")           // Univision NOW
+        put(363,  "com.bravo.bravonow")           // Bravo
+        put(360,  "com.usa.usanetwork")           // USA Network
+        put(365,  "com.syfy.syfynow")             // SYFY
+        put(369,  "com.oxygen.oxygenapp")         // Oxygen
+        put(248,  "com.betnetworks.ep")           // BET+
+        put(343,  "com.bet.shows")                // BET (network)
+        put(361,  "com.e.eonline")                // E!
+        put(247,  "com.hallmark.hmcfiretv")       // Hallmark Movies Now
 
         // ═══════════════════════════════════════════════════════════════
         // Specialty / Niche streaming
@@ -114,6 +125,23 @@ object StreamingAppRegistry {
         put(207,  "com.roku.web.trc")               // The Roku Channel
         put(464,  "com.kocowa.android")              // Kocowa
         put(260,  "com.wwe.universe")                // WWE Network
+        put(204,  "com.iqiyi.i18n")                 // iQIYI
+        put(342,  "com.viki.android")               // Rakuten Viki
+        put(569,  "tv.redbull.firetv")              // Red Bull TV
+
+        // ═══════════════════════════════════════════════════════════════
+        // Sports streaming
+        // ═══════════════════════════════════════════════════════════════
+        put(571,  "com.espn.score_center")        // ESPN / ESPN+
+        put(575,  "com.dazn")                     // DAZN
+        put(486,  "com.foxsports.android")        // FOX Sports
+        put(559,  "com.nfl.app.android")          // NFL+
+
+        // ═══════════════════════════════════════════════════════════════
+        // Live TV / Cable Replacement
+        // ═══════════════════════════════════════════════════════════════
+        put(366,  "com.directv")                  // DirecTV
+        put(373,  "com.att.tv")                   // DirecTV Stream
 
         // ═══════════════════════════════════════════════════════════════
         // Amazon Channel variants → all launch Prime Video (Fire TV)
@@ -205,6 +233,8 @@ object StreamingAppRegistry {
             1854,  // AMC Plus Apple TV Channel
             1855,  // Starz Apple TV Channel
             1852,  // Britbox Apple TV Channel
+            1856,  // Showtime Apple TV Channel
+            1857,  // MGM+ Apple TV Channel
         )
         for (id in appleTvChannelIds) put(id, "com.apple.atv")
 
@@ -216,11 +246,19 @@ object StreamingAppRegistry {
             634,   // Starz Roku Premium Channel
             635,   // AMC+ Roku Premium Channel
             636,   // MGM Plus Roku Premium Channel
+            637,   // Showtime Roku Premium Channel
         )
         for (id in rokuChannelIds) put(id, "com.roku.web.trc")
     }
 
     fun getPackageName(providerId: Int): String? = providerPackages[providerId]
+
+    /** Convert a title to a URL slug: lowercase, spaces→hyphens, strip non-alphanum. */
+    private fun toSlug(title: String): String =
+        title.lowercase()
+            .replace(Regex("['']"), "")           // don't → dont
+            .replace(Regex("[^a-z0-9]+"), "-")    // non-alphanum → hyphen
+            .trim('-')                              // strip leading/trailing
 
     fun hasApp(providerId: Int): Boolean = providerPackages.containsKey(providerId)
 
@@ -234,27 +272,92 @@ object StreamingAppRegistry {
      * Build a native custom-scheme deep link for apps that support them.
      * Custom URI schemes bypass Silk browser interception on Fire TV.
      * Returns null if no custom scheme is known for the provider.
+     *
+     * Legend:
+     *   (verified)  = ADB-tested on actual Fire TV hardware
+     *   (known)     = documented scheme, not yet device-verified
      */
     fun buildNativeDeepLink(providerId: Int, title: String): String? {
         val encoded = android.net.Uri.encode(title)
         return when (providerId) {
-            // Netflix — nflx:// scheme (verified on Fire TV)
+            // ── Verified on Fire TV ──────────────────────────────────
+            // Netflix — nflx:// (verified)
             8, 1796, 175 -> "nflx://www.netflix.com/search?q=$encoded"
-            // Hulu — hulu:// with hulu.com authority (verified on Fire TV)
+            // Hulu — hulu:// (verified)
             15 -> "hulu://hulu.com/search?query=$encoded"
-            // Tubi — tubitv:// scheme (verified on Fire TV)
+            // Tubi — tubitv:// (verified)
             73 -> "tubitv://media-browse?search=$encoded"
-            // YouTube — Cobalt app on Fire TV ignores search deep links; only /watch?v= works.
-            // Returning null lets the cascade fall to Step 3 (launch to home + toast).
-            192, 188, 2528 -> null
-            // Amazon Prime Video — firebat:// scheme with search-v2 (Fire TV internal)
+            // Amazon Prime Video — firebat:// (verified)
             9, 10, 1825 -> "firebat://search-v2?searchPhrase=$encoded"
-            // Pluto TV — plutotv:// scheme
+            // Pluto TV — plutotv://
             300 -> "plutotv://on-demand?search=$encoded"
-            // Starz — starz:// scheme with search authority
+            // Starz — starz://
             43 -> "starz://search?query=$encoded"
-            // Plex — plex:// scheme
-            538 -> "plex://search?query=$encoded"
+            // Plex — plex:// scheme doesn't handle watch.plex.tv paths (verified)
+            538 -> null
+
+            // ── Known schemes (not yet device-verified) ─────────────
+            // Disney+ — disneyplus://
+            337 -> "disneyplus://search?q=$encoded"
+            // Max (HBO) — hbomax://
+            1899, 384, 616 -> "hbomax://search?q=$encoded"
+            // Paramount+ — paramountplus://
+            2303, 2616, 531, 153 -> "paramountplus://search?q=$encoded"
+            // Peacock — peacock://
+            386, 387, 1771 -> "peacock://search?q=$encoded"
+            // Crunchyroll — crunchyroll://
+            283 -> "crunchyroll://search?q=$encoded"
+            // Shudder — shudder://
+            99 -> "shudder://search?q=$encoded"
+            // MUBI — mubi://
+            11 -> "mubi://search?q=$encoded"
+            // Vudu / Fandango at Home — vudu://
+            7, 332 -> "vudu://search?q=$encoded"
+            // AMC+ — amcplus://
+            526 -> "amcplus://search?q=$encoded"
+            // Philo — philo://
+            2383 -> "philo://search?q=$encoded"
+            // fuboTV — fubo://
+            257 -> "fubo://search?q=$encoded"
+            // CuriosityStream — curiositystream://
+            190 -> "curiositystream://search?q=$encoded"
+            // BritBox — britbox://
+            151 -> "britbox://search?q=$encoded"
+            // Viki / Rakuten Viki — viki://
+            342 -> "viki://search?q=$encoded"
+            // Acorn TV — acorn://
+            87 -> "acorn://search?q=$encoded"
+            // ALLBLK — allblk://
+            251 -> "allblk://search?q=$encoded"
+            // HiDive — hidive://
+            430 -> "hidive://search?q=$encoded"
+            // Showtime — showtime://
+            37 -> "showtime://search?q=$encoded"
+            // MGM+ — mgmplus://
+            34 -> "mgmplus://search?q=$encoded"
+            // ESPN+ — sportscenter:// or espn://
+            571 -> "espn://search?q=$encoded"
+            // Sling TV — sling://
+            215 -> "sling://search?q=$encoded"
+            // Kanopy — kanopy://
+            191 -> "kanopy://search?q=$encoded"
+            // Criterion Channel — criterionchannel://
+            258 -> "criterionchannel://search?q=$encoded"
+            // Sundance Now — sundancenow://
+            143 -> "sundancenow://search?q=$encoded"
+            // Pure Flix — pureflix://
+            278 -> "pureflix://search?q=$encoded"
+
+            // ── YouTube — Cobalt app ignores all search deep links ──
+            192, 188, 2528 -> null
+
+            // ── Amazon Channel variants → Prime Video native scheme ──
+            in amazonChannelProviderIds -> "firebat://search-v2?searchPhrase=$encoded"
+            // ── Apple TV Channel variants ──
+            in appleTvChannelProviderIds -> null  // No known custom scheme
+            // ── Roku Channel variants ──
+            in rokuChannelProviderIds -> null     // No known custom scheme
+
             else -> null
         }
     }
@@ -277,43 +380,170 @@ object StreamingAppRegistry {
     /**
      * Build a browser fallback URL for a movie/show on streaming services.
      * On Fire TV these often resolve to Silk, so callers should not use them as
-     * the primary launch path.
+     * the primary launch path.  Used as Step 2B (scoped via setPackage).
      */
     fun buildDeepLink(providerId: Int, title: String, tmdbId: Int, isMovie: Boolean): String? {
         val encoded = android.net.Uri.encode(title)
         return when (providerId) {
-            // Netflix — app registers https://www.netflix.com (verified)
+            // ══ Major services ═══════════════════════════════════════
+            // Netflix (verified)
             8, 1796, 175 -> "https://www.netflix.com/search?q=$encoded"
-            // Amazon Prime Video — app registers https://app.primevideo.com with /search path (verified)
+            // Amazon Prime Video (verified)
             9, 10, 1825 -> "https://app.primevideo.com/search?phrase=$encoded"
-            // Hulu — app registers https://hulu.com (verified)
+            // Hulu (verified)
             15 -> "https://www.hulu.com/search?q=$encoded"
-            // Max (HBO) — app registers https://play.max.com (verified)
+            // Max / HBO (verified)
             1899, 384, 616 -> "https://play.max.com/search?q=$encoded"
             // Paramount+
             2303, 2616, 531, 153 -> "https://www.paramountplus.com/search/?q=$encoded"
             // Disney+
             337 -> "https://www.disneyplus.com/search?q=$encoded"
-            // Peacock — no deep link handlers, will fall to app launch
-            386, 387, 1771 -> null
-            // Tubi — app registers https://tubitv.com (verified)
+            // Peacock
+            386, 387, 1771 -> "https://www.peacocktv.com/search?q=$encoded"
+            // Tubi (verified)
             73 -> "https://tubitv.com/search/$encoded"
-            // Pluto TV — app registers https://pluto.tv
+            // Pluto TV
             300 -> "https://pluto.tv/search/$encoded"
             // Crunchyroll
             283 -> "https://www.crunchyroll.com/search?q=$encoded"
             // Apple TV
             350, 2 -> "https://tv.apple.com/search?term=$encoded"
-            // YouTube — Cobalt app ignores search URLs, opens to home regardless.
+            // YouTube — Cobalt ignores search URLs
             192, 188, 2528 -> null
-            // Starz — app registers https://www.starz.com
+
+            // ══ Rent/Buy ════════════════════════════════════════════
+            // Fandango at Home (Vudu)
+            7, 332 -> "https://www.vudu.com/content/movies/search?searchString=$encoded"
+            // Google Play Movies
+            3 -> "https://play.google.com/store/search?q=$encoded&c=movies"
+
+            // ══ Free / Ad-supported ═════════════════════════════════
+            // ViX
+            457 -> "https://www.vix.com/es/buscar?q=$encoded"
+
+            // ══ Cable / Network apps ════════════════════════════════
+            // Starz
             43 -> "https://www.starz.com/search?q=$encoded"
+            // Showtime
+            37 -> "https://www.sho.com/search?q=$encoded"
+            // MGM+
+            34 -> "https://www.mgmplus.com/search?q=$encoded"
+            // AMC+
+            526 -> "https://www.amcplus.com/search?q=$encoded"
+            // AMC (network)
+            80 -> "https://www.amc.com/search/$encoded"
+            // FXNow
+            123 -> "https://fxnow.fxnetworks.com/shows"
+            // NBC
+            79 -> "https://www.nbc.com/search?q=$encoded"
+            // The CW
+            83 -> "https://www.cwtv.com/search/?q=$encoded"
+            // ABC
+            148 -> "https://abc.com/search?q=$encoded"
+            // PBS
+            209 -> "https://www.pbs.org/search/?q=$encoded"
+            // Sling TV
+            215 -> "https://www.sling.com/search?q=$encoded"
             // fuboTV
             257 -> "https://www.fubo.tv/search?q=$encoded"
-            // Plex — app registers https://watch.plex.tv
-            538 -> "https://watch.plex.tv/search?q=$encoded"
-            // Amazon Channel variants → Prime Video search
+            // Bravo
+            363 -> "https://www.bravotv.com/search?q=$encoded"
+            // USA Network
+            360 -> "https://www.usanetwork.com/search?q=$encoded"
+            // SYFY
+            365 -> "https://www.syfy.com/search?q=$encoded"
+            // Oxygen
+            369 -> "https://www.oxygen.com/search?q=$encoded"
+            // BET+
+            248 -> "https://www.bet.com/shows"
+            // BET (network)
+            343 -> "https://www.bet.com/shows"
+            // E!
+            361 -> "https://www.eonline.com/search?q=$encoded"
+            // Hallmark Movies Now
+            247 -> "https://www.hallmarkmoviesandmysteries.com/search?q=$encoded"
+            // Univision NOW
+            158 -> "https://www.univision.com/buscar?q=$encoded"
+            // ESPN / ESPN+
+            571 -> "https://www.espn.com/search/_/q/$encoded"
+
+            // ══ A&E Networks ════════════════════════════════════════
+            // A&E
+            156 -> "https://www.aetv.com/search/$encoded"
+            // Lifetime
+            157 -> "https://www.mylifetime.com/search/$encoded"
+            // History
+            155 -> "https://www.history.com/search?q=$encoded"
+            // Freeform
+            211 -> "https://www.freeform.com/search?q=$encoded"
+            // Lifetime Movie Club
+            284 -> "https://www.mylifetime.com/movies/search?q=$encoded"
+
+            // ══ Specialty / Niche ═══════════════════════════════════
+            // Plex — slug-based URL opens directly to movie/show page (verified)
+            538 -> {
+                val slug = toSlug(title)
+                val type = if (isMovie) "movie" else "show"
+                "https://watch.plex.tv/$type/$slug"
+            }
+            // Shudder
+            99 -> "https://www.shudder.com/search?q=$encoded"
+            // MUBI
+            11 -> "https://mubi.com/search?q=$encoded"
+            // Criterion Channel
+            258 -> "https://www.criterionchannel.com/search?q=$encoded"
+            // CuriosityStream
+            190 -> "https://curiositystream.com/search?q=$encoded"
+            // Acorn TV
+            87 -> "https://acorn.tv/search?q=$encoded"
+            // Sundance Now
+            143 -> "https://www.sundancenow.com/search?q=$encoded"
+            // BritBox
+            151 -> "https://www.britbox.com/us/search?q=$encoded"
+            // ALLBLK
+            251 -> "https://www.allblk.tv/search?q=$encoded"
+            // HiDive
+            430 -> "https://www.hidive.com/search?q=$encoded"
+            // Kanopy
+            191 -> "https://www.kanopy.com/search?query=$encoded"
+            // Hoopla
+            212 -> "https://www.hoopladigital.com/search?q=$encoded&scope=everything"
+            // Pure Flix
+            278 -> "https://www.pureflix.com/search?q=$encoded"
+            // Philo
+            2383 -> "https://www.philo.com/search/$encoded"
+            // Roku Channel
+            207 -> "https://therokuchannel.roku.com/search?q=$encoded"
+            // Viki / Rakuten Viki
+            342 -> "https://www.viki.com/search?q=$encoded"
+            // iQIYI
+            204 -> "https://www.iq.com/search?query=$encoded"
+            // Kocowa
+            464 -> "https://www.kocowa.com/search?keyword=$encoded"
+            // WWE Network
+            260 -> "https://www.wwe.com/search?q=$encoded"
+            // Red Bull TV
+            569 -> "https://www.redbull.com/int-en/search?q=$encoded"
+
+            // ══ Sports ══════════════════════════════════════════════
+            // DAZN
+            575 -> "https://www.dazn.com/search/$encoded"
+            // FOX Sports
+            486 -> "https://www.foxsports.com/search?q=$encoded"
+
+            // ══ Live TV / Cable Replacement ═════════════════════════
+            // DirecTV
+            366 -> "https://www.directv.com/movies-and-shows/search?q=$encoded"
+            // DirecTV Stream
+            373 -> "https://stream.directv.com/search?q=$encoded"
+
+            // ══ Amazon Channel variants → Prime Video search ════════
             in amazonChannelProviderIds -> "https://app.primevideo.com/search?phrase=$encoded"
+            // ══ Apple TV Channel variants → Apple TV search ═════════
+            in appleTvChannelProviderIds -> "https://tv.apple.com/search?term=$encoded"
+            // ══ Roku Channel variants → Roku Channel search ═════════
+            in rokuChannelProviderIds -> "https://therokuchannel.roku.com/search?q=$encoded"
+
             else -> null
         }
     }
@@ -331,21 +561,93 @@ object StreamingAppRegistry {
         2462, 2464, 2465, 2466, 2467, 2468, 2470, 2668,
     )
 
-    private val browserFallbackProviderIds = setOf(
-        8, 1796, 175,
-        9, 10, 1825,
-        15,
-        1899, 384, 616,
-        2303, 2616, 531, 153,
-        337,
-        386, 387, 1771,
-        73,
-        300,
-        283,
-        350, 2,
-        192, 188, 2528,
-        43,
-        257,
-        538,
-    ) + amazonChannelProviderIds
+    /** Provider IDs that are Apple TV Channel subscriptions. */
+    private val appleTvChannelProviderIds = setOf(
+        1853, 1854, 1855, 1852, 1856, 1857,
+    )
+
+    /** Provider IDs that are Roku Premium Channel subscriptions. */
+    private val rokuChannelProviderIds = setOf(
+        633, 634, 635, 636, 637,
+    )
+
+    private val browserFallbackProviderIds: Set<Int> = buildSet {
+        // Major services
+        addAll(listOf(8, 1796, 175))                 // Netflix
+        addAll(listOf(9, 10, 1825))                  // Amazon Prime Video
+        add(15)                                       // Hulu
+        addAll(listOf(1899, 384, 616))               // Max (HBO)
+        addAll(listOf(2303, 2616, 531, 153))         // Paramount+
+        add(337)                                      // Disney+
+        addAll(listOf(386, 387, 1771))               // Peacock
+        add(73)                                       // Tubi
+        add(300)                                      // Pluto TV
+        add(283)                                      // Crunchyroll
+        addAll(listOf(350, 2))                       // Apple TV
+        addAll(listOf(192, 188, 2528))               // YouTube
+        add(457)                                      // ViX
+        // Rent/Buy
+        addAll(listOf(7, 332))                       // Fandango at Home
+        add(3)                                        // Google Play Movies
+        // Cable / Network
+        add(43)                                       // Starz
+        add(37)                                       // Showtime
+        add(34)                                       // MGM+
+        add(526)                                      // AMC+
+        add(80)                                       // AMC
+        add(123)                                      // FXNow
+        add(79)                                       // NBC
+        add(83)                                       // The CW
+        add(148)                                      // ABC
+        add(209)                                      // PBS
+        add(215)                                      // Sling TV
+        add(257)                                      // fuboTV
+        add(158)                                      // Univision NOW
+        add(363)                                      // Bravo
+        add(360)                                      // USA Network
+        add(365)                                      // SYFY
+        add(369)                                      // Oxygen
+        add(248)                                      // BET+
+        add(343)                                      // BET
+        add(361)                                      // E!
+        add(247)                                      // Hallmark Movies Now
+        add(571)                                      // ESPN / ESPN+
+        // A&E Networks
+        add(156)                                      // A&E
+        add(157)                                      // Lifetime
+        add(155)                                      // History
+        add(211)                                      // Freeform
+        add(284)                                      // Lifetime Movie Club
+        // Specialty / Niche
+        add(538)                                      // Plex
+        add(99)                                       // Shudder
+        add(11)                                       // MUBI
+        add(258)                                      // Criterion Channel
+        add(190)                                      // CuriosityStream
+        add(87)                                       // Acorn TV
+        add(143)                                      // Sundance Now
+        add(151)                                      // BritBox
+        add(251)                                      // ALLBLK
+        add(430)                                      // HiDive
+        add(191)                                      // Kanopy
+        add(212)                                      // Hoopla
+        add(278)                                      // Pure Flix
+        add(2383)                                     // Philo
+        add(207)                                      // Roku Channel
+        add(342)                                      // Viki
+        add(204)                                      // iQIYI
+        add(464)                                      // Kocowa
+        add(260)                                      // WWE Network
+        add(569)                                      // Red Bull TV
+        // Sports
+        add(575)                                      // DAZN
+        add(486)                                      // FOX Sports
+        // Live TV
+        add(366)                                      // DirecTV
+        add(373)                                      // DirecTV Stream
+        // Aggregated channels
+        addAll(amazonChannelProviderIds)
+        addAll(appleTvChannelProviderIds)
+        addAll(rokuChannelProviderIds)
+    }
 }
