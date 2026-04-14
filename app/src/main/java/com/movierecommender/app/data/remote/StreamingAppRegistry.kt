@@ -280,7 +280,9 @@ object StreamingAppRegistry {
     fun buildNativeDeepLink(providerId: Int, title: String): String? {
         val encoded = android.net.Uri.encode(title)
         return when (providerId) {
-            // ── Verified on Fire TV ──────────────────────────────────
+            // Only schemes that are ADB-verified on actual Fire TV hardware.
+            // Everything else returns null → falls to HTTPS (Step 2B) or launch-to-home (Step 3).
+
             // Netflix — nflx:// (verified)
             8, 1796, 175 -> "nflx://www.netflix.com/search?q=$encoded"
             // Hulu — hulu:// (verified)
@@ -289,74 +291,11 @@ object StreamingAppRegistry {
             73 -> "tubitv://media-browse?search=$encoded"
             // Amazon Prime Video — firebat:// (verified)
             9, 10, 1825 -> "firebat://search-v2?searchPhrase=$encoded"
-            // Pluto TV — plutotv://
-            300 -> "plutotv://on-demand?search=$encoded"
-            // Starz — starz://
-            43 -> "starz://search?query=$encoded"
-            // Plex — plex:// scheme doesn't handle watch.plex.tv paths (verified)
-            538 -> null
+            // Paramount+ — pplus:// with www.paramountplus.com authority (verified)
+            2303, 2616, 531, 153 -> "pplus://www.paramountplus.com/search?q=$encoded"
 
-            // ── Known schemes (not yet device-verified) ─────────────
-            // Disney+ — disneyplus://
-            337 -> "disneyplus://search?q=$encoded"
-            // Max (HBO) — hbomax://
-            1899, 384, 616 -> "hbomax://search?q=$encoded"
-            // Paramount+ — paramountplus://
-            2303, 2616, 531, 153 -> "paramountplus://search?q=$encoded"
-            // Peacock — peacock://
-            386, 387, 1771 -> "peacock://search?q=$encoded"
-            // Crunchyroll — crunchyroll://
-            283 -> "crunchyroll://search?q=$encoded"
-            // Shudder — shudder://
-            99 -> "shudder://search?q=$encoded"
-            // MUBI — mubi://
-            11 -> "mubi://search?q=$encoded"
-            // Vudu / Fandango at Home — vudu://
-            7, 332 -> "vudu://search?q=$encoded"
-            // AMC+ — amcplus://
-            526 -> "amcplus://search?q=$encoded"
-            // Philo — philo://
-            2383 -> "philo://search?q=$encoded"
-            // fuboTV — fubo://
-            257 -> "fubo://search?q=$encoded"
-            // CuriosityStream — curiositystream://
-            190 -> "curiositystream://search?q=$encoded"
-            // BritBox — britbox://
-            151 -> "britbox://search?q=$encoded"
-            // Viki / Rakuten Viki — viki://
-            342 -> "viki://search?q=$encoded"
-            // Acorn TV — acorn://
-            87 -> "acorn://search?q=$encoded"
-            // ALLBLK — allblk://
-            251 -> "allblk://search?q=$encoded"
-            // HiDive — hidive://
-            430 -> "hidive://search?q=$encoded"
-            // Showtime — showtime://
-            37 -> "showtime://search?q=$encoded"
-            // MGM+ — mgmplus://
-            34 -> "mgmplus://search?q=$encoded"
-            // ESPN+ — sportscenter:// or espn://
-            571 -> "espn://search?q=$encoded"
-            // Sling TV — sling://
-            215 -> "sling://search?q=$encoded"
-            // Kanopy — kanopy://
-            191 -> "kanopy://search?q=$encoded"
-            // Criterion Channel — criterionchannel://
-            258 -> "criterionchannel://search?q=$encoded"
-            // Sundance Now — sundancenow://
-            143 -> "sundancenow://search?q=$encoded"
-            // Pure Flix — pureflix://
-            278 -> "pureflix://search?q=$encoded"
-
-            // ── YouTube — Cobalt app ignores all search deep links ──
-            192, 188, 2528 -> null
-
-            // ── Amazon Channel variants → Prime Video native scheme ──
+            // Amazon Channel variants → Prime Video native scheme (verified via Prime Video)
             in amazonChannelProviderIds -> "firebat://search-v2?searchPhrase=$encoded"
-            // ── Apple TV Channel variants ──
-            in appleTvChannelProviderIds -> null  // No known custom scheme
-            // ── Roku Channel variants ──
-            in rokuChannelProviderIds -> null     // No known custom scheme
 
             else -> null
         }
