@@ -625,6 +625,7 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
     val TAG = "WatchOptions"
     android.util.Log.w(TAG, "=== Launch: ${option.name} ===")
     android.util.Log.w(TAG, "  providerId=${option.providerId}")
+    android.util.Log.w(TAG, "  hasExactProviderLink=${option.hasExactProviderLink}")
     android.util.Log.w(TAG, "  packageName=${option.packageName}")
     android.util.Log.w(TAG, "  deepLinkUrl=${option.deepLinkUrl}")
     android.util.Log.w(TAG, "  movieTitle=$movieTitle")
@@ -654,25 +655,51 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
         }
     }
 
-    // 2. Try custom-scheme deep links only. Browser URLs are intentionally not
-    // first on Fire TV because they often resolve to Silk instead of the app.
+    // 2A. Try native custom-scheme deep link (bypasses Silk entirely on Fire TV).
+    if (providerId != null) {
+        StreamingAppRegistry.buildNativeDeepLink(providerId, movieTitle)?.let { nativeLink ->
+            try {
+                val nativeUri = Uri.parse(nativeLink)
+                val nativeIntent = Intent(Intent.ACTION_VIEW, nativeUri).apply {
+                    setPackage(pkg)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                android.util.Log.w(TAG, "  Step 2A: native deep link → $nativeLink")
+                context.startActivity(nativeIntent)
+                Toast.makeText(context, "Opening ${option.name}…", Toast.LENGTH_SHORT).show()
+                return
+            } catch (e: ActivityNotFoundException) {
+                android.util.Log.w(TAG, "  Step 2A FAILED (ActivityNotFound): $nativeLink")
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "  Step 2A FAILED: $nativeLink", e)
+            }
+        }
+    }
+
+    // 2B. Try deep link URL scoped to the target app package via setPackage().
+    // This prevents Fire TV from routing HTTPS URLs to Silk browser.
     option.deepLinkUrl?.let { deepLink ->
         try {
             val uri = Uri.parse(deepLink)
-            if (uri.scheme != "https" && uri.scheme != "http") {
-                val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    setPackage(pkg)
-                }
-                android.util.Log.w(TAG, "  Step 2: ACTION_VIEW custom scheme → $deepLink")
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                setPackage(pkg)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val resolved = context.packageManager.resolveActivity(intent, 0)
+            android.util.Log.w(
+                TAG,
+                "  Step 2B: ACTION_VIEW + setPackage($pkg) → resolved=${resolved?.activityInfo?.name ?: "null"} for $deepLink"
+            )
+            if (resolved != null) {
                 context.startActivity(intent)
+                Toast.makeText(context, "Opening ${option.name}…", Toast.LENGTH_SHORT).show()
                 return
             }
             Unit
         } catch (e: ActivityNotFoundException) {
-            android.util.Log.w(TAG, "  Step 2 FAILED (ActivityNotFound): $deepLink")
+            android.util.Log.w(TAG, "  Step 2B FAILED (ActivityNotFound): $deepLink")
         } catch (e: Exception) {
-            android.util.Log.w(TAG, "  Step 2 FAILED: $deepLink", e)
+            android.util.Log.w(TAG, "  Step 2B FAILED: $deepLink", e)
         }
     }
 
@@ -683,7 +710,7 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(launchIntent)
-            Toast.makeText(context, "Opening ${option.name}…\nSearch for \"$movieTitle\" manually in the app.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, fallbackLaunchMessage(option, movieTitle), Toast.LENGTH_LONG).show()
             return
         }
     } catch (e: Exception) {
@@ -704,7 +731,7 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(leanbackIntent)
-            Toast.makeText(context, "Opening ${option.name}…\nSearch for \"$movieTitle\" manually in the app.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, fallbackLaunchMessage(option, movieTitle), Toast.LENGTH_LONG).show()
             return
         }
     } catch (e: Exception) {
@@ -729,7 +756,7 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-            Toast.makeText(context, "Opening ${option.name}…\nSearch for \"$movieTitle\" manually in the app.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, fallbackLaunchMessage(option, movieTitle), Toast.LENGTH_LONG).show()
             return
         }
     } catch (e: Exception) {
@@ -755,7 +782,7 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
             android.util.Log.w(TAG, "  Step 6: launching ${actInfo.packageName}/${actInfo.name}")
             plainIntent.setClassName(actInfo.packageName, actInfo.name)
             context.startActivity(plainIntent)
-            Toast.makeText(context, "Opening ${option.name}…\nSearch for \"$movieTitle\" manually in the app.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, fallbackLaunchMessage(option, movieTitle), Toast.LENGTH_LONG).show()
             return
         }
     } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
@@ -789,4 +816,12 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
     // 8. App is not installed or not launchable
     android.util.Log.w(TAG, "  Step 8: All launch methods exhausted for $pkg")
     Toast.makeText(context, "${option.name} is not installed.\nInstall it from the Fire TV app store.", Toast.LENGTH_LONG).show()
+}
+
+private fun fallbackLaunchMessage(option: WatchOption, movieTitle: String): String {
+    return if (option.hasExactProviderLink) {
+        "Opening ${option.name}…\nExact title launch may depend on the app."
+    } else {
+        "Opening ${option.name}…\nSearch for \"$movieTitle\" manually in the app."
+    }
 }

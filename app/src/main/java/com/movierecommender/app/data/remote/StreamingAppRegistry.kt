@@ -53,9 +53,9 @@ object StreamingAppRegistry {
 
         put(283,  "com.crunchyroll.crunchyroid") // Crunchyroll
 
-        put(192,  "com.google.android.youtube")  // YouTube
-        put(188,  "com.google.android.youtube")  // YouTube Premium
-        put(2528, "com.google.android.youtube")  // YouTube TV
+        put(192,  "com.amazon.firetv.youtube")   // YouTube (Fire TV)
+        put(188,  "com.amazon.firetv.youtube")   // YouTube Premium (Fire TV)
+        put(2528, "com.amazon.firetv.youtube")   // YouTube TV (Fire TV)
 
         put(3,    "com.google.android.videos")   // Google Play Movies
 
@@ -229,6 +229,26 @@ object StreamingAppRegistry {
      * so we currently disable app-driven search entirely and only open the provider app.
      */
     fun supportsInAppSearch(providerId: Int): Boolean = false
+
+    /**
+     * Build a native custom-scheme deep link for apps that support them.
+     * Custom URI schemes bypass Silk browser interception on Fire TV.
+     * Returns null if no custom scheme is known for the provider.
+     */
+    fun buildNativeDeepLink(providerId: Int, title: String): String? {
+        val encoded = android.net.Uri.encode(title)
+        return when (providerId) {
+            // Netflix — nflx:// scheme (verified on Fire TV)
+            8, 1796, 175 -> "nflx://www.netflix.com/search?q=$encoded"
+            // Hulu — hulu:// scheme
+            15 -> "hulu://search?query=$encoded"
+            // Tubi — tubitv:// scheme
+            73 -> "tubitv://media-browse?search=$encoded"
+            // YouTube — youtube:// scheme (verified on Fire TV)
+            192, 188, 2528 -> "youtube://www.youtube.com/results?search_query=$encoded"
+            else -> null
+        }
+    }
 
     /**
      * Browser-backed search URLs are a weak fallback on Fire TV because they often

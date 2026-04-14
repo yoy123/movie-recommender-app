@@ -1899,6 +1899,7 @@ class MovieRepository(
                             WatchOption(
                                 name = entry.providerName,
                                 providerId = entry.providerId,
+                                hasExactProviderLink = crosswalksByProviderId[entry.providerId] != null,
                                 type = type,
                                 logoPath = entry.logoPath,
                                 packageName = StreamingAppRegistry.getPackageName(entry.providerId),
@@ -1996,6 +1997,7 @@ class MovieRepository(
                             WatchOption(
                                 name = entry.providerName,
                                 providerId = entry.providerId,
+                                hasExactProviderLink = crosswalksByProviderId[entry.providerId] != null,
                                 type = type,
                                 logoPath = entry.logoPath,
                                 packageName = StreamingAppRegistry.getPackageName(entry.providerId),

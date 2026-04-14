@@ -61,6 +61,8 @@ data class WatchOption(
     val name: String,
     /** TMDB provider ID for streaming options, null for torrent */
     val providerId: Int? = null,
+    /** True when this option has an exact imported provider URL/ID instead of a generic fallback link. */
+    val hasExactProviderLink: Boolean = false,
     /** Type of watch option */
     val type: WatchOptionType,
     /** TMDB provider logo path (for streaming), null for torrent */
