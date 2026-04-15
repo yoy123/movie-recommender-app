@@ -643,7 +643,6 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
             val searchIntent = Intent(Intent.ACTION_SEARCH).apply {
                 setPackage(pkg)
                 putExtra(SearchManager.QUERY, movieTitle)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             android.util.Log.w(TAG, "  Step 1: ACTION_SEARCH for $pkg")
             context.startActivity(searchIntent)
@@ -662,7 +661,6 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
                 val nativeUri = Uri.parse(nativeLink)
                 val nativeIntent = Intent(Intent.ACTION_VIEW, nativeUri).apply {
                     setPackage(pkg)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 android.util.Log.w(TAG, "  Step 2A: native deep link → $nativeLink")
                 context.startActivity(nativeIntent)
@@ -683,7 +681,6 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
             val uri = Uri.parse(deepLink)
             val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                 setPackage(pkg)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             val resolved = context.packageManager.resolveActivity(intent, 0)
             android.util.Log.w(
@@ -708,7 +705,6 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
         val launchIntent = context.packageManager.getLaunchIntentForPackage(pkg)
         android.util.Log.w(TAG, "  Step 3: getLaunchIntent for $pkg → ${launchIntent != null}")
         if (launchIntent != null) {
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(launchIntent)
             Toast.makeText(context, fallbackLaunchMessage(option, movieTitle), Toast.LENGTH_LONG).show()
             return
@@ -728,7 +724,6 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
         if (resolveInfo != null) {
             leanbackIntent.apply {
                 setClassName(pkg, resolveInfo.activityInfo.name)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(leanbackIntent)
             Toast.makeText(context, fallbackLaunchMessage(option, movieTitle), Toast.LENGTH_LONG).show()
@@ -753,7 +748,6 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
             val intent = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
                 setClassName(actInfo.packageName, actInfo.name)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
             Toast.makeText(context, fallbackLaunchMessage(option, movieTitle), Toast.LENGTH_LONG).show()
@@ -772,7 +766,6 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
         // Try plain MAIN intent without any category.
         val plainIntent = Intent(Intent.ACTION_MAIN).apply {
             setPackage(pkg)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         @Suppress("DEPRECATION")
         val plainActivities = context.packageManager.queryIntentActivities(plainIntent, android.content.pm.PackageManager.MATCH_ALL)
@@ -800,7 +793,6 @@ private fun launchStreamingApp(context: Context, option: WatchOption, movieTitle
                 if (uri.scheme == "https" || uri.scheme == "http") {
                     android.util.Log.w(TAG, "  Step 7: browser fallback → $deepLink")
                     val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(browserIntent)
                     Toast.makeText(context, "Opening ${option.name} in Silk as a fallback.", Toast.LENGTH_LONG).show()
