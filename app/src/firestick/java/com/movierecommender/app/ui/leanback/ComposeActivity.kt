@@ -19,6 +19,7 @@ import com.movierecommender.app.MovieRecommenderApplication
 import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.torrent.TorrentStreamService
 import com.movierecommender.app.ui.screens.firestick.FavoritesScreen
+import com.movierecommender.app.ui.screens.firestick.LiveTvScreen
 import com.movierecommender.app.ui.screens.firestick.MovieSelectionScreen
 import com.movierecommender.app.ui.screens.firestick.RecommendationsScreen
 import com.movierecommender.app.ui.screens.firestick.StreamingPlayerScreen
@@ -38,6 +39,7 @@ class ComposeActivity : ComponentActivity() {
         const val SCREEN_MOVIE_SELECTION = "movie_selection"
         const val SCREEN_FAVORITES = "favorites"
         const val SCREEN_RECOMMENDATIONS = "recommendations"
+        const val SCREEN_LIVE_TV = "live_tv"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -140,6 +142,16 @@ private fun ComposeNavHost(
                         android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP
                     )
                     navController.navigate("streaming/$encodedTitle/$encodedMagnet")
+                }
+            )
+        }
+
+        composable(ComposeActivity.SCREEN_LIVE_TV) {
+            LiveTvScreen(
+                onBackClick = {
+                    if (!navController.popBackStack()) {
+                        (navController.context as? ComponentActivity)?.finish()
+                    }
                 }
             )
         }
