@@ -287,8 +287,8 @@ object StreamingAppRegistry {
             8, 1796, 175 -> "nflx://www.netflix.com/search?q=$encoded"
             // Hulu — hulu:// (verified)
             15 -> "hulu://hulu.com/search?query=$encoded"
-            // Tubi — tubitv:// (verified)
-            73 -> "tubitv://media-browse?search=$encoded"
+            // Tubi — HTTPS search URL (verified; tubitv:// only supports media-details/media-playback)
+            73 -> "https://tubitv.com/search/$encoded"
             // Amazon Prime Video — firebat:// (verified)
             9, 10, 1825 -> "firebat://search-v2?searchPhrase=$encoded"
             // Paramount+ — pplus:// with www.paramountplus.com authority (verified)

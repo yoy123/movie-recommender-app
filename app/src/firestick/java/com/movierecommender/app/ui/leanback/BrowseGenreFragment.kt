@@ -29,6 +29,10 @@ class BrowseGenreFragment : BrowseSupportFragment() {
     private lateinit var viewModel: MovieViewModel
     private lateinit var rowsAdapter: ArrayObjectAdapter
 
+    // Persistent adapters for genre rows so we can update them without clearing everything
+    private lateinit var movieGenreAdapter: ArrayObjectAdapter
+    private lateinit var tvGenreAdapter: ArrayObjectAdapter
+
     // Row IDs
     companion object {
         private const val HEADER_MOVIE_GENRES = 0L
@@ -64,6 +68,32 @@ class BrowseGenreFragment : BrowseSupportFragment() {
         searchAffordanceColor = 0xFF00BCD4.toInt() // Cyan accent
 
         rowsAdapter = ArrayObjectAdapter(ListRowPresenter())
+
+        // Row 1: Movie Genres (start with placeholder)
+        movieGenreAdapter = ArrayObjectAdapter(GenreCardPresenter())
+        movieGenreAdapter.add(Genre(id = Int.MIN_VALUE, name = "Loading…"))
+        rowsAdapter.add(ListRow(HeaderItem(HEADER_MOVIE_GENRES, "Movie Genres"), movieGenreAdapter))
+
+        // Row 2: TV Show Genres (start with placeholder)
+        tvGenreAdapter = ArrayObjectAdapter(GenreCardPresenter())
+        tvGenreAdapter.add(Genre(id = Int.MIN_VALUE, name = "Loading…"))
+        rowsAdapter.add(ListRow(HeaderItem(HEADER_TV_GENRES, "TV Show Genres"), tvGenreAdapter))
+
+        // Row 3: Live TV
+        val liveTvAdapter = ArrayObjectAdapter(GenreCardPresenter())
+        liveTvAdapter.add(Genre(id = -2, name = "Live TV"))
+        rowsAdapter.add(ListRow(HeaderItem(HEADER_LIVE_TV, "Live TV"), liveTvAdapter))
+
+        // Row 4: Favorites shortcut
+        val favoritesAdapter = ArrayObjectAdapter(GenreCardPresenter())
+        favoritesAdapter.add(Genre(id = -1, name = "My Favorites"))
+        rowsAdapter.add(ListRow(HeaderItem(HEADER_FAVORITES, "Favorites"), favoritesAdapter))
+
+        // Row 5: Settings
+        val settingsAdapter = ArrayObjectAdapter(GenreCardPresenter())
+        settingsAdapter.add(Genre(id = -3, name = "Settings"))
+        rowsAdapter.add(ListRow(HeaderItem(HEADER_SETTINGS, "Settings"), settingsAdapter))
+
         adapter = rowsAdapter
     }
 
@@ -135,7 +165,8 @@ class BrowseGenreFragment : BrowseSupportFragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state ->
-                    buildRows(state.genres, state.tvGenres)
+                    updateGenreRow(movieGenreAdapter, state.genres)
+                    updateGenreRow(tvGenreAdapter, state.tvGenres)
                 }
             }
         }
@@ -147,50 +178,20 @@ class BrowseGenreFragment : BrowseSupportFragment() {
         viewModel.setContentMode(ContentMode.MOVIES)
     }
 
-    private fun buildRows(movieGenres: List<Genre>, tvGenres: List<Genre>) {
-        rowsAdapter.clear()
-
-        // Row 1: Movie Genres (always visible; show placeholder while loading)
-        val movieAdapter = ArrayObjectAdapter(GenreCardPresenter())
-        if (movieGenres.isNotEmpty()) {
-            movieGenres.forEach { movieAdapter.add(it) }
-        } else {
-            movieAdapter.add(Genre(id = Int.MIN_VALUE, name = "Loading…"))
+    /**
+     * Replace the contents of a genre row adapter only when the data actually changes.
+     * Avoids clearing the whole rows adapter which resets Leanback focus state.
+     */
+    private fun updateGenreRow(adapter: ArrayObjectAdapter, genres: List<Genre>) {
+        if (genres.isNotEmpty()) {
+            // Check if already populated with the same data
+            if (adapter.size() == genres.size && adapter.size() > 0) {
+                val first = adapter.get(0) as? Genre
+                if (first?.id == genres.firstOrNull()?.id) return
+            }
+            adapter.clear()
+            genres.forEach { adapter.add(it) }
         }
-        rowsAdapter.add(
-            ListRow(HeaderItem(HEADER_MOVIE_GENRES, "Movie Genres"), movieAdapter)
-        )
-
-        // Row 2: TV Show Genres (always visible; show placeholder while loading)
-        val tvAdapter = ArrayObjectAdapter(GenreCardPresenter())
-        if (tvGenres.isNotEmpty()) {
-            tvGenres.forEach { tvAdapter.add(it) }
-        } else {
-            tvAdapter.add(Genre(id = Int.MIN_VALUE, name = "Loading…"))
-        }
-        rowsAdapter.add(
-            ListRow(HeaderItem(HEADER_TV_GENRES, "TV Show Genres"), tvAdapter)
-        )
-
-        // Row 3: Live TV
-        val liveTvAdapter = ArrayObjectAdapter(GenreCardPresenter())
-        liveTvAdapter.add(Genre(id = -2, name = "Live TV"))
-        rowsAdapter.add(
-            ListRow(HeaderItem(HEADER_LIVE_TV, "Live TV"), liveTvAdapter)
-        )
-
-        // Row 4: Favorites shortcut
-        val favoritesAdapter = ArrayObjectAdapter(GenreCardPresenter())
-        favoritesAdapter.add(Genre(id = -1, name = "My Favorites"))
-        rowsAdapter.add(
-            ListRow(HeaderItem(HEADER_FAVORITES, "Favorites"), favoritesAdapter)
-        )
-
-        // Row 5: Settings
-        val settingsAdapter = ArrayObjectAdapter(GenreCardPresenter())
-        settingsAdapter.add(Genre(id = -3, name = "Settings"))
-        rowsAdapter.add(
-            ListRow(HeaderItem(HEADER_SETTINGS, "Settings"), settingsAdapter)
-        )
+        // If genres is empty, keep existing placeholder — don't overwrite
     }
 }
