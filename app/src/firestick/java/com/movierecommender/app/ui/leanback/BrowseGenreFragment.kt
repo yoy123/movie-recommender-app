@@ -35,6 +35,7 @@ class BrowseGenreFragment : BrowseSupportFragment() {
         private const val HEADER_TV_GENRES = 1L
         private const val HEADER_LIVE_TV = 2L
         private const val HEADER_FAVORITES = 3L
+        private const val HEADER_SETTINGS = 4L
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,10 +77,19 @@ class BrowseGenreFragment : BrowseSupportFragment() {
             if (item is Genre) {
                 val headerItem = (row as? ListRow)?.headerItem
 
-                // Live TV row → open WebView
+                // Live TV row → open Live TV
                 if (headerItem?.id == HEADER_LIVE_TV) {
                     val intent = Intent(requireContext(), ComposeActivity::class.java).apply {
                         putExtra(ComposeActivity.EXTRA_SCREEN, ComposeActivity.SCREEN_LIVE_TV)
+                    }
+                    startActivity(intent)
+                    return@OnItemViewClickedListener
+                }
+
+                // Settings row → open Settings
+                if (headerItem?.id == HEADER_SETTINGS) {
+                    val intent = Intent(requireContext(), ComposeActivity::class.java).apply {
+                        putExtra(ComposeActivity.EXTRA_SCREEN, ComposeActivity.SCREEN_SETTINGS)
                     }
                     startActivity(intent)
                     return@OnItemViewClickedListener
@@ -167,6 +177,13 @@ class BrowseGenreFragment : BrowseSupportFragment() {
         favoritesAdapter.add(Genre(id = -1, name = "My Favorites"))
         rowsAdapter.add(
             ListRow(HeaderItem(HEADER_FAVORITES, "Favorites"), favoritesAdapter)
+        )
+
+        // Row 5: Settings
+        val settingsAdapter = ArrayObjectAdapter(GenreCardPresenter())
+        settingsAdapter.add(Genre(id = -3, name = "Settings"))
+        rowsAdapter.add(
+            ListRow(HeaderItem(HEADER_SETTINGS, "Settings"), settingsAdapter)
         )
     }
 }

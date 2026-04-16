@@ -44,7 +44,9 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.PlayerView
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.xmlpull.v1.XmlPullParser
@@ -95,6 +97,9 @@ fun LiveTvScreen(
     // EPG: map from channel tvgId -> list of programs
     var epgData by remember { mutableStateOf<Map<String, List<EpgProgram>>>(emptyMap()) }
 
+    // Debounce job for channel surfing in fullscreen mode
+    var channelSwitchJob by remember { mutableStateOf<Job?>(null) }
+
     val listState = rememberLazyListState()
     val firstItemFocusRequester = remember { FocusRequester() }
     val playerOverlayFocusRequester = remember { FocusRequester() }
@@ -136,8 +141,9 @@ fun LiveTvScreen(
         }
     }
 
-    // Play channel when selected
+    // Play channel immediately (used from guide OK press)
     fun playChannel(channel: TvChannel) {
+        errorMessage = null
         exoPlayer?.let { player ->
             player.stop()
             val dataSourceFactory = DefaultHttpDataSource.Factory()
@@ -157,10 +163,27 @@ fun LiveTvScreen(
         }
     }
 
+    // Debounced play — for rapid channel surfing in fullscreen mode
+    fun playChannelDebounced(channel: TvChannel) {
+        channelSwitchJob?.cancel()
+        channelSwitchJob = scope.launch {
+            delay(400)
+            playChannel(channel)
+        }
+    }
+
     BackHandler {
         when {
-            !showGuide && isPlaying -> showGuide = true
+            !showGuide && isPlaying -> {
+                // Fullscreen playback → show the guide
+                showGuide = true
+            }
+            showGuide && isPlaying -> {
+                // Guide open over playing video → hide guide, back to fullscreen
+                showGuide = false
+            }
             else -> {
+                // Guide open, nothing playing → exit Live TV
                 exoPlayer?.stop()
                 onBackClick()
             }
@@ -254,6 +277,7 @@ fun LiveTvScreen(
                                 isSelected = index == selectedIndex,
                                 nowPlayingTitle = nowPlaying?.title,
                                 focusRequester = if (index == 0) firstItemFocusRequester else null,
+                                onFocused = { selectedIndex = index },
                                 onClick = {
                                     selectedIndex = index
                                     playChannel(channel)
@@ -383,8 +407,25 @@ fun LiveTvScreen(
                     .fillMaxSize()
                     .focusRequester(playerOverlayFocusRequester)
                     .onPreviewKeyEvent { keyEvent ->
+                        val code = keyEvent.key.nativeKeyCode
+                        // Consume both KeyDown and KeyUp for navigation keys
+                        // to prevent events leaking to other composables
+                        if (keyEvent.type == KeyEventType.KeyUp) {
+                            return@onPreviewKeyEvent when (code) {
+                                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+                                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                                KeyEvent.KEYCODE_BACK -> true
+                                else -> false
+                            }
+                        }
                         if (keyEvent.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        when (keyEvent.key.nativeKeyCode) {
+                        when (code) {
+                            // Back in fullscreen → reopen channel guide
+                            KeyEvent.KEYCODE_BACK -> {
+                                showGuide = true
+                                true
+                            }
                             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                                 showGuide = true
                                 true
@@ -392,17 +433,19 @@ fun LiveTvScreen(
                             KeyEvent.KEYCODE_DPAD_UP -> {
                                 if (selectedIndex > 0) {
                                     selectedIndex--
-                                    playChannel(channels[selectedIndex])
+                                    playChannelDebounced(channels[selectedIndex])
                                 }
                                 true
                             }
                             KeyEvent.KEYCODE_DPAD_DOWN -> {
                                 if (selectedIndex < channels.size - 1) {
                                     selectedIndex++
-                                    playChannel(channels[selectedIndex])
+                                    playChannelDebounced(channels[selectedIndex])
                                 }
                                 true
                             }
+                            // Consume left/right to prevent focus escaping
+                            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> true
                             else -> false
                         }
                     }
@@ -423,10 +466,16 @@ private fun ChannelItem(
     isSelected: Boolean,
     nowPlayingTitle: String? = null,
     focusRequester: FocusRequester?,
+    onFocused: () -> Unit = {},
     onClick: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+
+    // Update selectedIndex when this item gains focus (DPAD scroll)
+    LaunchedEffect(isFocused) {
+        if (isFocused) onFocused()
+    }
 
     val bgColor = when {
         isFocused -> Color(0xFF00BCD4)

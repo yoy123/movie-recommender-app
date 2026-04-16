@@ -22,6 +22,7 @@ import com.movierecommender.app.ui.screens.firestick.FavoritesScreen
 import com.movierecommender.app.ui.screens.firestick.LiveTvScreen
 import com.movierecommender.app.ui.screens.firestick.MovieSelectionScreen
 import com.movierecommender.app.ui.screens.firestick.RecommendationsScreen
+import com.movierecommender.app.ui.screens.firestick.SettingsScreen
 import com.movierecommender.app.ui.screens.firestick.StreamingPlayerScreen
 import com.movierecommender.app.ui.screens.firestick.TrailerScreen
 import com.movierecommender.app.ui.theme.firestick.MovieRecommenderTheme
@@ -40,6 +41,7 @@ class ComposeActivity : ComponentActivity() {
         const val SCREEN_FAVORITES = "favorites"
         const val SCREEN_RECOMMENDATIONS = "recommendations"
         const val SCREEN_LIVE_TV = "live_tv"
+        const val SCREEN_SETTINGS = "settings"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -148,6 +150,17 @@ private fun ComposeNavHost(
 
         composable(ComposeActivity.SCREEN_LIVE_TV) {
             LiveTvScreen(
+                onBackClick = {
+                    if (!navController.popBackStack()) {
+                        (navController.context as? ComponentActivity)?.finish()
+                    }
+                }
+            )
+        }
+
+        composable(ComposeActivity.SCREEN_SETTINGS) {
+            SettingsScreen(
+                viewModel = viewModel,
                 onBackClick = {
                     if (!navController.popBackStack()) {
                         (navController.context as? ComponentActivity)?.finish()
