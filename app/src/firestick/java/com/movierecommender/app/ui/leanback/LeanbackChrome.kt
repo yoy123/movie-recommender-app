@@ -230,6 +230,7 @@ fun LeanbackPanel(
         modifier = modifier,
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         tonalElevation = 12.dp,
         shadowElevation = 18.dp,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))

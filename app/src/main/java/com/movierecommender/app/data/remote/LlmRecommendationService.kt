@@ -423,10 +423,10 @@ OUTPUT FORMAT (must match exactly):
 RECOMMENDATIONS:
 
 1. Movie Title (YYYY)
-Why: one sentence connecting to the user's selected titles and preferences.
+Summary: one-sentence plot summary of the movie.
 
 2. Movie Title (YYYY)
-Why: one sentence.
+Summary: one-sentence plot summary.
 
 (Continue until 15; stop immediately after item 15.)
         """.trimIndent()
@@ -598,10 +598,10 @@ OUTPUT FORMAT (must match exactly):
 RECOMMENDATIONS:
 
 1. Movie Title (YYYY)
-Why: one sentence connecting to the user's selected titles and preferences.
+Summary: one-sentence plot summary of the movie.
 
 2. Movie Title (YYYY)
-Why: one sentence.
+Summary: one-sentence plot summary.
 
 (Continue until 15; stop immediately after item 15.)
         """.trimIndent()
@@ -625,7 +625,7 @@ Why: one sentence.
         Log.d(TAG, "Prompt preview (first 900 chars): ${prompt.take(900)}")
         
         val json = JSONObject().apply {
-            put("model", "gpt-4o-mini")
+            put("model", "gpt-4.1-mini")
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
@@ -799,7 +799,7 @@ Why: one sentence.
                 desc = l
                 break
             }
-            if (desc.isBlank()) desc = "A strong match for your taste."
+            if (desc.isBlank()) desc = "A critically acclaimed film."
             desc = truncateWords(desc, 75)
             seenKeys.add(key)
             items.add(title to desc)

@@ -75,6 +75,9 @@ class BrowseGenreFragment : BrowseSupportFragment() {
                 row: Row? ->
 
             if (item is Genre) {
+                // Ignore placeholder "Loading…" cards
+                if (item.id == Int.MIN_VALUE) return@OnItemViewClickedListener
+
                 val headerItem = (row as? ListRow)?.headerItem
 
                 // Live TV row → open Live TV
@@ -147,23 +150,27 @@ class BrowseGenreFragment : BrowseSupportFragment() {
     private fun buildRows(movieGenres: List<Genre>, tvGenres: List<Genre>) {
         rowsAdapter.clear()
 
-        // Row 1: Movie Genres
+        // Row 1: Movie Genres (always visible; show placeholder while loading)
+        val movieAdapter = ArrayObjectAdapter(GenreCardPresenter())
         if (movieGenres.isNotEmpty()) {
-            val movieAdapter = ArrayObjectAdapter(GenreCardPresenter())
             movieGenres.forEach { movieAdapter.add(it) }
-            rowsAdapter.add(
-                ListRow(HeaderItem(HEADER_MOVIE_GENRES, "Movie Genres"), movieAdapter)
-            )
+        } else {
+            movieAdapter.add(Genre(id = Int.MIN_VALUE, name = "Loading…"))
         }
+        rowsAdapter.add(
+            ListRow(HeaderItem(HEADER_MOVIE_GENRES, "Movie Genres"), movieAdapter)
+        )
 
-        // Row 2: TV Show Genres
+        // Row 2: TV Show Genres (always visible; show placeholder while loading)
+        val tvAdapter = ArrayObjectAdapter(GenreCardPresenter())
         if (tvGenres.isNotEmpty()) {
-            val tvAdapter = ArrayObjectAdapter(GenreCardPresenter())
             tvGenres.forEach { tvAdapter.add(it) }
-            rowsAdapter.add(
-                ListRow(HeaderItem(HEADER_TV_GENRES, "TV Show Genres"), tvAdapter)
-            )
+        } else {
+            tvAdapter.add(Genre(id = Int.MIN_VALUE, name = "Loading…"))
         }
+        rowsAdapter.add(
+            ListRow(HeaderItem(HEADER_TV_GENRES, "TV Show Genres"), tvAdapter)
+        )
 
         // Row 3: Live TV
         val liveTvAdapter = ArrayObjectAdapter(GenreCardPresenter())

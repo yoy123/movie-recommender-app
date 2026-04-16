@@ -43,6 +43,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
@@ -101,7 +103,7 @@ fun LiveTvScreen(
     var channelSwitchJob by remember { mutableStateOf<Job?>(null) }
 
     val listState = rememberLazyListState()
-    val firstItemFocusRequester = remember { FocusRequester() }
+    val selectedItemFocusRequester = remember { FocusRequester() }
     val playerOverlayFocusRequester = remember { FocusRequester() }
 
     // Fetch and parse the M3U playlist + EPG
@@ -125,9 +127,17 @@ fun LiveTvScreen(
         }
     }
 
-    // Initialize ExoPlayer
+    // Initialize ExoPlayer — force highest quality regardless of bandwidth
     DisposableEffect(Unit) {
-        val player = ExoPlayer.Builder(context).build()
+        val trackSelector = DefaultTrackSelector(context).apply {
+            setParameters(
+                buildUponParameters()
+                    .setForceHighestSupportedBitrate(true)
+            )
+        }
+        val player = ExoPlayer.Builder(context)
+            .setTrackSelector(trackSelector)
+            .build()
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 android.util.Log.e("LiveTV", "Playback error: ${error.message}", error)
@@ -203,6 +213,8 @@ fun LiveTvScreen(
                     PlayerView(it).apply {
                         this.player = player
                         useController = false
+                        keepScreenOn = true
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                         layoutParams = FrameLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
@@ -276,7 +288,7 @@ fun LiveTvScreen(
                                 channel = channel,
                                 isSelected = index == selectedIndex,
                                 nowPlayingTitle = nowPlaying?.title,
-                                focusRequester = if (index == 0) firstItemFocusRequester else null,
+                                focusRequester = if (index == selectedIndex) selectedItemFocusRequester else null,
                                 onFocused = { selectedIndex = index },
                                 onClick = {
                                     selectedIndex = index
@@ -392,10 +404,11 @@ fun LiveTvScreen(
                 }
             }
 
-            // Request focus on the first channel after load
-            LaunchedEffect(channels) {
+            // Scroll to and focus the selected channel when guide opens
+            LaunchedEffect(channels, showGuide) {
                 if (channels.isNotEmpty()) {
-                    firstItemFocusRequester.requestFocus()
+                    listState.scrollToItem(selectedIndex.coerceIn(0, channels.size - 1))
+                    selectedItemFocusRequester.requestFocus()
                 }
             }
         }
