@@ -2,7 +2,6 @@ package com.movierecommender.app.ui.screens.firestick
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
-import android.view.KeyEvent
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -50,6 +49,10 @@ fun LiveTvScreen(
                 WebView(context).apply {
                     webViewRef.value = this
 
+                    // DPAD focus support
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.mediaPlaybackRequiresUserGesture = false
@@ -63,33 +66,21 @@ fun LiveTvScreen(
 
                         override fun onPageFinished(view: WebView?, url: String?) {
                             isLoading.value = false
+                            // Ensure WebView has focus for DPAD navigation
+                            view?.requestFocus()
                         }
 
                         override fun shouldOverrideUrlLoading(
                             view: WebView?,
                             request: WebResourceRequest?
                         ): Boolean {
-                            // Keep all navigation inside the WebView
                             return false
                         }
                     }
 
                     webChromeClient = WebChromeClient()
 
-                    // Handle DPAD back key inside WebView
-                    setOnKeyListener { _, keyCode, event ->
-                        if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                            if (canGoBack()) {
-                                goBack()
-                                true
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        }
-                    }
-
+                    requestFocus()
                     loadUrl(LIVE_TV_URL)
                 }
             }
