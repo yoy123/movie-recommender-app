@@ -1556,18 +1556,39 @@ class MovieRepository(
      */
     suspend fun getImdbTrailerUrl(movieId: Int): String? = withContext(Dispatchers.IO) {
         try {
-            // Get movie details to retrieve IMDB ID
+            android.util.Log.d("MovieRepository", "getImdbTrailerUrl: movieId=$movieId")
+
+            // Try TMDB Videos API for YouTube trailers first (reliable)
+            try {
+                val videos = apiService.getMovieVideos(movieId)
+                val trailer = videos.results.firstOrNull { v ->
+                    v.site.equals("YouTube", ignoreCase = true) &&
+                    v.type.equals("Trailer", ignoreCase = true)
+                } ?: videos.results.firstOrNull { v ->
+                    v.site.equals("YouTube", ignoreCase = true) &&
+                    v.type.equals("Teaser", ignoreCase = true)
+                } ?: videos.results.firstOrNull { v ->
+                    v.site.equals("YouTube", ignoreCase = true)
+                }
+
+                if (trailer != null) {
+                    val youtubeUrl = "youtube:${trailer.key}"
+                    android.util.Log.d("MovieRepository", "Found YouTube trailer via TMDB: $youtubeUrl")
+                    return@withContext youtubeUrl
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("MovieRepository", "Failed to get videos from TMDB: ${e.message}")
+            }
+
+            // Fallback: IMDB scraping
             val details = apiService.getMovieDetails(movieId)
             val imdbId = details.imdbId
-            
-            android.util.Log.d("MovieRepository", "getImdbTrailerUrl: movieId=$movieId, imdbId=$imdbId")
-            
+
             if (imdbId.isNullOrBlank()) {
                 android.util.Log.w("MovieRepository", "No IMDB ID found for movie $movieId")
                 return@withContext null
             }
-            
-            // Scrape IMDB for trailer URL
+
             val trailerUrl = imdbScraper.getTrailerUrl(imdbId)
             android.util.Log.d("MovieRepository", "IMDB scraper returned: $trailerUrl")
             trailerUrl
