@@ -342,6 +342,10 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
             putExtra(ComposeActivity.EXTRA_GENRE_ID, genreId)
             putExtra(ComposeActivity.EXTRA_GENRE_NAME, genreName)
             putExtra(ComposeActivity.EXTRA_CONTENT_MODE, contentMode.name)
+            putExtra(ComposeActivity.EXTRA_LLM_CONSENT_GIVEN, latestState.llmConsentGiven)
+            if (contentMode == ContentMode.TV_SHOWS) {
+                putExtra(ComposeActivity.EXTRA_SELECTED_TV_SHOWS_JSON, com.google.gson.Gson().toJson(latestState.selectedTvShows))
+            }
         }
         startActivity(intent)
     }
@@ -375,6 +379,7 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
             return
         }
 
+        val isTvMode = contentMode == ContentMode.TV_SHOWS
         val dialog = WatchOptionsDialogFragment().apply {
             configure(
                 viewModel = this@LeanbackPickerFragment.viewModel,
@@ -382,11 +387,20 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
                 tvShowId = tvShow?.id,
                 title = mediaTitle,
                 year = movie?.releaseDate?.take(4) ?: tvShow?.firstAirDate?.take(4),
+                isTvMode = isTvMode,
                 onTorrentSelected = { title, magnetUrl ->
                     val encodedTitle = Uri.encode(title)
                     val encodedMagnet = Uri.encode(magnetUrl)
                     val intent = Intent(requireContext(), ComposeActivity::class.java).apply {
                         putExtra(ComposeActivity.EXTRA_SCREEN, "streaming/$encodedTitle/$encodedMagnet")
+                    }
+                    startActivity(intent)
+                },
+                onTrailerSelected = { title, videoUrl ->
+                    val intent = Intent(requireContext(), ComposeActivity::class.java).apply {
+                        putExtra(ComposeActivity.EXTRA_SCREEN, ComposeActivity.SCREEN_TRAILER)
+                        putExtra(ComposeActivity.EXTRA_TRAILER_TITLE, title)
+                        putExtra(ComposeActivity.EXTRA_TRAILER_URL, videoUrl)
                     }
                     startActivity(intent)
                 }
@@ -402,7 +416,9 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
         private var mediaYear: String? = null
         private var movieId: Int? = null
         private var tvShowId: Int? = null
+        private var isTvMode: Boolean = false
         private var onTorrent: (String, String) -> Unit = { _, _ -> }
+        private var onTrailer: (String, String) -> Unit = { _, _ -> }
 
         fun configure(
             viewModel: MovieViewModel,
@@ -410,14 +426,18 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
             tvShowId: Int?,
             title: String,
             year: String?,
-            onTorrentSelected: (title: String, magnetUrl: String) -> Unit
+            isTvMode: Boolean = false,
+            onTorrentSelected: (title: String, magnetUrl: String) -> Unit,
+            onTrailerSelected: (title: String, videoUrl: String) -> Unit = { _, _ -> }
         ) {
             vm = viewModel
             this.movieId = movieId
             this.tvShowId = tvShowId
             mediaTitle = title
             mediaYear = year
+            this.isTvMode = isTvMode
             onTorrent = onTorrentSelected
+            onTrailer = onTrailerSelected
         }
 
         override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -425,8 +445,15 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
                 setContent {
                     var options by mutableStateOf<List<WatchOption>>(emptyList())
                     var isLoading by mutableStateOf(true)
+                    var trailerUrl by mutableStateOf<String?>(null)
 
                     androidx.compose.runtime.LaunchedEffect(Unit) {
+                        // Fetch trailer in parallel with watch options
+                        launch {
+                            trailerUrl = try {
+                                vm.getTrailerUrlByTitle(mediaTitle, mediaYear, isTvMode)
+                            } catch (_: Exception) { null }
+                        }
                         options = try {
                             if (movieId != null) {
                                 vm.getMovieWatchOptions(movieId!!, mediaTitle, mediaYear)
@@ -481,6 +508,12 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
                                 }
                             } else null,
                             onDismiss = { dismissAllowingStateLoss() },
+                            onWatchTrailer = trailerUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                                {
+                                    dismissAllowingStateLoss()
+                                    onTrailer(mediaTitle, url)
+                                }
+                            },
                             onTorrentSelected = { magnetUrl ->
                                 dismissAllowingStateLoss()
                                 onTorrent(mediaTitle, magnetUrl)

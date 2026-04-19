@@ -485,6 +485,14 @@ class MovieViewModel(
     fun clearTvShowSelections() {
         _uiState.value = _uiState.value.copy(selectedTvShows = emptyList())
     }
+
+    fun setSelectedTvShows(shows: List<TvShow>) {
+        _uiState.value = _uiState.value.copy(selectedTvShows = shows)
+    }
+
+    fun setLlmConsentGiven(consented: Boolean) {
+        _uiState.value = _uiState.value.copy(llmConsentGiven = consented)
+    }
     
     /**
      * Generate TV show recommendations using LLM + user preference settings.

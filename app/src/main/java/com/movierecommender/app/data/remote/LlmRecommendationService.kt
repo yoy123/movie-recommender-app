@@ -78,7 +78,7 @@ class LlmRecommendationService {
                     presencePenalty = 0.6,
                     extraInstructions = "\n\nSTRICT RETRY (FINAL):\n" +
                         "The previous response failed validation. Follow the rules exactly:\n" +
-                        "- Start with a 3-sentence analysis that references the selected titles\n" +
+                        "- Start with a concise 3-4 sentence taste analysis that references the selected titles\n" +
                         "- Then output EXACTLY 15 recommendations, numbered 1..15\n" +
                         "- Every recommendation MUST be in the specified GENRE - no exceptions\n" +
                         "- Every title MUST be formatted: Movie Title (YYYY)\n" +
@@ -179,7 +179,7 @@ class LlmRecommendationService {
                     presencePenalty = 0.6,
                     extraInstructions = "\n\nSTRICT RETRY (FINAL):\n" +
                         "Your previous response failed validation. Follow the rules exactly:\n" +
-                        "- Start with a 3-sentence analysis that references the selected titles\n" +
+                        "- Start with a concise 3-4 sentence taste analysis that references the selected titles\n" +
                         "- Then output EXACTLY 15 recommendations, numbered 1..15\n" +
                         "- Every recommendation MUST be copied EXACTLY from the candidate list (same title and year)\n" +
                         "- Do NOT include any excluded/selected title\n" +
@@ -398,13 +398,16 @@ ${selectedMovies.mapIndexed { index, title -> "${index + 1}. $title" }.joinToStr
 $settingsSnapshot$preferencesSection$excludedSection$extraInstructions
 
 TASK:
-1) Write a short analysis of why these specific selections work for the user.
+1) Write a comprehensive analysis of the user's overall taste based on their selections — what patterns, themes, and filmmaking qualities connect their choices.
 2) Recommend exactly 15 movies that match the same underlying qualities.
 
 ANALYSIS RULES (validation-critical):
-- Exactly 3 sentences.
-- Must explicitly mention at least $analysisMustReferenceCount of the selected titles by name.
+- Write 3-4 sentences providing a concise, personal analysis of the user's overall taste.
+- Must explicitly mention at least $analysisMustReferenceCount of the selected titles by name in the analysis.
+- Identify patterns across their selections: what themes, moods, eras, directorial styles, or narrative structures connect them.
 - Be specific: reference concrete filmmaking elements (e.g., pacing, structure, cinematography approach, tone balance, editing rhythm, sound design, performance style, narrative devices).
+- Explain what these choices reveal about what the user values in cinema.
+- FORBIDDEN (will cause rejection): Do NOT write generic intros like "Based on your selections...", "Here are 15 movies...", "Based off of your selected films...", or any variation. The analysis must be a genuine critical essay about their taste, not an introduction to the list.
 - Avoid generic filler like "compelling storytelling" or "complex characters".
 
 RECOMMENDATION RULES (validation-critical):
@@ -416,9 +419,13 @@ $genreConstraintRule
 - Prefer strong matches over obvious genre staples.
 - Avoid sequels/spin-offs/franchise entries unless they are truly essential AND still satisfy preferences.
 
-OUTPUT FORMAT (must match exactly):
+OUTPUT FORMAT (must match exactly — follow the EXAMPLE ANALYSIS style, not a generic intro):
 
-[3-sentence analysis paragraph]
+EXAMPLE ANALYSIS (for illustration only — yours must reference the ACTUAL selected titles above):
+The thread connecting Mulholland Drive and Eternal Sunshine of the Spotless Mind is an obsession with fractured identity and the unreliability of memory as narrative device. Both films weaponize non-linear editing to mirror psychological disintegration — Lynch through surrealist dream logic and Gondry through a collapsing visual landscape that literalizes emotional erasure. This points to a viewer who values atmosphere and formal ambition over conventional storytelling clarity, someone drawn to films that demand active interpretation and reward multiple viewings.
+
+YOUR ANALYSIS (write about the actual selected titles above, not the example):
+[Your 3-4 sentence analysis here — must reference the user's actual selected titles]
 
 RECOMMENDATIONS:
 
@@ -575,13 +582,16 @@ ${selectedMovies.mapIndexed { index, title -> "${index + 1}. $title" }.joinToStr
 $preferenceSection$excludedSection$candidatesSection$extraInstructions
 
 TASK:
-1) Write a short analysis of why these specific selections work for the user.
+1) Write a comprehensive analysis of the user's overall taste based on their selections — what patterns, themes, and filmmaking qualities connect their choices.
 2) Recommend exactly 15 movies, selected ONLY from the CANDIDATES list.
 
 ANALYSIS RULES (validation-critical):
-- Exactly 3 sentences.
-- Must explicitly mention at least $analysisMustReferenceCount of the selected titles by name.
+- Write 3-4 sentences providing a concise, personal analysis of the user's overall taste.
+- Must explicitly mention at least $analysisMustReferenceCount of the selected titles by name in the analysis.
+- Identify patterns across their selections: what themes, moods, eras, directorial styles, or narrative structures connect them.
 - Be specific (pacing, structure, tone balance, cinematography, editing rhythm, sound design, performance style, narrative devices).
+- Explain what these choices reveal about what the user values in cinema.
+- FORBIDDEN (will cause rejection): Do NOT write generic intros like "Based on your selections...", "Here are 15 movies...", "Based off of your selected films...", or any variation. The analysis must be a genuine critical essay about their taste, not an introduction to the list.
 
 RECOMMENDATION RULES (validation-critical):
 - Output EXACTLY 15 unique movies.
@@ -591,9 +601,13 @@ RECOMMENDATION RULES (validation-critical):
 - If year range is enabled, every recommendation MUST be within range.
 - Stop after item 15. No extra text.
 
-OUTPUT FORMAT (must match exactly):
+OUTPUT FORMAT (must match exactly — follow the EXAMPLE ANALYSIS style, not a generic intro):
 
-[3-sentence analysis paragraph]
+EXAMPLE ANALYSIS (for illustration only — yours must reference the ACTUAL selected titles above):
+The thread connecting Mulholland Drive and Eternal Sunshine of the Spotless Mind is an obsession with fractured identity and the unreliability of memory as narrative device. Both films weaponize non-linear editing to mirror psychological disintegration — Lynch through surrealist dream logic and Gondry through a collapsing visual landscape that literalizes emotional erasure. This points to a viewer who values atmosphere and formal ambition over conventional storytelling clarity, someone drawn to films that demand active interpretation and reward multiple viewings.
+
+YOUR ANALYSIS (write about the actual selected titles above, not the example):
+[Your 3-4 sentence analysis here — must reference the user's actual selected titles]
 
 RECOMMENDATIONS:
 
@@ -629,7 +643,7 @@ Summary: one-sentence plot summary.
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
-                    put("content", "You are an expert film curator and critic with deep knowledge of cinema history, genres, directors, and thematic elements. You excel at understanding WHY someone loves specific films and finding other films that share those same qualities. Provide thoughtful, personalized recommendations - never generic suggestions. Write naturally in plain text, no markdown or formatting symbols.")
+                    put("content", "You are an expert film curator and critic with deep knowledge of cinema history, genres, directors, and thematic elements. You excel at understanding WHY someone loves specific films and finding other films that share those same qualities. Your analysis paragraphs must be deeply personal and insightful - dissect the user's taste by naming their selected films and explaining the specific cinematic threads that connect them. NEVER write a generic intro like 'Based on your selections, here are some movies' - that will be rejected. Provide thoughtful, personalized recommendations - never generic suggestions. Write naturally in plain text, no markdown or formatting symbols.")
                 })
                 put(JSONObject().apply {
                     put("role", "user")
@@ -637,7 +651,7 @@ Summary: one-sentence plot summary.
                 })
             })
             put("temperature", temperature)
-            put("max_tokens", 1500)             // More room for quality descriptions
+            put("max_tokens", 2000)             // More room for comprehensive analysis + quality descriptions
             put("frequency_penalty", frequencyPenalty)       // Strong penalty to avoid repetitive phrasing
             put("presence_penalty", presencePenalty)        // Encourage diverse vocabulary and ideas
         }
@@ -718,14 +732,51 @@ Summary: one-sentence plot summary.
         useReleaseYearPreference: Boolean,
         allowedCandidateTitles: List<String>?
     ): String {
-        val lines = content.lines()
+        // Strip any echoed headers from the few-shot example format
+        val cleaned = content.lines()
+            .dropWhile { line ->
+                val t = line.trim().uppercase()
+                t.startsWith("YOUR ANALYSIS") || t.startsWith("EXAMPLE ANALYSIS") || t.isBlank()
+            }
+            .joinToString("\n")
+        val lines = cleaned.lines()
         // Format: number, optional space, period, optional space (handles "1.", "1 .", "1 .Title")
         // LLM keeps varying the format despite instructions, so we tolerate all variations
         val numbered = Regex("^\\s*(\\d{1,2})\\s*\\.\\s*")
         val firstIdx = lines.indexOfFirst { numbered.containsMatchIn(it) }
         // Require an analysis paragraph before numbered items.
-        val analysis = if (firstIdx > 0) limitSentences(lines.take(firstIdx).joinToString("\n").trim(), 3) else ""
+        val rawAnalysis = if (firstIdx > 0) lines.take(firstIdx).joinToString("\n").trim() else ""
+        // Strip any "YOUR ANALYSIS" or "RECOMMENDATIONS:" headers that ended up in the analysis block
+        val analysisStripped = rawAnalysis.lines()
+            .filterNot { line ->
+                val t = line.trim().uppercase()
+                t.startsWith("YOUR ANALYSIS") || t.startsWith("EXAMPLE ANALYSIS") || t == "RECOMMENDATIONS:" || t == "RECOMMENDATIONS"
+            }
+            .joinToString("\n").trim()
+        val analysis = limitSentences(analysisStripped, 4)
         if (analysis.isBlank()) {
+            return ""
+        }
+        // Reject if the LLM copied the example analysis verbatim
+        if (analysis.contains("Mulholland Drive") && analysis.contains("Eternal Sunshine")) {
+            Log.w(TAG, "Analysis rejected: LLM copied the example verbatim")
+            return ""
+        }
+        // Reject generic filler analysis that doesn't actually analyze taste
+        val analysisLower = analysis.lowercase()
+        val genericPatterns = listOf(
+            "based on your", "based off of your", "here are", "here is a list",
+            "here's a list", "heres a list", "i've selected", "i have selected",
+            "the following", "below are", "these recommendations"
+        )
+        if (genericPatterns.any { analysisLower.contains(it) }) {
+            Log.w(TAG, "Analysis rejected as generic filler: ${analysis.take(100)}")
+            return ""
+        }
+        // Require minimum substance (at least 3 sentences)
+        val sentenceCount = Regex("[.!?]").findAll(analysis).count()
+        if (sentenceCount < 3) {
+            Log.w(TAG, "Analysis too short ($sentenceCount sentences): ${analysis.take(100)}")
             return ""
         }
         val items = mutableListOf<Pair<String, String>>()

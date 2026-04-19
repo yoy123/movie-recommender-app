@@ -58,6 +58,7 @@ fun WatchOptionsDialog(
     isLoading: Boolean = false,
     onImportProviderLink: (suspend (option: WatchOption, rawContentIdOrUrl: String) -> List<WatchOption>?)? = null,
     onDismiss: () -> Unit,
+    onWatchTrailer: (() -> Unit)? = null,
     onTorrentSelected: (magnetUrl: String) -> Unit,
     onBrowseEpisodes: (() -> Unit)? = null // For TV shows — open episode picker with torrent
 ) {
@@ -91,8 +92,8 @@ fun WatchOptionsDialog(
         }
     }
 
-    // Auto-focus first option when loaded
-    LaunchedEffect(displayedOptions, isLoading) {
+    // Auto-focus first option when loaded (also re-trigger when trailer arrives)
+    LaunchedEffect(displayedOptions, isLoading, onWatchTrailer) {
         if (!isLoading && displayedOptions.isNotEmpty()) {
             try { firstOptionFocusRequester.requestFocus() } catch (_: Exception) {}
         }
@@ -238,6 +239,31 @@ fun WatchOptionsDialog(
                         )
 
                         var isFirstOption = true
+
+                        // Watch Trailer as the first option
+                        if (onWatchTrailer != null) {
+                            item(key = "watch_trailer") {
+                                Text(
+                                    text = "TRAILER",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                )
+                            }
+                            item(key = "watch_trailer_row") {
+                                val focusReq = if (isFirstOption) {
+                                    isFirstOption = false
+                                    firstOptionFocusRequester
+                                } else {
+                                    remember { FocusRequester() }
+                                }
+                                TrailerOptionRow(
+                                    focusRequester = focusReq,
+                                    onClick = onWatchTrailer
+                                )
+                            }
+                        }
 
                         typeOrder.forEach { type ->
                             val groupOptions = grouped[type] ?: return@forEach
@@ -531,6 +557,58 @@ private fun WatchOptionRow(
             }
 
             // Play icon
+            Icon(
+                imageVector = Icons.Filled.PlayArrow,
+                contentDescription = "Play",
+                tint = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                modifier = Modifier.size(24.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Row for "Watch Trailer" option — always shown first if available.
+ */
+@Composable
+private fun TrailerOptionRow(
+    focusRequester: FocusRequester,
+    onClick: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val isFocused by interaction.collectIsFocusedAsState()
+
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester)
+            .focusable(interactionSource = interaction),
+        color = if (isFocused) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        border = if (isFocused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = MaterialTheme.shapes.medium,
+        tonalElevation = if (isFocused) 4.dp else 0.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.PlayArrow,
+                contentDescription = "Trailer",
+                tint = if (isFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(36.dp)
+            )
+            Text(
+                text = "Watch Trailer",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Medium,
+                color = if (isFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
             Icon(
                 imageVector = Icons.Filled.PlayArrow,
                 contentDescription = "Play",

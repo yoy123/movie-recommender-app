@@ -36,12 +36,17 @@ class ComposeActivity : ComponentActivity() {
         const val EXTRA_GENRE_ID = "extra_genre_id"
         const val EXTRA_GENRE_NAME = "extra_genre_name"
         const val EXTRA_CONTENT_MODE = "extra_content_mode"
+        const val EXTRA_TRAILER_TITLE = "extra_trailer_title"
+        const val EXTRA_TRAILER_URL = "extra_trailer_url"
+        const val EXTRA_SELECTED_TV_SHOWS_JSON = "extra_selected_tv_shows_json"
+        const val EXTRA_LLM_CONSENT_GIVEN = "extra_llm_consent_given"
 
         const val SCREEN_MOVIE_SELECTION = "movie_selection"
         const val SCREEN_FAVORITES = "favorites"
         const val SCREEN_RECOMMENDATIONS = "recommendations"
         const val SCREEN_LIVE_TV = "live_tv"
         const val SCREEN_SETTINGS = "settings"
+        const val SCREEN_TRAILER = "trailer"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,6 +57,10 @@ class ComposeActivity : ComponentActivity() {
         val genreId = intent.getIntExtra(EXTRA_GENRE_ID, -1)
         val genreName = intent.getStringExtra(EXTRA_GENRE_NAME) ?: ""
         val contentModeName = intent.getStringExtra(EXTRA_CONTENT_MODE) ?: ContentMode.MOVIES.name
+        val trailerTitle = intent.getStringExtra(EXTRA_TRAILER_TITLE) ?: ""
+        val trailerUrl = intent.getStringExtra(EXTRA_TRAILER_URL) ?: ""
+        val selectedTvShowsJson = intent.getStringExtra(EXTRA_SELECTED_TV_SHOWS_JSON)
+        val llmConsentGiven = intent.getBooleanExtra(EXTRA_LLM_CONSENT_GIVEN, false)
 
         setContent {
             val viewModel: MovieViewModel = viewModel(
@@ -70,13 +79,28 @@ class ComposeActivity : ComponentActivity() {
                 if (genreId != -1 || startScreen == SCREEN_FAVORITES) {
                     viewModel.selectGenre(genreId, genreName)
                 }
+                // Pre-set LLM consent from the launching activity so it's available
+                // before TV show selections trigger recommendation generation
+                if (llmConsentGiven) {
+                    viewModel.setLlmConsentGiven(true)
+                }
+                // Restore TV show selections passed from the picker
+                if (!selectedTvShowsJson.isNullOrBlank()) {
+                    try {
+                        val type = object : com.google.gson.reflect.TypeToken<List<com.movierecommender.app.data.model.TvShow>>() {}.type
+                        val shows: List<com.movierecommender.app.data.model.TvShow> = com.google.gson.Gson().fromJson(selectedTvShowsJson, type)
+                        viewModel.setSelectedTvShows(shows)
+                    } catch (_: Exception) { }
+                }
             }
 
             MovieRecommenderTheme(darkTheme = uiState.isDarkMode) {
                 LeanbackBackdrop(modifier = Modifier.fillMaxSize()) {
                     ComposeNavHost(
                         viewModel = viewModel,
-                        startDestination = startScreen
+                        startDestination = startScreen,
+                        trailerTitle = trailerTitle,
+                        trailerUrl = trailerUrl
                     )
                 }
             }
@@ -93,6 +117,8 @@ class ComposeActivity : ComponentActivity() {
 private fun ComposeNavHost(
     viewModel: MovieViewModel,
     startDestination: String,
+    trailerTitle: String = "",
+    trailerUrl: String = "",
     navController: NavHostController = rememberNavController()
 ) {
     NavHost(
@@ -183,18 +209,15 @@ private fun ComposeNavHost(
             )
         }
 
-        composable("trailer/{title}/{videoUrl}") { backStackEntry ->
-            val title = backStackEntry.arguments?.getString("title") ?: "Trailer"
-            val encodedUrl = backStackEntry.arguments?.getString("videoUrl") ?: ""
-            val videoUrl = try {
-                String(android.util.Base64.decode(encodedUrl, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP))
-            } catch (_: Exception) {
-                encodedUrl
-            }
+        composable(ComposeActivity.SCREEN_TRAILER) {
             TrailerScreen(
-                title = Uri.decode(title),
-                videoUrl = videoUrl,
-                onBackClick = { navController.popBackStack() }
+                title = trailerTitle,
+                videoUrl = trailerUrl,
+                onBackClick = {
+                    if (!navController.popBackStack()) {
+                        (navController.context as? ComponentActivity)?.finish()
+                    }
+                }
             )
         }
 

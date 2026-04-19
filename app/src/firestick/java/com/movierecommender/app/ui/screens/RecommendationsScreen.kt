@@ -49,6 +49,7 @@ import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.ui.leanback.LeanbackActionButton
 import com.movierecommender.app.ui.leanback.LeanbackTopBar
 import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
+import com.movierecommender.app.ui.dialogs.firestick.LlmConsentDialog
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavController
 
@@ -67,14 +68,34 @@ fun RecommendationsScreen(
     val hasSelections = if (isTvMode) uiState.selectedTvShows.isNotEmpty() else uiState.selectedMovies.isNotEmpty()
 
     // Auto-generate recommendations on first entry if we have selections and nothing yet
-    LaunchedEffect(uiState.selectedMovies, uiState.selectedTvShows, uiState.recommendationText, uiState.isLoading, isTvMode) {
+    LaunchedEffect(uiState.selectedMovies, uiState.selectedTvShows, uiState.recommendationText, uiState.isLoading, isTvMode, uiState.llmConsentGiven, uiState.llmConsentAsked) {
         if (!uiState.isLoading && uiState.recommendationText == null && hasSelections) {
-            if (isTvMode) {
-                viewModel.generateTvRecommendations()
+            if (!uiState.llmConsentAsked) {
+                // Show consent dialog before generating
+                viewModel.checkAndShowLlmConsentIfNeeded()
             } else {
-                viewModel.generateRecommendations()
+                if (isTvMode) {
+                    viewModel.generateTvRecommendations()
+                } else {
+                    viewModel.generateRecommendations()
+                }
             }
         }
+    }
+
+    // LLM Consent Dialog (GDPR/CCPA compliance)
+    if (uiState.showLlmConsentDialog) {
+        LlmConsentDialog(
+            onAccept = {
+                viewModel.onLlmConsentResponse(consented = true)
+            },
+            onDecline = {
+                viewModel.onLlmConsentResponse(consented = false)
+            },
+            onDismiss = {
+                viewModel.dismissLlmConsentDialog()
+            }
+        )
     }
     
     Scaffold(
@@ -748,6 +769,13 @@ private fun RecommendationCard(
             title = item.title,
             options = watchOptions,
             isLoading = isLoadingWatchOptions,
+            onWatchTrailer = trailerUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                {
+                    showWatchOptions = false
+                    watchOptions = emptyList()
+                    onOpenTrailer(item.title, url)
+                }
+            },
             onImportProviderLink = resolvedTmdbId?.let { tmdbId ->
                 { option, rawContentIdOrUrl ->
                     val providerId = option.providerId

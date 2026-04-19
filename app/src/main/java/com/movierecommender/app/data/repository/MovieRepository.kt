@@ -1050,7 +1050,21 @@ class MovieRepository(
 
                 val sb = StringBuilder()
                 sb.append("Analysis:\n")
-                sb.append("Based on your selected films, here are 15 picks with a similar vibe and quality.")
+                // Build a meaningful fallback analysis from the selected movies
+                val selectedTitles = selectedMovies.take(3).joinToString(", ") { it.title }
+                val genreNames = selectedMovies
+                    .flatMap { it.genreIds }
+                    .groupingBy { it }
+                    .eachCount()
+                    .entries
+                    .sortedByDescending { it.value }
+                    .take(2)
+                    .mapNotNull { tmdbGenreIdToName[it.key] }
+                val genreText = if (genreNames.isNotEmpty()) genreNames.joinToString(" and ") else "diverse genres"
+                sb.append("Your selections like $selectedTitles reveal a strong affinity for $genreText, ")
+                sb.append("with a preference for films that balance compelling narratives with distinctive visual storytelling. ")
+                sb.append("These choices suggest you appreciate cinema that rewards close attention and delivers emotional depth. ")
+                sb.append("The following recommendations share those same qualities.")
                 sb.append("\n\n")
                 sb.append("RECOMMENDATIONS:\n\n")
                 candidates.forEachIndexed { idx, movie ->
