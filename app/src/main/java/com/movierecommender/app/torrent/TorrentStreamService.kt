@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import android.os.StatFs
 import java.io.File
 
@@ -404,6 +405,7 @@ class TorrentStreamService : Service(), TorrentListener {
             .maxConnections(200)
             .maxDownloadSpeed(0) // Unlimited
             .maxUploadSpeed(0)   // Unlimited
+            .prepareSize(5L * 1024L * 1024L) // 5MB of start+end pieces needed before playback (default was 15MB)
             .build()
         
         torrentStream = TorrentStream.init(options)
@@ -471,8 +473,40 @@ class TorrentStreamService : Service(), TorrentListener {
     
     override fun onStreamReady(torrent: Torrent?) {
         android.util.Log.d("TorrentStreamService", "Stream ready for playback")
-        val videoPath = torrent?.videoFile?.absolutePath
-        if (videoPath != null) {
+        val videoPath = torrent?.videoFile?.absolutePath ?: return
+        val fileSize = torrent.videoFile?.length() ?: 0L
+
+        // Dynamically calculate how many bytes to pre-buffer before handing off to the player.
+        // Goal: ensure the download stays ahead of playback throughout the movie.
+        val speedBps = _downloadSpeed.value.toLong() // bytes/sec from most recent progress callback
+        val targetBufferBytes: Long = if (speedBps <= 0L || fileSize < 10L * 1024 * 1024) {
+            10L * 1024 * 1024 // 10 MB fallback when no speed data yet or tiny file
+        } else {
+            // Estimate average video bitrate assuming a typical ~2-hour movie
+            val estimatedBitrateBps = fileSize / 7200L
+            // If download speed barely exceeds bitrate, buffer 60 s ahead; otherwise 20 s is fine
+            val bufferSeconds = if (speedBps < estimatedBitrateBps * 1.2) 60L else 20L
+            (speedBps * bufferSeconds).coerceIn(5L * 1024 * 1024, 80L * 1024 * 1024)
+        }
+
+        android.util.Log.i("TorrentStreamService",
+            "Stream ready. Speed=${speedBps / 1024}KB/s, " +
+            "targetBuffer=${targetBufferBytes / 1024 / 1024}MB, " +
+            "fileSize=${fileSize / 1024 / 1024}MB")
+
+        serviceScope.launch {
+            _streamState.value = TorrentStreamState.PreBuffering(videoPath, 0f)
+            updateNotification("Pre-buffering for smooth playback...")
+
+            while (true) {
+                val progressFraction = _downloadProgress.value / 100f
+                val downloadedBytes = (fileSize * progressFraction).toLong()
+                if (downloadedBytes >= targetBufferBytes || progressFraction >= 1f) break
+                val bufferProgress = (downloadedBytes.toFloat() / targetBufferBytes).coerceIn(0f, 1f)
+                _streamState.value = TorrentStreamState.PreBuffering(videoPath, bufferProgress)
+                delay(500)
+            }
+
             _streamState.value = TorrentStreamState.Ready(videoPath)
             updateNotification("Playing...")
         }
@@ -522,6 +556,7 @@ sealed class TorrentStreamState {
     object Connecting : TorrentStreamState()
     data class Buffering(val progress: Float) : TorrentStreamState()
     data class Streaming(val progress: Float) : TorrentStreamState()
+    data class PreBuffering(val videoPath: String, val bufferProgress: Float) : TorrentStreamState()
     data class Ready(val videoPath: String) : TorrentStreamState()
     data class Error(val message: String) : TorrentStreamState()
 }

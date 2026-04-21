@@ -1,7 +1,6 @@
 package com.movierecommender.app.ui.leanback
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -55,6 +54,7 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
         private const val ACTION_WATCH_OPTIONS = "watch_options"
         private const val ACTION_ANALYZE = "analyze"
         private const val ACTION_CLEAR = "clear"
+        private const val ACTION_SEARCH = "search"
 
         fun newInstance(
             genreId: Int,
@@ -129,7 +129,7 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
         adapter = rowsAdapter
 
         setOnSearchClickedListener {
-            Toast.makeText(requireContext(), "Search is not wired into the Leanback picker yet", Toast.LENGTH_SHORT).show()
+            showSearchDialog()
         }
     }
 
@@ -279,6 +279,12 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
         }
 
         rows += PickerActionItem(
+            id = ACTION_SEARCH,
+            title = if (latestState.searchQuery.isBlank()) "Search Titles" else "Clear Search",
+            description = if (latestState.searchQuery.isBlank()) "Find by name" else "\"${latestState.searchQuery}\"",
+            accentColor = 0xFF0369A1.toInt()
+        )
+        rows += PickerActionItem(
             id = ACTION_ANALYZE,
             title = "Analyze Picks",
             description = if (selectedCount == 0) "Select 1-5 titles first" else "$selectedCount titles ready",
@@ -327,6 +333,46 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
                 if (contentMode == ContentMode.TV_SHOWS) viewModel.clearTvShowSelections()
                 else viewModel.clearSelections()
             }
+
+            ACTION_SEARCH -> {
+                if (latestState.searchQuery.isNotBlank()) {
+                    viewModel.searchContent("")
+                } else {
+                    showSearchDialog()
+                }
+            }
+        }
+    }
+
+    private fun showSearchDialog() {
+        val editText = android.widget.EditText(requireContext()).apply {
+            hint = "Enter title..."
+            setSingleLine()
+            setText(latestState.searchQuery)
+            selectAll()
+        }
+        val padding = (resources.displayMetrics.density * 16).toInt()
+        val container = android.widget.FrameLayout(requireContext()).apply {
+            setPadding(padding, 0, padding, 0)
+            addView(editText)
+        }
+        val label = if (contentMode == ContentMode.TV_SHOWS) "TV Shows" else "Movies"
+        val builder = android.app.AlertDialog.Builder(requireContext())
+            .setTitle("Search $label")
+            .setView(container)
+            .setPositiveButton("Search") { _, _ ->
+                val query = editText.text.toString().trim()
+                viewModel.searchContent(query)
+            }
+            .setNegativeButton("Cancel", null)
+        if (latestState.searchQuery.isNotBlank()) {
+            builder.setNeutralButton("Clear") { _, _ -> viewModel.searchContent("") }
+        }
+        builder.show().also { dialog ->
+            editText.requestFocus()
+            dialog.window?.setSoftInputMode(
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+            )
         }
     }
 
@@ -389,10 +435,10 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
                 year = movie?.releaseDate?.take(4) ?: tvShow?.firstAirDate?.take(4),
                 isTvMode = isTvMode,
                 onTorrentSelected = { title, magnetUrl ->
-                    val encodedTitle = Uri.encode(title)
-                    val encodedMagnet = Uri.encode(magnetUrl)
                     val intent = Intent(requireContext(), ComposeActivity::class.java).apply {
-                        putExtra(ComposeActivity.EXTRA_SCREEN, "streaming/$encodedTitle/$encodedMagnet")
+                        putExtra(ComposeActivity.EXTRA_SCREEN, ComposeActivity.SCREEN_STREAMING)
+                        putExtra(ComposeActivity.EXTRA_STREAMING_TITLE, title)
+                        putExtra(ComposeActivity.EXTRA_STREAMING_MAGNET, magnetUrl)
                     }
                     startActivity(intent)
                 },

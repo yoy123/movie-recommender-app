@@ -189,8 +189,11 @@ fun LiveTvScreen(
                 showGuide = true
             }
             showGuide && isPlaying -> {
-                // Guide open over playing video → hide guide, back to fullscreen
-                showGuide = false
+                // Guide open over playing video → exit Live TV screen
+                // to avoid trapping users in a fullscreen/guide back-loop.
+                exoPlayer?.stop()
+                isPlaying = false
+                onBackClick()
             }
             else -> {
                 // Guide open, nothing playing → exit Live TV

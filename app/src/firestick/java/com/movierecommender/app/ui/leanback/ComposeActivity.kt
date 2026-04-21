@@ -40,6 +40,8 @@ class ComposeActivity : ComponentActivity() {
         const val EXTRA_TRAILER_URL = "extra_trailer_url"
         const val EXTRA_SELECTED_TV_SHOWS_JSON = "extra_selected_tv_shows_json"
         const val EXTRA_LLM_CONSENT_GIVEN = "extra_llm_consent_given"
+        const val EXTRA_STREAMING_TITLE = "extra_streaming_title"
+        const val EXTRA_STREAMING_MAGNET = "extra_streaming_magnet"
 
         const val SCREEN_MOVIE_SELECTION = "movie_selection"
         const val SCREEN_FAVORITES = "favorites"
@@ -47,6 +49,7 @@ class ComposeActivity : ComponentActivity() {
         const val SCREEN_LIVE_TV = "live_tv"
         const val SCREEN_SETTINGS = "settings"
         const val SCREEN_TRAILER = "trailer"
+        const val SCREEN_STREAMING = "streaming"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,6 +62,8 @@ class ComposeActivity : ComponentActivity() {
         val contentModeName = intent.getStringExtra(EXTRA_CONTENT_MODE) ?: ContentMode.MOVIES.name
         val trailerTitle = intent.getStringExtra(EXTRA_TRAILER_TITLE) ?: ""
         val trailerUrl = intent.getStringExtra(EXTRA_TRAILER_URL) ?: ""
+        val streamingTitle = intent.getStringExtra(EXTRA_STREAMING_TITLE) ?: ""
+        val streamingMagnet = intent.getStringExtra(EXTRA_STREAMING_MAGNET) ?: ""
         val selectedTvShowsJson = intent.getStringExtra(EXTRA_SELECTED_TV_SHOWS_JSON)
         val llmConsentGiven = intent.getBooleanExtra(EXTRA_LLM_CONSENT_GIVEN, false)
 
@@ -100,7 +105,9 @@ class ComposeActivity : ComponentActivity() {
                         viewModel = viewModel,
                         startDestination = startScreen,
                         trailerTitle = trailerTitle,
-                        trailerUrl = trailerUrl
+                        trailerUrl = trailerUrl,
+                        streamingTitle = streamingTitle,
+                        streamingMagnet = streamingMagnet
                     )
                 }
             }
@@ -119,6 +126,8 @@ private fun ComposeNavHost(
     startDestination: String,
     trailerTitle: String = "",
     trailerUrl: String = "",
+    streamingTitle: String = "",
+    streamingMagnet: String = "",
     navController: NavHostController = rememberNavController()
 ) {
     NavHost(
@@ -213,6 +222,19 @@ private fun ComposeNavHost(
             TrailerScreen(
                 title = trailerTitle,
                 videoUrl = trailerUrl,
+                onBackClick = {
+                    if (!navController.popBackStack()) {
+                        (navController.context as? ComponentActivity)?.finish()
+                    }
+                }
+            )
+        }
+
+        // Used when launched externally (e.g. from LeanbackPickerFragment) via Intent extras
+        composable(ComposeActivity.SCREEN_STREAMING) {
+            StreamingPlayerScreen(
+                movieTitle = streamingTitle,
+                magnetUrl = streamingMagnet,
                 onBackClick = {
                     if (!navController.popBackStack()) {
                         (navController.context as? ComponentActivity)?.finish()

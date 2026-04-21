@@ -46,6 +46,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.ui.PlayerView
 import com.movierecommender.app.ui.leanback.LeanbackPanel
 import com.movierecommender.app.ui.leanback.LeanbackTextButton
@@ -96,7 +97,8 @@ fun StreamingPlayerScreen(
     val downloadProgress = torrentService?.downloadProgress?.collectAsState()?.value ?: 0f
         // Restart stream if buffering stalls with no progress for too long
         LaunchedEffect(streamState, downloadProgress) {
-            if (streamState is TorrentStreamState.Buffering || streamState is TorrentStreamState.Connecting) {
+            if (streamState is TorrentStreamState.Buffering || streamState is TorrentStreamState.Connecting
+                || streamState is TorrentStreamState.PreBuffering) {
                 val now = System.currentTimeMillis()
                 if (downloadProgress > lastProgress + 0.1f) {
                     lastProgress = downloadProgress
@@ -168,7 +170,18 @@ fun StreamingPlayerScreen(
     LaunchedEffect(streamState) {
         if (streamState is TorrentStreamState.Ready && exoPlayer == null) {
             val videoPath = streamState.videoPath
-            exoPlayer = ExoPlayer.Builder(context).build().apply {
+            // Buffer aggressively ahead to prevent mid-movie stalls.
+            // maxBufferMs = 3 min: ExoPlayer reads ahead as far as pieces are available.
+            // bufferForPlaybackAfterRebufferMs = 10 s: don't resume too early after a stutter.
+            val loadControl = DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    15_000,   // minBufferMs: keep at least 15 s buffered
+                    180_000,  // maxBufferMs: read up to 3 min ahead
+                    2_000,    // bufferForPlaybackMs: 2 s to start (torrent already pre-buffered)
+                    10_000    // bufferForPlaybackAfterRebufferMs: 10 s needed after a stutter
+                )
+                .build()
+            exoPlayer = ExoPlayer.Builder(context).setLoadControl(loadControl).build().apply {
                 val mediaItem = MediaItem.fromUri("file://$videoPath")
                 // Resume from saved position if available
                 if (savedPosition > 0L) {
@@ -476,6 +489,17 @@ fun StreamingPlayerScreen(
                 )
             }
             
+            is TorrentStreamState.PreBuffering -> {
+                val pct = (streamState.bufferProgress * 100).toInt()
+                TVLoadingOverlay(
+                    title = "Pre-buffering for smooth playback...",
+                    subtitle = "Building buffer: $pct% — ${downloadSpeed / 1024} KB/s",
+                    progress = streamState.bufferProgress,
+                    seeds = seeds,
+                    speed = downloadSpeed
+                )
+            }
+
             is TorrentStreamState.Streaming, is TorrentStreamState.Ready -> {
                 // Video player (no built-in controls - we use our own)
                 if (exoPlayer != null) {
