@@ -99,7 +99,12 @@ class TorrentStreamService : Service(), TorrentListener {
     private var lastNotificationMs = 0L
     private var lastCleanupMs = 0L
     private var dynamicMaxCacheSizeMB: Int = MIN_CACHE_SIZE_MB // Recalculated on init
-    
+
+    // Rolling window of recent download-speed samples (bytes/sec) used to smooth out
+    // the library's jittery instantaneous reports when computing pre-buffer targets.
+    private val speedSamples = ArrayDeque<Int>()
+    private val SPEED_SAMPLE_WINDOW = 10
+
     private val _streamState = MutableStateFlow<TorrentStreamState>(TorrentStreamState.Idle)
     val streamState: StateFlow<TorrentStreamState> = _streamState.asStateFlow()
     
@@ -448,6 +453,7 @@ class TorrentStreamService : Service(), TorrentListener {
         _downloadProgress.value = 0f
         _downloadSpeed.value = 0
         _seeds.value = 0
+        speedSamples.clear()
     }
     
     /**
@@ -476,40 +482,120 @@ class TorrentStreamService : Service(), TorrentListener {
         val videoPath = torrent?.videoFile?.absolutePath ?: return
         val fileSize = torrent.videoFile?.length() ?: 0L
 
-        // Dynamically calculate how many bytes to pre-buffer before handing off to the player.
-        // Goal: ensure the download stays ahead of playback throughout the movie.
-        val speedBps = _downloadSpeed.value.toLong() // bytes/sec from most recent progress callback
-        val targetBufferBytes: Long = if (speedBps <= 0L || fileSize < 10L * 1024 * 1024) {
-            10L * 1024 * 1024 // 10 MB fallback when no speed data yet or tiny file
-        } else {
-            // Estimate average video bitrate assuming a typical ~2-hour movie
-            val estimatedBitrateBps = fileSize / 7200L
-            // If download speed barely exceeds bitrate, buffer 60 s ahead; otherwise 20 s is fine
-            val bufferSeconds = if (speedBps < estimatedBitrateBps * 1.2) 60L else 20L
-            (speedBps * bufferSeconds).coerceIn(5L * 1024 * 1024, 80L * 1024 * 1024)
-        }
-
-        android.util.Log.i("TorrentStreamService",
-            "Stream ready. Speed=${speedBps / 1024}KB/s, " +
-            "targetBuffer=${targetBufferBytes / 1024 / 1024}MB, " +
-            "fileSize=${fileSize / 1024 / 1024}MB")
-
         serviceScope.launch {
-            _streamState.value = TorrentStreamState.PreBuffering(videoPath, 0f)
-            updateNotification("Pre-buffering for smooth playback...")
+            runAdaptivePreBuffer(videoPath, fileSize)
+        }
+    }
 
-            while (true) {
-                val progressFraction = _downloadProgress.value / 100f
-                val downloadedBytes = (fileSize * progressFraction).toLong()
-                if (downloadedBytes >= targetBufferBytes || progressFraction >= 1f) break
-                val bufferProgress = (downloadedBytes.toFloat() / targetBufferBytes).coerceIn(0f, 1f)
-                _streamState.value = TorrentStreamState.PreBuffering(videoPath, bufferProgress)
-                delay(500)
+    /**
+     * Dynamic pre-buffer controller.
+     *
+     * Math (no-stall condition, per-segment):
+     *   Video is VBR — instantaneous bitrate B(t) can spike to 1.5–3× the average.
+     *   To survive a peak-bitrate segment of duration t_peak without stalling we need
+     *   pre-buffered bytes >= (B_peak - S) * t_peak while S < B_peak.
+     *
+     *   With B_peak = PEAK_FACTOR * B_avg we compute:
+     *     ratio = S / B_peak
+     *     T_req = D * max(0, 1 - ratio)       (mathematical minimum for whole movie)
+     *     T     = T_req * safety + headroom   (buffer for speed jitter)
+     *
+     *   When S >= B_peak we only need a startup cushion sized for the longest
+     *   realistic peak-scene duration; when S < B_peak we must pre-buffer the
+     *   rolling deficit or playback will stall during action scenes.
+     *
+     * The loop re-evaluates every 500 ms using a rolling speed average, so the
+     * target adapts as the swarm warms up. A hard wall-clock cap prevents
+     * waiting forever on very slow swarms.
+     */
+    private suspend fun runAdaptivePreBuffer(videoPath: String, fileSize: Long) {
+        _streamState.value = TorrentStreamState.PreBuffering(videoPath, 0f)
+        updateNotification("Pre-buffering for smooth playback...")
+
+        // Duration is unknown until the player reads the container header. Assume
+        // 90 min rather than 2 h — shorter assumption => higher bitrate estimate
+        // => larger pre-buffer => safer if the movie is actually longer.
+        val assumedDurationSec = 5400L
+
+        // VBR peak-to-average multiplier. Typical 1080p encodes spike 1.8–2.5× the
+        // file-average bitrate during action scenes. Sizing for ~2× peak prevents
+        // mid-movie stalls when the player hits a high-motion segment.
+        val peakFactor = 2.0
+
+        val maxWaitMs = 180_000L // Hard ceiling: never wait more than 3 min
+        val startMs = System.currentTimeMillis()
+
+        while (true) {
+            val elapsed = System.currentTimeMillis() - startMs
+            val progressFraction = _downloadProgress.value / 100f
+            val downloadedBytes = (fileSize * progressFraction).toLong()
+
+            // Full file already on disk → nothing to wait for.
+            if (progressFraction >= 1f) break
+
+            val durationSec = if (currentPlaybackDuration > 0L) {
+                currentPlaybackDuration / 1000L
+            } else {
+                assumedDurationSec
+            }
+            val avgBitrateBps = if (fileSize > 0 && durationSec > 0) fileSize / durationSec else 500_000L
+            val peakBitrateBps = (avgBitrateBps * peakFactor).toLong()
+            val speedBps = avgDownloadSpeed().toLong()
+            val ratio = if (peakBitrateBps > 0) speedBps.toDouble() / peakBitrateBps else 0.0
+
+            val preBufferSec: Double = when {
+                speedBps <= 0L -> 60.0           // No data yet → conservative startup
+                ratio >= 1.5   -> 30.0           // Peak-headroom → short startup cushion
+                ratio >= 1.2   -> 60.0
+                ratio >= 1.0   -> 120.0          // Matched peak, need cushion for variance
+                else           -> {
+                    // S < B_peak: pre-buffer the deficit over the whole movie plus
+                    // a 50% safety margin for speed dips and swarm fluctuation.
+                    // Capped at half the movie so absurdly slow swarms still start.
+                    val deficit = durationSec.toDouble() * (1.0 - ratio) * 1.5
+                    deficit.coerceAtMost(durationSec * 0.5)
+                }
             }
 
-            _streamState.value = TorrentStreamState.Ready(videoPath)
-            updateNotification("Playing...")
+            // Target bytes uses peak bitrate: a cushion measured in "seconds of
+            // playback" must survive peak-bitrate draws, not average ones.
+            val targetBufferBytes = (peakBitrateBps * preBufferSec).toLong()
+                .coerceIn(
+                    30L * 1024 * 1024,                                 // Min 30 MB floor
+                    minOf(500L * 1024 * 1024, (fileSize / 2).coerceAtLeast(30L * 1024 * 1024))
+                )
+
+            val bufferProgress = (downloadedBytes.toFloat() / targetBufferBytes).coerceIn(0f, 1f)
+            _streamState.value = TorrentStreamState.PreBuffering(videoPath, bufferProgress)
+
+            android.util.Log.d(
+                "TorrentStreamService",
+                "PreBuffer: speed=${speedBps / 1024}KB/s " +
+                "avg=${avgBitrateBps / 1024}KB/s peak=${peakBitrateBps / 1024}KB/s " +
+                "ratio=${"%.2f".format(ratio)} T=${preBufferSec.toInt()}s " +
+                "target=${targetBufferBytes / 1024 / 1024}MB " +
+                "got=${downloadedBytes / 1024 / 1024}MB (${(bufferProgress * 100).toInt()}%)"
+            )
+
+            if (downloadedBytes >= targetBufferBytes) break
+            if (elapsed > maxWaitMs) {
+                android.util.Log.w(
+                    "TorrentStreamService",
+                    "Pre-buffer wait cap hit after ${elapsed / 1000}s, starting playback anyway"
+                )
+                break
+            }
+
+            delay(500)
         }
+
+        _streamState.value = TorrentStreamState.Ready(videoPath)
+        updateNotification("Playing...")
+    }
+
+    private fun avgDownloadSpeed(): Int {
+        if (speedSamples.isEmpty()) return _downloadSpeed.value
+        return (speedSamples.sum() / speedSamples.size)
     }
     
     override fun onStreamProgress(torrent: Torrent?, status: StreamStatus?) {
@@ -518,7 +604,11 @@ class TorrentStreamService : Service(), TorrentListener {
             _downloadProgress.value = progress
             _downloadSpeed.value = it.downloadSpeed
             _seeds.value = it.seeds
-            
+
+            // Maintain rolling speed window for adaptive pre-buffer calculations.
+            speedSamples.addLast(it.downloadSpeed)
+            while (speedSamples.size > SPEED_SAMPLE_WINDOW) speedSamples.removeFirst()
+
             val currentState = _streamState.value
             if (currentState is TorrentStreamState.Buffering || currentState is TorrentStreamState.Streaming) {
                 if (progress < 5f) {
