@@ -12,7 +12,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -93,6 +95,7 @@ fun LiveTvScreen(
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var selectedIndex by remember { mutableIntStateOf(0) }
+    var selectedCategory by remember { mutableStateOf("All") }
     var isPlaying by remember { mutableStateOf(false) }
     var showGuide by remember { mutableStateOf(true) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
@@ -103,8 +106,13 @@ fun LiveTvScreen(
     var channelSwitchJob by remember { mutableStateOf<Job?>(null) }
 
     val listState = rememberLazyListState()
+    val categoryListState = rememberLazyListState()
     val selectedItemFocusRequester = remember { FocusRequester() }
     val playerOverlayFocusRequester = remember { FocusRequester() }
+    val guideCategories = remember(channels) { buildGuideCategories(channels) }
+    val visibleChannels = remember(channels, selectedCategory) {
+        filterGuideChannels(channels, selectedCategory)
+    }
 
     // Fetch and parse the M3U playlist + EPG
     LaunchedEffect(Unit) {
@@ -273,11 +281,33 @@ fun LiveTvScreen(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     Text(
-                        text = "${channels.size} channels",
+                        text = "${visibleChannels.size} channels${if (selectedCategory != "All") " · $selectedCategory" else ""}",
                         color = Color.Gray,
                         fontSize = 14.sp,
-                        modifier = Modifier.padding(bottom = 16.dp)
+                        modifier = Modifier.padding(bottom = 8.dp)
                     )
+                    Text(
+                        text = "Left/Right changes filter",
+                        color = Color(0xFF00BCD4),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    LazyRow(
+                        state = categoryListState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        contentPadding = PaddingValues(end = 24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(guideCategories) { category ->
+                            GuideCategoryChip(
+                                label = category,
+                                isSelected = category == selectedCategory
+                            )
+                        }
+                    }
 
                     LazyColumn(
                         state = listState,
@@ -285,6 +315,17 @@ fun LiveTvScreen(
                             .fillMaxSize()
                             .onPreviewKeyEvent { keyEvent ->
                                 val code = keyEvent.key.nativeKeyCode
+                                if (keyEvent.type == KeyEventType.KeyUp) {
+                                    return@onPreviewKeyEvent when (code) {
+                                        KeyEvent.KEYCODE_DPAD_UP,
+                                        KeyEvent.KEYCODE_DPAD_DOWN,
+                                        KeyEvent.KEYCODE_DPAD_LEFT,
+                                        KeyEvent.KEYCODE_DPAD_RIGHT,
+                                        KeyEvent.KEYCODE_DPAD_CENTER,
+                                        KeyEvent.KEYCODE_ENTER -> true
+                                        else -> false
+                                    }
+                                }
                                 // Handle UP/DOWN manually so focus never escapes the
                                 // LazyColumn (off-screen items are not composed, so
                                 // normal focus traversal can't find them and exits).
@@ -296,31 +337,57 @@ fun LiveTvScreen(
                                             selectedIndex--
                                             scope.launch {
                                                 listState.scrollToItem(selectedIndex)
-                                                selectedItemFocusRequester.requestFocus()
                                             }
                                         }
                                         true // always consume — never let UP escape
                                     }
                                     KeyEvent.KEYCODE_DPAD_DOWN -> {
                                         if (keyEvent.type == KeyEventType.KeyDown &&
-                                            selectedIndex < channels.size - 1
+                                            selectedIndex < visibleChannels.size - 1
                                         ) {
                                             selectedIndex++
                                             scope.launch {
                                                 listState.scrollToItem(selectedIndex)
-                                                selectedItemFocusRequester.requestFocus()
                                             }
                                         }
                                         true // always consume — never let DOWN escape
                                     }
-                                    // Consume LEFT/RIGHT — nothing to the side
-                                    KeyEvent.KEYCODE_DPAD_LEFT,
-                                    KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                                    KeyEvent.KEYCODE_DPAD_CENTER,
+                                    KeyEvent.KEYCODE_ENTER -> {
+                                        val channel = visibleChannels.getOrNull(selectedIndex)
+                                        if (keyEvent.type == KeyEventType.KeyDown && channel != null) {
+                                            playChannel(channel)
+                                            showGuide = false
+                                        }
+                                        true
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                        if (keyEvent.type == KeyEventType.KeyDown) {
+                                            val categoryIndex = guideCategories.indexOf(selectedCategory)
+                                                .coerceAtLeast(0)
+                                            if (categoryIndex > 0) {
+                                                selectedCategory = guideCategories[categoryIndex - 1]
+                                                selectedIndex = 0
+                                            }
+                                        }
+                                        true
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                        if (keyEvent.type == KeyEventType.KeyDown) {
+                                            val categoryIndex = guideCategories.indexOf(selectedCategory)
+                                                .coerceAtLeast(0)
+                                            if (categoryIndex < guideCategories.lastIndex) {
+                                                selectedCategory = guideCategories[categoryIndex + 1]
+                                                selectedIndex = 0
+                                            }
+                                        }
+                                        true
+                                    }
                                     else -> false
                                 }
                             }
                     ) {
-                        itemsIndexed(channels) { index, channel ->
+                        itemsIndexed(visibleChannels) { index, channel ->
                             val nowPlaying = remember(epgData, channel.tvgId) {
                                 getNowPlaying(epgData, channel.tvgId)
                             }
@@ -329,12 +396,7 @@ fun LiveTvScreen(
                                 isSelected = index == selectedIndex,
                                 nowPlayingTitle = nowPlaying?.title,
                                 focusRequester = if (index == selectedIndex) selectedItemFocusRequester else null,
-                                onFocused = { selectedIndex = index },
-                                onClick = {
-                                    selectedIndex = index
-                                    playChannel(channel)
-                                    showGuide = false
-                                }
+                                onFocused = { selectedIndex = index }
                             )
                         }
                     }
@@ -349,8 +411,8 @@ fun LiveTvScreen(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    if (selectedIndex in channels.indices) {
-                        val ch = channels[selectedIndex]
+                    if (selectedIndex in visibleChannels.indices) {
+                        val ch = visibleChannels[selectedIndex]
                         Text(
                             text = ch.name,
                             color = Color.White,
@@ -444,11 +506,24 @@ fun LiveTvScreen(
                 }
             }
 
-            // Scroll to and focus the selected channel when guide opens
-            LaunchedEffect(channels, showGuide) {
-                if (channels.isNotEmpty()) {
-                    listState.scrollToItem(selectedIndex.coerceIn(0, channels.size - 1))
+            // Keep actual Compose focus aligned with the highlighted row.
+            // Without selectedIndex in the key set, DPAD navigation updates the
+            // highlight but center/enter still activates the previously focused row.
+            LaunchedEffect(visibleChannels, showGuide, selectedIndex) {
+                if (showGuide && visibleChannels.isNotEmpty()) {
+                    val boundedIndex = selectedIndex.coerceIn(0, visibleChannels.size - 1)
+                    if (boundedIndex != selectedIndex) {
+                        selectedIndex = boundedIndex
+                    }
+                    listState.scrollToItem(boundedIndex)
                     selectedItemFocusRequester.requestFocus()
+                }
+            }
+
+            LaunchedEffect(guideCategories, selectedCategory, showGuide) {
+                if (showGuide && guideCategories.isNotEmpty()) {
+                    val categoryIndex = guideCategories.indexOf(selectedCategory).coerceAtLeast(0)
+                    categoryListState.animateScrollToItem(categoryIndex)
                 }
             }
         }
@@ -486,14 +561,14 @@ fun LiveTvScreen(
                             KeyEvent.KEYCODE_DPAD_UP -> {
                                 if (selectedIndex > 0) {
                                     selectedIndex--
-                                    playChannelDebounced(channels[selectedIndex])
+                                    visibleChannels.getOrNull(selectedIndex)?.let { playChannelDebounced(it) }
                                 }
                                 true
                             }
                             KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                if (selectedIndex < channels.size - 1) {
+                                if (selectedIndex < visibleChannels.size - 1) {
                                     selectedIndex++
-                                    playChannelDebounced(channels[selectedIndex])
+                                    visibleChannels.getOrNull(selectedIndex)?.let { playChannelDebounced(it) }
                                 }
                                 true
                             }
@@ -519,8 +594,7 @@ private fun ChannelItem(
     isSelected: Boolean,
     nowPlayingTitle: String? = null,
     focusRequester: FocusRequester?,
-    onFocused: () -> Unit = {},
-    onClick: () -> Unit
+    onFocused: () -> Unit = {}
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -546,16 +620,6 @@ private fun ChannelItem(
         .border(1.dp, borderColor, RoundedCornerShape(8.dp))
         .padding(horizontal = 16.dp, vertical = 12.dp)
         .focusable(interactionSource = interactionSource)
-        .onPreviewKeyEvent { keyEvent ->
-            if (keyEvent.type == KeyEventType.KeyDown &&
-                keyEvent.key.nativeKeyCode == KeyEvent.KEYCODE_DPAD_CENTER
-            ) {
-                onClick()
-                true
-            } else {
-                false
-            }
-        }
 
     val finalModifier = if (focusRequester != null) {
         modifier.focusRequester(focusRequester)
@@ -745,6 +809,105 @@ private fun getNowPlaying(epgData: Map<String, List<EpgProgram>>, tvgId: String)
     val programs = epgData[tvgId] ?: return null
     val now = System.currentTimeMillis()
     return programs.firstOrNull { now in it.startTime until it.endTime }
+}
+
+private fun buildGuideCategories(channels: List<TvChannel>): List<String> {
+    val preferred = listOf(
+        "All",
+        "Sports",
+        "NFL",
+        "NBA",
+        "MLB",
+        "NHL",
+        "NCAA",
+        "Soccer",
+        "PPV",
+        "News",
+        "Movies",
+        "Kids"
+    )
+    val dynamicGroups = channels
+        .map { it.group.trim() }
+        .filter { it.isNotBlank() && !it.equals("Live", ignoreCase = true) }
+        .distinct()
+        .sorted()
+
+    return buildList {
+        add("All")
+        preferred.drop(1)
+            .filter { category -> channels.any { matchesGuideCategory(it, category) } }
+            .forEach(::add)
+        dynamicGroups
+            .filterNot { group -> any { it.equals(group, ignoreCase = true) } }
+            .forEach(::add)
+    }
+}
+
+private fun filterGuideChannels(channels: List<TvChannel>, category: String): List<TvChannel> {
+    if (category.equals("All", ignoreCase = true)) return channels
+    return channels.filter { matchesGuideCategory(it, category) }
+}
+
+private fun matchesGuideCategory(channel: TvChannel, category: String): Boolean {
+    if (category.equals("All", ignoreCase = true)) return true
+    if (channel.group.equals(category, ignoreCase = true)) return true
+
+    val haystack = buildString {
+        append(channel.name.uppercase(Locale.US))
+        append(' ')
+        append(channel.group.uppercase(Locale.US))
+    }
+
+    val keywords = when (category.uppercase(Locale.US)) {
+        "SPORTS" -> listOf(
+            "ESPN", "FOX SPORTS", "FS1", "FS2", "CBS SPORTS", "NBC SPORTS",
+            "NFL", "NBA", "MLB", "NHL", "ACC NETWORK", "SEC NETWORK",
+            "BIG TEN NETWORK", "PAC-12", "GOLF", "TENNIS", "BEIN", "TUDN",
+            "UNIVERSO", "MOTORTREND", "SPORTS"
+        )
+        "NFL" -> listOf("NFL", "REDZONE")
+        "NBA" -> listOf("NBA TV", "NBA")
+        "MLB" -> listOf("MLB")
+        "NHL" -> listOf("NHL")
+        "NCAA" -> listOf("ACC NETWORK", "SEC NETWORK", "BIG TEN NETWORK", "PAC-12", "ESPNU")
+        "SOCCER" -> listOf("BEIN", "GOLTV", "TUDN", "UNIVERSO", "SOCCER")
+        "PPV" -> listOf("PPV")
+        "NEWS" -> listOf(
+            "CNN", "FOX NEWS", "MSNBC", "CNBC", "C-SPAN", "NEWSMAX",
+            "NEWSNATION", "BBC NEWS", "BLOOMBERG", "HLN"
+        )
+        "MOVIES" -> listOf(
+            "HBO", "SHOWTIME", "STARZ", "CINEMAX", "TCM", "FXM",
+            "HALLMARK MOVIES", "LMN"
+        )
+        "KIDS" -> listOf(
+            "DISNEY", "NICKELODEON", "NICK JR", "CARTOON NETWORK",
+            "BOOMERANG", "UNIVERSAL KIDS", "DISCOVERY FAMILY"
+        )
+        else -> return false
+    }
+
+    return keywords.any(haystack::contains)
+}
+
+@Composable
+private fun GuideCategoryChip(
+    label: String,
+    isSelected: Boolean
+) {
+    Surface(
+        color = if (isSelected) Color(0xFF00BCD4) else Color(0xFF1B1B1B),
+        contentColor = if (isSelected) Color.Black else Color.White,
+        shape = RoundedCornerShape(999.dp),
+        tonalElevation = if (isSelected) 4.dp else 0.dp
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            fontSize = 13.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+        )
+    }
 }
 
 private fun formatTimeRange(startMs: Long, endMs: Long): String {
