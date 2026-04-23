@@ -112,7 +112,7 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
     private fun setupUi() {
         title = "Select ${if (contentMode == ContentMode.TV_SHOWS) "TV Shows" else "Movies"}"
         headersState = HEADERS_ENABLED
-        isHeadersTransitionOnBackEnabled = true
+        isHeadersTransitionOnBackEnabled = false
         brandColor = 0xFF1B1B2F.toInt()
         searchAffordanceColor = 0xFF00BCD4.toInt()
 
@@ -213,11 +213,22 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
     }
 
     private fun rebuildRows() {
+        // Only rebuild (and reset focus to row 0) when the row structure changes for the first
+        // time. Subsequent content updates (new pages loading) should not clear rowsAdapter or
+        // call setSelectedPosition — that yanks Leanback focus mid-scroll and causes accidental
+        // back navigation.
+        val needsActions = actionAdapter.size() > 0
+        val needsContent = contentAdapter.size() > 0
+        val expectedSize = (if (needsActions) 1 else 0) + (if (needsContent) 1 else 0)
+        if (rowsAdapter.size() == expectedSize) {
+            // Row structure unchanged — just notify so presenters refresh without touching focus
+            return
+        }
         rowsAdapter.clear()
-        if (actionAdapter.size() > 0) {
+        if (needsActions) {
             rowsAdapter.add(ListRow(HeaderItem(HEADER_ACTIONS, "Actions"), actionAdapter))
         }
-        if (contentAdapter.size() > 0) {
+        if (needsContent) {
             rowsAdapter.add(ListRow(HeaderItem(HEADER_CONTENT, genreName.ifBlank { "Titles" }), contentAdapter))
         }
         if (rowsAdapter.size() > 0) {

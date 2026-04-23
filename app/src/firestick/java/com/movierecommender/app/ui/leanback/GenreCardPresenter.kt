@@ -55,8 +55,8 @@ class GenreCardPresenter : Presenter() {
         cardView.titleText = genre.name
         cardView.contentText = ""
 
-        // Create a colored gradient background for the genre card
-        val colorIndex = Math.abs(genre.id) % GENRE_COLORS.size
+        // Use floorMod to avoid Math.abs(Int.MIN_VALUE) overflow producing a negative index.
+        val colorIndex = Math.floorMod(genre.id, GENRE_COLORS.size)
         val baseColor = GENRE_COLORS[colorIndex]
         val gradient = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,

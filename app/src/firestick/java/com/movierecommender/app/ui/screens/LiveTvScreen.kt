@@ -281,7 +281,44 @@ fun LiveTvScreen(
 
                     LazyColumn(
                         state = listState,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .onPreviewKeyEvent { keyEvent ->
+                                val code = keyEvent.key.nativeKeyCode
+                                // Handle UP/DOWN manually so focus never escapes the
+                                // LazyColumn (off-screen items are not composed, so
+                                // normal focus traversal can't find them and exits).
+                                when (code) {
+                                    KeyEvent.KEYCODE_DPAD_UP -> {
+                                        if (keyEvent.type == KeyEventType.KeyDown &&
+                                            selectedIndex > 0
+                                        ) {
+                                            selectedIndex--
+                                            scope.launch {
+                                                listState.scrollToItem(selectedIndex)
+                                                selectedItemFocusRequester.requestFocus()
+                                            }
+                                        }
+                                        true // always consume — never let UP escape
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                        if (keyEvent.type == KeyEventType.KeyDown &&
+                                            selectedIndex < channels.size - 1
+                                        ) {
+                                            selectedIndex++
+                                            scope.launch {
+                                                listState.scrollToItem(selectedIndex)
+                                                selectedItemFocusRequester.requestFocus()
+                                            }
+                                        }
+                                        true // always consume — never let DOWN escape
+                                    }
+                                    // Consume LEFT/RIGHT — nothing to the side
+                                    KeyEvent.KEYCODE_DPAD_LEFT,
+                                    KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                                    else -> false
+                                }
+                            }
                     ) {
                         itemsIndexed(channels) { index, channel ->
                             val nowPlaying = remember(epgData, channel.tvgId) {

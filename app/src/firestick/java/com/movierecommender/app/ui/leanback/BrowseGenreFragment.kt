@@ -63,7 +63,7 @@ class BrowseGenreFragment : BrowseSupportFragment() {
     private fun setupUi() {
         title = "Movie Recommender"
         headersState = HEADERS_ENABLED
-        isHeadersTransitionOnBackEnabled = true
+        isHeadersTransitionOnBackEnabled = false
         brandColor = 0xFF1B1B2F.toInt() // Dark navy
         searchAffordanceColor = 0xFF00BCD4.toInt() // Cyan accent
 
