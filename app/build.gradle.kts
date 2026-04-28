@@ -69,6 +69,7 @@ android {
         create("firestick") {
             dimension = "distribution"
             applicationIdSuffix = ".firestick"
+            versionCode = 4
             versionNameSuffix = "-firestick"
         }
     }
