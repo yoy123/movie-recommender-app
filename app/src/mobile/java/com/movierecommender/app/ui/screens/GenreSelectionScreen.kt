@@ -240,7 +240,7 @@ fun WelcomeDialog(
         onDismissRequest = { }, // Prevent dismissing without entering name
         title = { 
             Text(
-                "Welcome to Movie Recommender!",
+                "Welcome to OpenStream+!",
                 style = MaterialTheme.typography.headlineSmall
             )
         },

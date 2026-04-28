@@ -5,7 +5,7 @@
 
 ## Overview
 
-This document describes the complete user journeys through the Movie Recommender app for both mobile and Fire TV platforms. All flows are traced through code to navigation routes and screen interactions.
+This document describes the complete user journeys through OpenStream+ for both mobile and Fire TV platforms. All flows are traced through code to navigation routes and screen interactions.
 
 ## Primary User Journeys
 

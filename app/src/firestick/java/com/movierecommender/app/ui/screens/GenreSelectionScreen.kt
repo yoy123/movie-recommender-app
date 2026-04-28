@@ -360,7 +360,7 @@ fun WelcomeDialog(
                 .wrapContentHeight()
         ) {
             Text(
-                "Welcome to Movie Recommender!",
+                "Welcome to OpenStream+!",
                 style = MaterialTheme.typography.headlineSmall
             )
 

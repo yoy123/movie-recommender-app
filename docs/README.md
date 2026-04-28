@@ -1,8 +1,8 @@
-# Movie Recommender App - Documentation Index
+# OpenStream+ - Documentation Index
 
 **Last Updated:** 2026-01-19  
 **Version:** 1.0  
-**Project:** Movie Recommender Android/Fire TV App
+**Project:** OpenStream+ Android/Fire TV App
 
 ---
 

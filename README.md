@@ -1,4 +1,4 @@
-# Movie Recommender Android App
+# OpenStream+ Android App
 
 An Android application that uses **AI (OpenAI GPT)** to recommend movies based on your taste! Select 5 movies you've already seen from a specific genre, and get intelligent, personalized movie recommendations with explanations.
 

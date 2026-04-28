@@ -114,25 +114,43 @@ class YtsApiService {
     }
     
     /**
-     * Get the smallest available torrent for faster streaming.
+     * Pick the best torrent for streaming.
+     *
+     * The smallest file is not always the healthiest swarm. Prefer torrents that
+     * still have seeds/peers, then break ties with streaming-friendly quality and
+     * smaller size.
      */
     fun getSmallestTorrent(movie: YtsMovie): TorrentInfo? {
         val torrents = movie.torrents ?: return null
-        
-        // Sort by filesize to get smallest
-        val smallest = torrents.minByOrNull { torrent ->
-            parseSizeToBytes(torrent.size ?: "999 GB")
+
+        val healthyTorrents = torrents.filter { (it.seeds ?: 0) > 0 || (it.peers ?: 0) > 0 }
+        val candidatePool = if (healthyTorrents.isNotEmpty()) healthyTorrents else torrents
+
+        val best = candidatePool.maxByOrNull { torrent ->
+            val sizePenalty = ((torrent.sizeBytes ?: parseSizeToBytes(torrent.size ?: "999 GB")) / (1024.0 * 1024.0 * 1024.0) * 4).toInt()
+            val qualityBonus = when (torrent.quality) {
+                "720p" -> 90
+                "1080p" -> 80
+                "2160p" -> 40
+                "480p" -> 50
+                else -> 20
+            }
+            ((torrent.seeds ?: 0) * 100) + ((torrent.peers ?: 0) * 10) + qualityBonus - sizePenalty
         }
-        
-        return smallest?.let { ytsTorrent ->
-            val magnetUrl = buildMagnetUrl(
+
+        return best?.let { ytsTorrent ->
+            val streamUrl = ytsTorrent.url?.takeIf {
+                it.startsWith("http://", ignoreCase = true) ||
+                    it.startsWith("https://", ignoreCase = true) ||
+                    it.startsWith("magnet:?", ignoreCase = true)
+            } ?: buildMagnetUrl(
                 hash = ytsTorrent.hash,
                 movieName = movie.title,
                 trackers = TRACKERS
             )
             
             TorrentInfo(
-                magnetUrl = magnetUrl,
+                magnetUrl = streamUrl,
                 quality = ytsTorrent.quality,
                 seeds = ytsTorrent.seeds,
                 peers = ytsTorrent.peers,
@@ -234,6 +252,9 @@ data class YtsMovie(
  * YTS torrent data.
  */
 data class YtsTorrent(
+    @SerializedName("url")
+    val url: String?,
+
     @SerializedName("hash")
     val hash: String,
     

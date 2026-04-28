@@ -119,14 +119,29 @@ class PopcornApiService {
     }
     
     /**
-     * Get the smallest available torrent for faster streaming.
+     * Pick the best available torrent for streaming.
+     *
+     * Popcorn often lists multiple qualities, and the smallest file can have a
+     * dead swarm. Prefer torrents with live seeds/peers, then break ties with a
+     * streaming-friendly quality and smaller size.
      */
     fun getSmallestTorrent(movie: PopcornMovie): TorrentInfo? {
         val torrents = movie.torrents?.get("en") ?: return null
-        
-        // Find the smallest file size for fastest streaming
-        return torrents.values.minByOrNull { torrent ->
-            parseSizeToBytes(torrent.size ?: torrent.filesize ?: "999 GB")
+
+        val allTorrents = torrents.values.toList()
+        val healthyTorrents = allTorrents.filter { (it.seeds ?: 0) > 0 || (it.peers ?: 0) > 0 }
+        val candidatePool = if (healthyTorrents.isNotEmpty()) healthyTorrents else allTorrents
+
+        return candidatePool.maxByOrNull { torrent ->
+            val sizePenalty = (parseSizeToBytes(torrent.size ?: torrent.filesize ?: "999 GB") / (1024.0 * 1024.0 * 1024.0) * 4).toInt()
+            val qualityBonus = when (torrent.quality) {
+                "720p" -> 90
+                "1080p" -> 80
+                "2160p" -> 40
+                "480p" -> 50
+                else -> 20
+            }
+            ((torrent.seeds ?: 0) * 100) + ((torrent.peers ?: 0) * 10) + qualityBonus - sizePenalty
         }
     }
     

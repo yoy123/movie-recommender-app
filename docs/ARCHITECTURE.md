@@ -5,7 +5,7 @@
 
 ## Overview
 
-Movie Recommender is an Android/Fire TV application that uses TMDB for movie data and OpenAI GPT-4o-mini for personalized recommendations. The architecture is MVVM-based with Jetpack Compose UI and Room persistence.
+OpenStream+ is an Android/Fire TV application that uses TMDB for movie data and OpenAI GPT-4o-mini for personalized recommendations. The architecture is MVVM-based with Jetpack Compose UI and Room persistence.
 
 ## High-Level System Diagram
 

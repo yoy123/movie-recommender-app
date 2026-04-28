@@ -1,6 +1,6 @@
 # Google Play Store Submission Guide
 
-This guide walks you through preparing and submitting Movie Recommender App to the Google Play Store.
+This guide walks you through preparing and submitting OpenStream+ to the Google Play Store.
 
 ## Prerequisites
 
@@ -61,7 +61,7 @@ We have screenshots in `emulator_screenshots/` folder:
 ## Step 3: Play Store Listing Content
 
 ### App Title
-**Movie Recommender - AI Movie Suggestions**
+**OpenStream+ - AI Movie Suggestions**
 (Max 50 characters)
 
 ### Short Description
@@ -73,7 +73,7 @@ Get personalized movie recommendations powered by AI. Select 5 movies you love, 
 ```
 🎬 Discover Your Next Favorite Movie with AI!
 
-Movie Recommender uses advanced AI (GPT-4o-mini) to understand your taste and suggest movies you'll love. No more endless scrolling - get smart, personalized recommendations based on movies you've already enjoyed.
+OpenStream+ uses advanced AI (GPT-4o-mini) to understand your taste and suggest movies you'll love. No more endless scrolling - get smart, personalized recommendations based on movies you've already enjoyed.
 
 ✨ KEY FEATURES:
 
@@ -222,7 +222,7 @@ Your app uses:
 ### Release Notes (Version 1.0.0)
 
 ```
-🎉 Welcome to Movie Recommender v1.0!
+🎉 Welcome to OpenStream+ v1.0!
 
 ✨ Features:
 • AI-powered movie recommendations using GPT-4o-mini

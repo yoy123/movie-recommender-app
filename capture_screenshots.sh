@@ -1,11 +1,11 @@
 #!/bin/bash
-# Screenshot capture script for Movie Recommender App
+# Screenshot capture script for OpenStream+
 # This script navigates through the app and captures screenshots
 
 SCREENSHOT_DIR="/run/media/dan/EXTRA/movie app/emulator_screenshots"
 DEVICE_PATH="/sdcard"
 
-echo "🎬 Starting screenshot capture for Movie Recommender App"
+echo "Starting screenshot capture for OpenStream+"
 echo "================================================"
 
 # Function to take screenshot

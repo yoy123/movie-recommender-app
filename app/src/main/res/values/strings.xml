@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Flick Pick</string>
+    <string name="app_name">OpenStream+</string>
     <string name="genre_selection_title">Select a Genre</string>
     <string name="movie_selection_title">Select 5 Movies</string>
     <string name="recommendations_title">Recommended Movies</string>

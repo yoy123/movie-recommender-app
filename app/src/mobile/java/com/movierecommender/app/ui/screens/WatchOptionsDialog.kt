@@ -43,6 +43,7 @@ fun WatchOptionsDialog(
     onBrowseEpisodes: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val hasAnyActionRows = options.isNotEmpty() || onBrowseEpisodes != null
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -95,7 +96,7 @@ fun WatchOptionsDialog(
                             Text("Finding watch options...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                         }
                     }
-                } else if (options.isEmpty()) {
+                } else if (!hasAnyActionRows) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("No watch options found", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                     }

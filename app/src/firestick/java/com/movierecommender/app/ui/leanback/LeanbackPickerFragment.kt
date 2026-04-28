@@ -8,7 +8,9 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.os.bundleOf
 import androidx.fragment.app.DialogFragment
@@ -29,9 +31,11 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.movierecommender.app.MovieRecommenderApplication
 import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.data.model.Movie
+import com.movierecommender.app.data.remote.PopcornEpisode
 import com.movierecommender.app.data.model.TvShow
 import com.movierecommender.app.data.model.WatchOption
 import com.movierecommender.app.ui.screens.firestick.WatchOptionsDialog
+import com.movierecommender.app.ui.screens.firestick.EpisodePickerDialog
 import com.movierecommender.app.ui.theme.firestick.MovieRecommenderTheme
 import com.movierecommender.app.firestick.LeanbackPickerActivity
 import com.movierecommender.app.ui.viewmodel.firestick.MovieUiState
@@ -503,6 +507,12 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
                     var options by mutableStateOf<List<WatchOption>>(emptyList())
                     var isLoading by mutableStateOf(true)
                     var trailerUrl by mutableStateOf<String?>(null)
+                    var showEpisodePicker by mutableStateOf(false)
+                    var availableSeasons by mutableStateOf<List<Int>>(emptyList())
+                    var selectedSeason by mutableStateOf(1)
+                    var resolvedImdbId by mutableStateOf<String?>(null)
+                    var isLoadingSeasons by mutableStateOf(false)
+                    val coroutineScope = rememberCoroutineScope()
 
                     androidx.compose.runtime.LaunchedEffect(Unit) {
                         // Fetch trailer in parallel with watch options
@@ -529,7 +539,7 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
                         WatchOptionsDialog(
                             title = mediaTitle,
                             options = options,
-                            isLoading = isLoading,
+                            isLoading = isLoading || isLoadingSeasons,
                             onImportProviderLink = if (movieId != null || tvShowId != null) {
                                 { option, rawContentIdOrUrl ->
                                     val providerId = option.providerId
@@ -574,8 +584,69 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
                             onTorrentSelected = { magnetUrl ->
                                 dismissAllowingStateLoss()
                                 onTorrent(mediaTitle, magnetUrl)
-                            }
+                            },
+                            onBrowseEpisodes = if (tvShowId != null) {
+                                {
+                                    coroutineScope.launch {
+                                        isLoadingSeasons = true
+                                        try {
+                                            val imdbId = vm.getTvShowImdbId(tvShowId!!)
+                                                ?: vm.resolveImdbIdByTitle(mediaTitle, mediaYear)
+                                            if (imdbId != null) {
+                                                val seasons = vm.getTvShowSeasons(imdbId)
+                                                if (seasons.isNotEmpty()) {
+                                                    resolvedImdbId = imdbId
+                                                    availableSeasons = seasons
+                                                    selectedSeason = seasons.first()
+                                                    showEpisodePicker = true
+                                                } else {
+                                                    Toast.makeText(requireContext(), "No episodes available", Toast.LENGTH_SHORT).show()
+                                                }
+                                            } else {
+                                                Toast.makeText(requireContext(), "Show not found", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } catch (_: Exception) {
+                                            Toast.makeText(requireContext(), "Error finding show", Toast.LENGTH_SHORT).show()
+                                        } finally {
+                                            isLoadingSeasons = false
+                                        }
+                                    }
+                                }
+                            } else null
                         )
+
+                        if (showEpisodePicker && resolvedImdbId != null) {
+                            EpisodePickerDialog(
+                                showName = mediaTitle,
+                                seasons = availableSeasons,
+                                selectedSeason = selectedSeason,
+                                onSeasonSelected = { selectedSeason = it },
+                                onEpisodeSelected = { episode: Int ->
+                                    showEpisodePicker = false
+                                    coroutineScope.launch {
+                                        try {
+                                            val magnetUrl = vm.getTvEpisodeMagnetUrl(
+                                                showTitle = mediaTitle,
+                                                imdbId = resolvedImdbId,
+                                                season = selectedSeason,
+                                                episode = episode
+                                            )
+                                            if (magnetUrl != null) {
+                                                dismissAllowingStateLoss()
+                                                onTorrent("$mediaTitle S${selectedSeason}E${episode}", magnetUrl)
+                                            } else {
+                                                Toast.makeText(requireContext(), "No streaming source found", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } catch (_: Exception) {
+                                            Toast.makeText(requireContext(), "Error finding source", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                onDismiss = { showEpisodePicker = false },
+                                viewModel = vm,
+                                preResolvedImdbId = resolvedImdbId
+                            )
+                        }
                     }
                 }
             }

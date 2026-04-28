@@ -422,24 +422,25 @@ class TorrentStreamService : Service(), TorrentListener {
      * If switching to a different movie, clears the previous cache first.
      */
     fun startStream(magnetUrl: String) {
-        android.util.Log.d("TorrentStreamService", "Starting stream: $magnetUrl")
-        if (currentMagnetUrl == magnetUrl && currentTorrent != null) {
+        val preparedMagnetUrl = TorrentMagnetUtils.enrichMagnetUrl(magnetUrl)
+        android.util.Log.d("TorrentStreamService", "Starting stream")
+        if (currentMagnetUrl == preparedMagnetUrl && currentTorrent != null) {
             val resumed = resumeDownloadInternal()
             if (resumed) return
         }
 
-        if (currentMagnetUrl != null && currentMagnetUrl != magnetUrl) {
+        if (currentMagnetUrl != null && currentMagnetUrl != preparedMagnetUrl) {
             // Switching to a different movie - clear cache from previous movie
             android.util.Log.d("TorrentStreamService", "Switching movies - clearing previous cache")
             stopStream()
             clearCacheDirectory()
         }
 
-        currentMagnetUrl = magnetUrl
+        currentMagnetUrl = preparedMagnetUrl
         _streamState.value = TorrentStreamState.Connecting
         _downloadProgress.value = 0f
 
-        torrentStream?.startStream(magnetUrl)
+        torrentStream?.startStream(preparedMagnetUrl)
     }
     
     /**

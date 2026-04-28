@@ -76,6 +76,8 @@ fun WatchOptionsDialog(
         displayedOptions = options
     }
 
+    val hasAnyActionRows = displayedOptions.isNotEmpty() || onWatchTrailer != null || onBrowseEpisodes != null
+
     val importableOptions = remember(displayedOptions) {
         displayedOptions.filter {
             it.type != WatchOptionType.TORRENT &&
@@ -208,7 +210,7 @@ fun WatchOptionsDialog(
                             )
                         }
                     }
-                } else if (displayedOptions.isEmpty()) {
+                } else if (!hasAnyActionRows) {
                     // No options found
                     Box(
                         modifier = Modifier.fillMaxSize(),

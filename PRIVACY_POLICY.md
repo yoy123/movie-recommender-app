@@ -1,10 +1,10 @@
-# Privacy Policy for Movie Recommender App
+# Privacy Policy for OpenStream+
 
 **Last Updated: November 4, 2025**
 
 ## Introduction
 
-Movie Recommender App ("we", "our", or "the app") respects your privacy. This Privacy Policy explains how we handle your information when you use our Android application.
+OpenStream+ ("we", "our", or "the app") respects your privacy. This Privacy Policy explains how we handle your information when you use our Android application.
 
 ## Information Collection and Use
 
@@ -77,4 +77,4 @@ If you have questions about this Privacy Policy, please contact us:
 
 ## Consent
 
-By using Movie Recommender App, you consent to this Privacy Policy.
+By using OpenStream+, you consent to this Privacy Policy.

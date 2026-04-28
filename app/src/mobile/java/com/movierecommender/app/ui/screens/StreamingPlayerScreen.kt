@@ -370,6 +370,16 @@ fun StreamingPlayerScreen(
                         speed = downloadSpeed
                     )
                 }
+
+                is TorrentStreamState.PreBuffering -> {
+                    LoadingOverlay(
+                        title = "Preparing playback...",
+                        subtitle = "Building a larger buffer for smoother streaming",
+                        progress = streamState.bufferProgress,
+                        seeds = seeds,
+                        speed = downloadSpeed
+                    )
+                }
                 
                 is TorrentStreamState.Streaming, is TorrentStreamState.Ready -> {
                     // Show video player

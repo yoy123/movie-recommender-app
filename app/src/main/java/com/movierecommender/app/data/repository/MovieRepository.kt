@@ -2188,6 +2188,26 @@ class MovieRepository(
         }
     }
 
+    private suspend fun resolveImdbIdForMovie(title: String, year: String?): String? = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.searchMovies(query = title)
+            val match = if (year != null) {
+                response.results.firstOrNull {
+                    it.title.equals(title, ignoreCase = true) && it.releaseDate?.startsWith(year) == true
+                } ?: response.results.firstOrNull {
+                    it.releaseDate?.startsWith(year) == true
+                } ?: response.results.firstOrNull()
+            } else {
+                response.results.firstOrNull()
+            } ?: return@withContext null
+
+            apiService.getMovieExternalIds(match.id).imdbId
+        } catch (e: Exception) {
+            android.util.Log.w("MovieRepository", "Failed to resolve movie IMDB ID for '$title': ${e.message}")
+            null
+        }
+    }
+
     /**
      * Get torrent information for a movie by title and year.
      * Tries multiple sources (YTS, Popcorn API) with fallback.
@@ -2195,10 +2215,15 @@ class MovieRepository(
      */
     suspend fun getTorrentInfo(title: String, year: String?): TorrentInfo? = withContext(Dispatchers.IO) {
         android.util.Log.d("MovieRepository", "Searching torrent for: $title ($year)")
+        val imdbId = resolveImdbIdForMovie(title, year)
         
         // Try YTS first (generally smaller files, better for streaming)
         try {
-            val ytsMovie = ytsApi.searchMovie(title, year)
+            val ytsMovie = if (imdbId != null) {
+                ytsApi.searchByImdbId(imdbId) ?: ytsApi.searchMovie(title, year)
+            } else {
+                ytsApi.searchMovie(title, year)
+            }
             if (ytsMovie != null) {
                 val torrent = ytsApi.getSmallestTorrent(ytsMovie)
                 if (torrent != null && (torrent.seeds ?: 0) > 0) {
@@ -2213,7 +2238,11 @@ class MovieRepository(
         
         // Fallback to Popcorn API
         try {
-            val popcornMovie = popcornApi.searchMovie(title, year)
+            val popcornMovie = if (imdbId != null) {
+                popcornApi.searchByImdbId(imdbId) ?: popcornApi.searchMovie(title, year)
+            } else {
+                popcornApi.searchMovie(title, year)
+            }
             if (popcornMovie != null) {
                 val torrent = popcornApi.getSmallestTorrent(popcornMovie)
                 if (torrent != null) {
@@ -2228,7 +2257,11 @@ class MovieRepository(
 
         // Fallback to PirateBay
         try {
-            val pirateBayTorrent = pirateBayApi.searchMovie(title, year)
+            val pirateBayTorrent = if (imdbId != null) {
+                pirateBayApi.searchByImdbId(imdbId) ?: pirateBayApi.searchMovie(title, year)
+            } else {
+                pirateBayApi.searchMovie(title, year)
+            }
             if (pirateBayTorrent != null) {
                 android.util.Log.d("MovieRepository", "Found PirateBay torrent: ${pirateBayTorrent.quality} (${pirateBayTorrent.size}) with ${pirateBayTorrent.seeds} seeds")
                 return@withContext pirateBayTorrent

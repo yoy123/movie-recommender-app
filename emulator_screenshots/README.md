@@ -58,7 +58,7 @@ We have the following screenshots ready for Google Play Store:
 - Should showcase key features and branding
 
 **Suggested Content:**
-- App name: "Movie Recommender"
+- App name: "OpenStream+"
 - Tagline: "AI-Powered Movie Suggestions"
 - Visual: Movie posters or AI brain icon with film reels
 - Colors: Match app theme
@@ -85,7 +85,7 @@ You can create this using:
 
 **Quick steps:**
 1. Create 1024x500 canvas
-2. Add app name "Movie Recommender"
+2. Add app name "OpenStream+"
 3. Add tagline "AI-Powered Movie Suggestions"
 4. Include 2-3 movie poster thumbnails
 5. Use gradient background matching app colors

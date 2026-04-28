@@ -61,7 +61,7 @@ class BrowseGenreFragment : BrowseSupportFragment() {
     }
 
     private fun setupUi() {
-        title = "Movie Recommender"
+        title = "OpenStream+"
         headersState = HEADERS_ENABLED
         isHeadersTransitionOnBackEnabled = false
         brandColor = 0xFF1B1B2F.toInt() // Dark navy

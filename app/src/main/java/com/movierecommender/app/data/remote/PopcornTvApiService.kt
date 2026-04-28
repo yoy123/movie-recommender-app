@@ -209,42 +209,43 @@ class PopcornTvApiService {
         
         val torrents = episodeData.torrents ?: return null
         
-        // Try preferred quality first
-        val preferredTorrent = torrents[preferredQuality]
-        if (preferredTorrent != null && !preferredTorrent.url.isNullOrBlank()) {
-            return EpisodeTorrentInfo(
-                magnetUrl = preferredTorrent.url,
-                quality = preferredQuality,
-                seeds = preferredTorrent.seeds ?: 0,
-                peers = preferredTorrent.peers ?: 0,
-                provider = preferredTorrent.provider ?: "Unknown",
-                season = season,
-                episode = episode,
-                episodeTitle = episodeData.title,
-                showTitle = showDetails.title
-            )
+        val available = torrents.mapNotNull { (quality, torrent) ->
+            val url = torrent.url?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            Triple(quality, torrent.copy(url = url), scoreEpisodeTorrent(quality, torrent, preferredQuality))
         }
-        
-        // Fallback: try other qualities in order of preference
-        val qualityOrder = listOf("1080p", "720p", "480p", "0")
-        for (quality in qualityOrder) {
-            val torrent = torrents[quality]
-            if (torrent != null && !torrent.url.isNullOrBlank()) {
-                return EpisodeTorrentInfo(
-                    magnetUrl = torrent.url,
-                    quality = if (quality == "0") "SD" else quality,
-                    seeds = torrent.seeds ?: 0,
-                    peers = torrent.peers ?: 0,
-                    provider = torrent.provider ?: "Unknown",
-                    season = season,
-                    episode = episode,
-                    episodeTitle = episodeData.title,
-                    showTitle = showDetails.title
-                )
-            }
+        if (available.isEmpty()) return null
+
+        val healthy = available.filter { (_, torrent, _) -> (torrent.seeds ?: 0) > 0 || (torrent.peers ?: 0) > 0 }
+        val best = (if (healthy.isNotEmpty()) healthy else available).maxByOrNull { it.third } ?: return null
+        val (quality, torrent) = best.first to best.second
+
+        return EpisodeTorrentInfo(
+            magnetUrl = torrent.url!!,
+            quality = if (quality == "0") "SD" else quality,
+            seeds = torrent.seeds ?: 0,
+            peers = torrent.peers ?: 0,
+            provider = torrent.provider ?: "Unknown",
+            season = season,
+            episode = episode,
+            episodeTitle = episodeData.title,
+            showTitle = showDetails.title
+        )
+    }
+
+    private fun scoreEpisodeTorrent(
+        quality: String,
+        torrent: PopcornEpisodeTorrent,
+        preferredQuality: String
+    ): Int {
+        val normalizedQuality = if (quality == "0") "SD" else quality
+        val qualityBonus = when {
+            normalizedQuality.equals(preferredQuality, ignoreCase = true) -> 120
+            normalizedQuality == "720p" -> 90
+            normalizedQuality == "1080p" -> 80
+            normalizedQuality == "SD" || normalizedQuality == "480p" -> 50
+            else -> 20
         }
-        
-        return null
+        return ((torrent.seeds ?: 0) * 100) + ((torrent.peers ?: 0) * 10) + qualityBonus
     }
     
     /**

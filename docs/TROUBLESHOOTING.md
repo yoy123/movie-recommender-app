@@ -5,7 +5,7 @@
 
 ## Overview
 
-Common problems, error messages, and solutions for the Movie Recommender app. Organized by symptom → diagnosis → fix.
+Common problems, error messages, and solutions for OpenStream+. Organized by symptom → diagnosis → fix.
 
 ---
 
@@ -31,7 +31,7 @@ Common problems, error messages, and solutions for the Movie Recommender app. Or
 **Symptoms:**
 - App opens briefly, then crashes
 - Black screen, then closes
-- "Unfortunately, Movie Recommender has stopped"
+- "Unfortunately, OpenStream+ has stopped"
 
 **Error in Logcat:**
 ```
@@ -288,7 +288,7 @@ Or in app: Settings → Clear cache
 - Implement cleanup (see [KNOWN_ISSUES.md #6](KNOWN_ISSUES.md#6))
 
 **Fix (Users):**
-- Clear app data: Settings → Apps → Movie Recommender → Clear data
+- Clear app data: Settings → Apps → OpenStream+ → Clear data
 - Warning: Loses all favorites
 
 #### 7c. Background Processes

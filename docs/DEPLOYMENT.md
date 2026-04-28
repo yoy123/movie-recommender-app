@@ -5,7 +5,7 @@
 
 ## Overview
 
-Complete guide for building, releasing, and deploying the Movie Recommender Android/Fire TV app to various distribution channels.
+Complete guide for building, releasing, and deploying the OpenStream+ Android/Fire TV app to various distribution channels.
 
 ---
 
