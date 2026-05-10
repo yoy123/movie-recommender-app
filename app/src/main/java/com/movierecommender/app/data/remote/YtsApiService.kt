@@ -139,11 +139,7 @@ class YtsApiService {
         }
 
         return best?.let { ytsTorrent ->
-            val streamUrl = ytsTorrent.url?.takeIf {
-                it.startsWith("http://", ignoreCase = true) ||
-                    it.startsWith("https://", ignoreCase = true) ||
-                    it.startsWith("magnet:?", ignoreCase = true)
-            } ?: buildMagnetUrl(
+            val streamUrl = buildMagnetUrl(
                 hash = ytsTorrent.hash,
                 movieName = movie.title,
                 trackers = TRACKERS

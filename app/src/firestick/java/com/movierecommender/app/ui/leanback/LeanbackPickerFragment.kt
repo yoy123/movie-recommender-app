@@ -203,12 +203,27 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
     private fun syncContentRow(state: MovieUiState) {
         val ids = currentContentIds(state)
         if (ids != cachedContentIds) {
+            val previousIds = cachedContentIds
             cachedContentIds = ids
-            contentAdapter.clear()
-            if (contentMode == ContentMode.TV_SHOWS) {
-                state.tvShows.forEach(contentAdapter::add)
+            val isAppendUpdate =
+                previousIds.isNotEmpty() &&
+                    ids.size > previousIds.size &&
+                    ids.subList(0, previousIds.size) == previousIds
+
+            if (isAppendUpdate) {
+                val alreadyBound = contentAdapter.size()
+                if (contentMode == ContentMode.TV_SHOWS) {
+                    state.tvShows.drop(alreadyBound).forEach(contentAdapter::add)
+                } else {
+                    state.movies.drop(alreadyBound).forEach(contentAdapter::add)
+                }
             } else {
-                state.movies.forEach(contentAdapter::add)
+                contentAdapter.clear()
+                if (contentMode == ContentMode.TV_SHOWS) {
+                    state.tvShows.forEach(contentAdapter::add)
+                } else {
+                    state.movies.forEach(contentAdapter::add)
+                }
             }
             rebuildRows()
         } else if (contentAdapter.size() > 0) {

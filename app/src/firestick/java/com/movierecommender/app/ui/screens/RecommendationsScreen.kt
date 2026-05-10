@@ -63,6 +63,7 @@ fun RecommendationsScreen(
     onWatchNow: (title: String, magnetUrl: String) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var showStartOverConfirm by remember { mutableStateOf(false) }
     
     val isTvMode = uiState.contentMode == ContentMode.TV_SHOWS
     val hasSelections = if (isTvMode) uiState.selectedTvShows.isNotEmpty() else uiState.selectedMovies.isNotEmpty()
@@ -120,9 +121,7 @@ fun RecommendationsScreen(
                         icon = Icons.Default.Refresh,
                         label = "Start over",
                         onClick = {
-                            if (isTvMode) viewModel.clearTvShowSelections()
-                            else viewModel.clearSelections()
-                            onStartOver()
+                            showStartOverConfirm = true
                         },
                         emphasized = true
                     )
@@ -308,6 +307,31 @@ fun RecommendationsScreen(
                 }
             }
         }
+    }
+
+    if (showStartOverConfirm) {
+        AlertDialog(
+            onDismissRequest = { showStartOverConfirm = false },
+            title = { Text("Start Over?") },
+            text = { Text("This will clear your current picks and return to title selection.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showStartOverConfirm = false
+                        if (isTvMode) viewModel.clearTvShowSelections()
+                        else viewModel.clearSelections()
+                        onStartOver()
+                    }
+                ) {
+                    Text("Clear Picks")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStartOverConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

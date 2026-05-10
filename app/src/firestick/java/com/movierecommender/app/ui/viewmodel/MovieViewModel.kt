@@ -191,7 +191,11 @@ class MovieViewModel(
      * @param consented true if user accepts AI recommendations, false if declined
      */
     fun onLlmConsentResponse(consented: Boolean) {
-        _uiState.value = _uiState.value.copy(showLlmConsentDialog = false)
+        _uiState.value = _uiState.value.copy(
+            showLlmConsentDialog = false,
+            llmConsentGiven = consented,
+            llmConsentAsked = true
+        )
         viewModelScope.launch {
             settings.setLlmConsent(consented)
         }
@@ -815,6 +819,14 @@ class MovieViewModel(
     fun updateDarkMode(isDark: Boolean) {
         _uiState.value = _uiState.value.copy(isDarkMode = isDark)
         viewModelScope.launch { settings.setDarkMode(isDark) }
+    }
+
+    fun updateUseAiRecommendations(useAi: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            llmConsentGiven = useAi,
+            llmConsentAsked = true
+        )
+        viewModelScope.launch { settings.setLlmConsent(useAi) }
     }
 
     // IMDb rating helper

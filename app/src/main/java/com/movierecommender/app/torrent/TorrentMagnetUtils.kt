@@ -17,7 +17,11 @@ object TorrentMagnetUtils {
         "udp://tracker.torrent.eu.org:451/announce",
         "udp://exodus.desync.com:6969/announce",
         "udp://tracker.moeking.me:6969/announce",
-        "udp://tracker.tryhackx.org:6969/announce"
+        "udp://tracker.tryhackx.org:6969/announce",
+        "udp://tracker.openbittorrent.com:80/announce",
+        "udp://tracker.internetwarriors.net:1337/announce",
+        "udp://tracker.leechers-paradise.org:6969/announce",
+        "udp://tracker.tiny-vps.com:6969/announce"
     )
 
     fun enrichMagnetUrl(magnetUrl: String): String {

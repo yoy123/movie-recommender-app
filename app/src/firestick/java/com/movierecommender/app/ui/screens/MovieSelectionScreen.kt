@@ -197,16 +197,15 @@ fun MovieSelectionScreen(
                             LeanbackTextButton(
                                 label = "Analyze Picks",
                                 onClick = {
-                                    if (isTvMode) {
-                                        viewModel.generateTvRecommendations()
-                                        onGenerateRecommendations()
+                                    if (!uiState.llmConsentAsked) {
+                                        viewModel.checkAndShowLlmConsentIfNeeded()
                                     } else {
-                                        if (!uiState.llmConsentAsked) {
-                                            viewModel.checkAndShowLlmConsentIfNeeded()
+                                        if (isTvMode) {
+                                            viewModel.generateTvRecommendations()
                                         } else {
                                             viewModel.generateRecommendations()
-                                            onGenerateRecommendations()
                                         }
+                                        onGenerateRecommendations()
                                     }
                                 },
                                 emphasized = true
@@ -258,7 +257,7 @@ fun MovieSelectionScreen(
                     ) {
                         if (isTvMode) {
                             // TV Shows grid
-                            items(uiState.tvShows) { tvShow ->
+                            items(uiState.tvShows, key = { it.id }) { tvShow ->
                                 TvShowCard(
                                     tvShow = tvShow,
                                     isSelected = uiState.selectedTvShows.any { it.id == tvShow.id },
@@ -269,7 +268,7 @@ fun MovieSelectionScreen(
                             }
                         } else {
                             // Movies grid
-                            items(uiState.movies) { movie ->
+                            items(uiState.movies, key = { it.id }) { movie ->
                                 MovieCard(
                                     movie = movie,
                                     isSelected = uiState.selectedMovies.any { it.id == movie.id },
@@ -296,6 +295,8 @@ fun MovieSelectionScreen(
             currentUserName = uiState.userName,
             onPreferenceChange = { viewModel.updateIndiePreference(it) },
             onUserNameChange = { viewModel.updateUserName(it) },
+            useAiRecommendations = uiState.llmConsentGiven,
+            onUseAiRecommendationsChange = { viewModel.updateUseAiRecommendations(it) },
             useIndiePreference = uiState.useIndiePreference,
             usePopularityPreference = uiState.usePopularityPreference,
             releaseYearStart = uiState.releaseYearStart,
@@ -332,13 +333,21 @@ fun MovieSelectionScreen(
             onAccept = {
                 viewModel.onLlmConsentResponse(consented = true)
                 // After consent, proceed to generate recommendations
-                viewModel.generateRecommendations()
+                if (uiState.contentMode == ContentMode.TV_SHOWS) {
+                    viewModel.generateTvRecommendations()
+                } else {
+                    viewModel.generateRecommendations()
+                }
                 onGenerateRecommendations()
             },
             onDecline = {
                 viewModel.onLlmConsentResponse(consented = false)
                 // Still generate recommendations, but will use TMDB fallback
-                viewModel.generateRecommendations()
+                if (uiState.contentMode == ContentMode.TV_SHOWS) {
+                    viewModel.generateTvRecommendations()
+                } else {
+                    viewModel.generateRecommendations()
+                }
                 onGenerateRecommendations()
             },
             onDismiss = {

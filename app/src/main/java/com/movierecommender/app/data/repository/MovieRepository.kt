@@ -2208,6 +2208,10 @@ class MovieRepository(
         }
     }
 
+    private fun hasLivePeers(torrent: TorrentInfo): Boolean {
+        return (torrent.seeds ?: 0) > 0 || (torrent.peers ?: 0) > 0
+    }
+
     /**
      * Get torrent information for a movie by title and year.
      * Tries multiple sources (YTS, Popcorn API) with fallback.
@@ -2226,7 +2230,7 @@ class MovieRepository(
             }
             if (ytsMovie != null) {
                 val torrent = ytsApi.getSmallestTorrent(ytsMovie)
-                if (torrent != null && (torrent.seeds ?: 0) > 0) {
+                if (torrent != null && hasLivePeers(torrent)) {
                     android.util.Log.d("MovieRepository", "Found YTS torrent: ${torrent.quality} (${torrent.size}) with ${torrent.seeds} seeds")
                     return@withContext torrent
                 }
@@ -2245,7 +2249,7 @@ class MovieRepository(
             }
             if (popcornMovie != null) {
                 val torrent = popcornApi.getSmallestTorrent(popcornMovie)
-                if (torrent != null) {
+                if (torrent != null && hasLivePeers(torrent)) {
                     android.util.Log.d("MovieRepository", "Found Popcorn torrent: ${torrent.quality} (${torrent.size}) with ${torrent.seeds} seeds")
                     return@withContext torrent
                 }
@@ -2263,8 +2267,10 @@ class MovieRepository(
                 pirateBayApi.searchMovie(title, year)
             }
             if (pirateBayTorrent != null) {
-                android.util.Log.d("MovieRepository", "Found PirateBay torrent: ${pirateBayTorrent.quality} (${pirateBayTorrent.size}) with ${pirateBayTorrent.seeds} seeds")
-                return@withContext pirateBayTorrent
+                if (hasLivePeers(pirateBayTorrent)) {
+                    android.util.Log.d("MovieRepository", "Found PirateBay torrent: ${pirateBayTorrent.quality} (${pirateBayTorrent.size}) with ${pirateBayTorrent.seeds} seeds")
+                    return@withContext pirateBayTorrent
+                }
             }
             android.util.Log.d("MovieRepository", "No PirateBay torrent found, trying TorrentGalaxy...")
         } catch (e: Exception) {
@@ -2274,7 +2280,7 @@ class MovieRepository(
         // Fallback to TorrentGalaxy
         try {
             val tgxTorrent = torrentGalaxyApi.searchMovie(title, year)
-            if (tgxTorrent != null) {
+            if (tgxTorrent != null && hasLivePeers(tgxTorrent)) {
                 android.util.Log.d("MovieRepository", "Found TorrentGalaxy torrent: ${tgxTorrent.quality} (${tgxTorrent.size}) with ${tgxTorrent.seeds} seeds")
                 return@withContext tgxTorrent
             }
@@ -2286,7 +2292,7 @@ class MovieRepository(
         // Fallback to 1337x
         try {
             val leetxTorrent = leetxApi.searchMovie(title, year)
-            if (leetxTorrent != null) {
+            if (leetxTorrent != null && hasLivePeers(leetxTorrent)) {
                 android.util.Log.d("MovieRepository", "Found 1337x torrent: ${leetxTorrent.quality} (${leetxTorrent.size}) with ${leetxTorrent.seeds} seeds")
                 return@withContext leetxTorrent
             }

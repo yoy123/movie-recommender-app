@@ -306,6 +306,8 @@ fun GenreSelectionScreen(
             currentUserName = uiState.userName,
             onPreferenceChange = { viewModel.updateIndiePreference(it) },
             onUserNameChange = { viewModel.updateUserName(it) },
+            useAiRecommendations = uiState.llmConsentGiven,
+            onUseAiRecommendationsChange = { viewModel.updateUseAiRecommendations(it) },
             // Toggles and values
             useIndiePreference = uiState.useIndiePreference,
             usePopularityPreference = uiState.usePopularityPreference,
@@ -515,6 +517,8 @@ fun PreferenceSettingsDialog(
     onPreferenceChange: (Float) -> Unit,
     onUserNameChange: (String) -> Unit,
     onDismiss: () -> Unit,
+    useAiRecommendations: Boolean = false,
+    onUseAiRecommendationsChange: (Boolean) -> Unit = {},
     // All preference values
     useIndiePreference: Boolean = true,
     usePopularityPreference: Boolean = true,
@@ -645,6 +649,42 @@ fun PreferenceSettingsDialog(
                             checked = isDarkMode,
                             onCheckedChange = onDarkModeChange,
                             interactionSource = switchInteraction,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 24.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Recommendation Engine",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = if (useAiRecommendations) "AI Recommendations" else "TMDB Recommendations",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    val recommendationSwitchInteraction = remember { MutableInteractionSource() }
+                    val recommendationSwitchFocused by recommendationSwitchInteraction.collectIsFocusedAsState()
+
+                    Surface(
+                        modifier = Modifier.padding(4.dp),
+                        shape = MaterialTheme.shapes.small,
+                        border = if (recommendationSwitchFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
+                        color = if (recommendationSwitchFocused) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                    ) {
+                        Switch(
+                            checked = useAiRecommendations,
+                            onCheckedChange = onUseAiRecommendationsChange,
+                            interactionSource = recommendationSwitchInteraction,
                             modifier = Modifier.padding(8.dp)
                         )
                     }
