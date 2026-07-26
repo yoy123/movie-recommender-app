@@ -13,6 +13,8 @@
 | YTS | Movie torrent lookup | None | Active |
 | Popcorn movie API | Movie torrent lookup | None | Active |
 | Torznab | Configurable movie and TV torrent lookup through authorized Jackett/Prowlarr endpoints | API key | Optional |
+| Internet Archive | Curated downloadable feature-film torrents | None | Active fallback |
+| Public Domain Torrents | Public-domain movie torrents | None | Active fallback |
 | Pirate Bay adapter | Movie torrent lookup | None | Active fallback |
 | TorrentGalaxy adapter | Movie torrent lookup | None | Active fallback |
 | 1337x adapter | Movie torrent lookup | None | Active fallback |
@@ -138,15 +140,17 @@ Because IMDb HTML is not a stable API contract, scraper failure must remain non-
 1. YTS
 2. Popcorn movie API
 3. Configured Torznab endpoints
-4. Pirate Bay adapter
-5. TorrentGalaxy adapter
-6. 1337x adapter (`LeetxService`)
+4. Internet Archive Feature Films
+5. Public Domain Torrents
+6. Pirate Bay adapter
+7. TorrentGalaxy adapter
+8. 1337x adapter (`LeetxService`)
 
-IMDb ID is resolved through TMDB where useful. A torrent is returned only when it reports at least one seed or peer.
+IMDb ID is resolved through TMDB where useful. Swarm API results must report at least one seed or peer. Internet Archive and Public Domain Torrents instead return verified HTTPS `.torrent` files; Archive-generated torrents include HTTP web seeds and neither catalog exposes live swarm counts.
 
 ### Selection objective
 
-YTS and Popcorn generally prefer the smallest available file for faster startup. Later fallback services return their own scored best match.
+YTS and Popcorn generally prefer the smallest available file for faster startup. Internet Archive requires a close title match and rejects dark items. Public Domain Torrents requires an exact normalized title, cross-checks IMDb IDs when available, and prefers its largest MP4 variant for player compatibility.
 
 ### Reliability
 

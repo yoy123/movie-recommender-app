@@ -114,11 +114,14 @@ Movie torrent search tries:
 
 1. YTS
 2. Popcorn movie API
-3. Pirate Bay adapter
-4. TorrentGalaxy
-5. 1337x adapter
+3. configured Torznab endpoints
+4. Internet Archive
+5. Public Domain Torrents
+6. Pirate Bay adapter
+7. TorrentGalaxy
+8. 1337x adapter
 
-Only results reporting live peers are accepted.
+Swarm API results must report live peers. Public-domain catalog results use verified HTTPS `.torrent` downloads.
 
 ## TV Episode Browsing
 

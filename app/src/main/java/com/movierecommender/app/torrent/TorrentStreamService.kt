@@ -48,6 +48,10 @@ class TorrentStreamService : Service(), TorrentListener {
         private const val PRIORITY_LOOKAHEAD_MS = 15L * 60L * 1000L
         private const val BYTES_PER_MB = 1024L * 1024L
 
+        private fun allocatedFileBytes(file: File): Long = runCatching {
+            Os.stat(file.absolutePath).st_blocks * 512L
+        }.getOrElse { file.length() }
+
         /**
          * Returns the total size the current session cache may reach while preserving 500 MB of
          * genuinely available storage. Existing cache bytes are included in the total allowance.
@@ -59,7 +63,7 @@ class TorrentStreamService : Service(), TorrentListener {
                 val freeSpaceMb = statFs.availableBytes / BYTES_PER_MB
                 val existingCacheMb = cacheDir.walkTopDown()
                     .filter { it.isFile }
-                    .sumOf { it.length() } / BYTES_PER_MB
+                    .sumOf { allocatedFileBytes(it) } / BYTES_PER_MB
                 val limit = TorrentBufferPolicy.calculateCacheLimitMb(freeSpaceMb, existingCacheMb)
                 android.util.Log.d(
                     TAG,
@@ -365,7 +369,9 @@ class TorrentStreamService : Service(), TorrentListener {
     }
 
     private fun getCacheSizeInMb(directory: File): Int =
-        (directory.walkTopDown().filter { it.isFile }.sumOf { it.length() } / BYTES_PER_MB).toInt()
+        (directory.walkTopDown()
+            .filter { it.isFile }
+            .sumOf { allocatedFileBytes(it) } / BYTES_PER_MB).toInt()
 
     private fun timeToByteOffset(positionMs: Long, durationMs: Long, fileSize: Long): Long {
         if (durationMs <= 0L || fileSize <= 0L) return 0L
@@ -448,6 +454,11 @@ class TorrentStreamService : Service(), TorrentListener {
         val videoFile = torrent?.videoFile ?: return
         val videoPath = videoFile.absolutePath
         val fileSize = videoFile.length()
+        if (fileSize <= 0L) {
+            pauseDownloadInternal()
+            _streamState.value = TorrentStreamState.Error("The torrent video file has no readable size.")
+            return
+        }
         if (currentPlaybackDuration <= 0L) {
             currentPlaybackDuration = readDurationMs(videoPath)
         }

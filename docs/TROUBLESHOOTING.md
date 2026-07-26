@@ -114,15 +114,18 @@ Fallback order:
 
 1. YTS
 2. Popcorn movie API
-3. Pirate Bay adapter
-4. TorrentGalaxy
-5. 1337x adapter
+3. configured Torznab endpoints
+4. Internet Archive
+5. Public Domain Torrents
+6. Pirate Bay adapter
+7. TorrentGalaxy
+8. 1337x adapter
 
-A result with zero seeds and zero peers is rejected.
+A swarm API result with zero seeds and zero peers is rejected. Internet Archive and Public Domain Torrents use direct HTTPS `.torrent` files and do not provide peer counts.
 
 ### TV episode
 
-Popcorn TV and EZTV are queried when possible. No result may mean:
+Popcorn TV, EZTV, and configured Torznab endpoints are queried when possible. No result may mean:
 
 - IMDb ID resolution failed
 - source unavailable

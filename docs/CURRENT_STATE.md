@@ -107,16 +107,20 @@ Fallback order:
 
 1. YTS
 2. Popcorn movie API
-3. Pirate Bay API
-4. TorrentGalaxy
-5. 1337x adapter
+3. configured Torznab endpoints
+4. Internet Archive
+5. Public Domain Torrents
+6. Pirate Bay API
+7. TorrentGalaxy
+8. 1337x adapter
 
-A result must report live peers before it is returned.
+Swarm API results must report live peers. The public-domain catalogs provide verified HTTPS `.torrent` downloads without peer-count metadata.
 
 ### TV torrent discovery
 
 - Popcorn TV
 - EZTV
+- configured Torznab endpoints
 
 Episode lookups query both sources concurrently when possible and select the result with the highest seed count.
 

@@ -173,15 +173,18 @@ Fallback order:
 
 1. YTS
 2. Popcorn movie API
-3. Pirate Bay API
-4. TorrentGalaxy
-5. 1337x adapter
+3. configured Torznab endpoints
+4. Internet Archive
+5. Public Domain Torrents
+6. Pirate Bay API
+7. TorrentGalaxy
+8. 1337x adapter
 
-Returned results must report at least one seed or peer.
+Swarm API results must report at least one seed or peer. The two public-domain catalogs return verified HTTPS `.torrent` files without swarm-count metadata.
 
 ### TV episodes
 
-Popcorn TV and EZTV are queried concurrently when possible. The repository selects the result with the highest seed count. Season and episode lists merge both sources.
+Popcorn TV, EZTV, and configured Torznab endpoints are queried concurrently when possible. The repository selects the result with the highest seed count. Season and episode lists merge Popcorn TV and EZTV.
 
 ## Playback
 

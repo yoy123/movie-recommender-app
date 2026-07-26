@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import android.provider.Settings
+import android.system.Os
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,13 +32,24 @@ object TorrentCachePolicy {
     private const val KEY_ACTIVE_MAGNET_HASH = "active_magnet_hash"
     private const val KEY_RETAIN_UNTIL = "retain_until"
     private const val KEY_BOOT_COUNT = "boot_count"
+    private const val KEY_PROCESS_ACTIVE = "process_active"
     private const val EXPIRY_REQUEST_CODE = 9102
+
+    @Volatile
+    private var initializedThisProcess = false
 
     fun cacheDirectory(context: Context): File =
         File(context.applicationContext.cacheDir, CACHE_DIRECTORY_NAME)
 
-    /** Clears cache left by a reboot or an expired retention window. */
+    /**
+     * Clears cache left by a reboot, an expired retention window, or a previous process that ended
+     * without the normal task-removal callback (for example Force stop or process termination).
+     */
+    @Synchronized
     fun initialize(context: Context) {
+        if (initializedThisProcess) return
+        initializedThisProcess = true
+
         val appContext = context.applicationContext
         val prefs = appContext.getSharedPreferences(SESSION_PREFS, Context.MODE_PRIVATE)
         val currentBootCount = readBootCount(appContext)
@@ -45,12 +57,19 @@ object TorrentCachePolicy {
         val retainUntil = prefs.getLong(KEY_RETAIN_UNTIL, 0L)
         val rebooted = storedBootCount != Int.MIN_VALUE && storedBootCount != currentBootCount
         val expired = retainUntil > 0L && System.currentTimeMillis() >= retainUntil
+        val previousProcessEnded = prefs.getBoolean(KEY_PROCESS_ACTIVE, false)
 
         when {
             rebooted -> clearCacheAndPlayback(appContext, "device reboot detected")
             expired -> clearCacheAndPlayback(appContext, "60-minute retention expired")
-            else -> prefs.edit().putInt(KEY_BOOT_COUNT, currentBootCount).apply()
+            previousProcessEnded -> clearCacheAndPlayback(appContext, "previous app process ended")
         }
+
+        appContext.getSharedPreferences(SESSION_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_BOOT_COUNT, currentBootCount)
+            .putBoolean(KEY_PROCESS_ACTIVE, true)
+            .apply()
     }
 
     fun markActive(context: Context, magnetHash: Int) {
@@ -61,6 +80,7 @@ object TorrentCachePolicy {
             .putInt(KEY_ACTIVE_MAGNET_HASH, magnetHash)
             .putLong(KEY_RETAIN_UNTIL, 0L)
             .putInt(KEY_BOOT_COUNT, readBootCount(appContext))
+            .putBoolean(KEY_PROCESS_ACTIVE, true)
             .apply()
     }
 
@@ -72,6 +92,7 @@ object TorrentCachePolicy {
             .putInt(KEY_ACTIVE_MAGNET_HASH, magnetHash)
             .putLong(KEY_RETAIN_UNTIL, retainUntil)
             .putInt(KEY_BOOT_COUNT, readBootCount(appContext))
+            .putBoolean(KEY_PROCESS_ACTIVE, true)
             .apply()
         scheduleExpiry(appContext)
         return retainUntil
@@ -106,6 +127,7 @@ object TorrentCachePolicy {
         sessionPrefs.edit()
             .clear()
             .putInt(KEY_BOOT_COUNT, readBootCount(appContext))
+            .putBoolean(KEY_PROCESS_ACTIVE, false)
             .commit()
         Log.i(TAG, "Torrent cache cleared: $reason")
     }
@@ -115,7 +137,10 @@ object TorrentCachePolicy {
         if (!cacheDir.exists()) return 0L
         return cacheDir.walkTopDown()
             .filter { it.isFile }
-            .sumOf { it.length() }
+            .sumOf { file ->
+                runCatching { Os.stat(file.absolutePath).st_blocks * 512L }
+                    .getOrElse { file.length() }
+            }
     }
 
     private fun scheduleExpiry(context: Context) {

@@ -12,6 +12,7 @@ import org.w3c.dom.Element
 import org.xml.sax.InputSource
 import java.io.StringReader
 import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
@@ -28,6 +29,8 @@ class TorznabService(config: String) {
         private const val TIMEOUT_SECONDS = 15L
         private const val MOVIE_CATEGORY = "2000"
         private const val TV_CATEGORY = "5000"
+        private const val SHOW_INVENTORY_LIMIT = 100
+        private const val INVENTORY_CACHE_TTL_MS = 5 * 60 * 1000L
     }
 
     private val sources = TorznabSourceConfig.parse(config)
@@ -36,6 +39,7 @@ class TorznabService(config: String) {
         .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
+    private val episodeInventoryCache = ConcurrentHashMap<String, CachedTorznabInventory>()
 
     val isConfigured: Boolean
         get() = sources.isNotEmpty()
@@ -96,6 +100,34 @@ class TorznabService(config: String) {
         )
     }
 
+    /**
+     * Enumerates episodes exposed by every configured Torznab endpoint.
+     * Results are cached briefly because the season picker and episode picker
+     * request the same show inventory in succession.
+     */
+    suspend fun getShowEpisodes(imdbId: String): List<TorznabEpisodeInfo> = withContext(Dispatchers.IO) {
+        if (sources.isEmpty()) return@withContext emptyList()
+
+        val normalizedImdbId = imdbId.lowercase().removePrefix("tt")
+        val now = System.currentTimeMillis()
+        episodeInventoryCache[normalizedImdbId]
+            ?.takeIf { now - it.createdAtMs < INVENTORY_CACHE_TTL_MS }
+            ?.let { return@withContext it.episodes }
+
+        val matches = fetchMatches(
+            TorznabQuery(
+                type = "tvsearch",
+                query = "",
+                category = TV_CATEGORY,
+                imdbId = imdbId,
+                limit = SHOW_INVENTORY_LIMIT
+            )
+        )
+        val episodes = TorznabEpisodeInventory.aggregate(matches)
+        episodeInventoryCache[normalizedImdbId] = CachedTorznabInventory(now, episodes)
+        episodes
+    }
+
     private suspend fun search(
         query: TorznabQuery,
         title: String,
@@ -104,35 +136,38 @@ class TorznabService(config: String) {
     ): TorznabMatch? = withContext(Dispatchers.IO) {
         if (sources.isEmpty()) return@withContext null
 
-        val matches = coroutineScope {
-            sources.map { source ->
-                async {
-                    try {
-                        fetch(source, query).map { TorznabMatch(source, it) }
-                    } catch (e: Exception) {
-                        android.util.Log.w("Torznab", "${source.name} search failed: ${e.message}")
-                        emptyList()
-                    }
-                }
-            }.awaitAll().flatten()
-        }
+        val matches = fetchMatches(query)
 
         matches
             .filter { it.result.seeders > 0 || it.result.peers > 0 }
             .maxByOrNull { score(it.result, title, year, preferredQuality) }
     }
 
+    private suspend fun fetchMatches(query: TorznabQuery): List<TorznabMatch> = coroutineScope {
+        sources.map { source ->
+            async {
+                try {
+                    fetch(source, query).map { TorznabMatch(source, it) }
+                } catch (e: Exception) {
+                    android.util.Log.w("Torznab", "${source.name} search failed: ${e.message}")
+                    emptyList()
+                }
+            }
+        }.awaitAll().flatten()
+    }
+
     private fun fetch(source: TorznabSource, query: TorznabQuery): List<TorznabResult> {
         val baseUrl = source.endpoint.toHttpUrlOrNull() ?: return emptyList()
         val url = baseUrl.newBuilder()
             .addQueryParameter("t", query.type)
-            .addQueryParameter("q", query.query)
             .addQueryParameter("cat", query.category)
             .apply {
+                if (query.query.isNotBlank()) addQueryParameter("q", query.query)
                 if (source.apiKey.isNotBlank()) addQueryParameter("apikey", source.apiKey)
                 if (!query.imdbId.isNullOrBlank()) addQueryParameter("imdbid", query.imdbId)
                 query.season?.let { addQueryParameter("season", it.toString()) }
                 query.episode?.let { addQueryParameter("ep", it.toString()) }
+                query.limit?.let { addQueryParameter("limit", it.toString()) }
             }
             .build()
 
@@ -220,14 +255,14 @@ internal object TorznabFeedParser {
         return buildList {
             for (index in 0 until items.length) {
                 val item = items.item(index) as? Element ?: continue
-                parseItem(item)?.let(::add)
+                addAll(parseItems(item))
             }
         }
     }
 
-    private fun parseItem(item: Element): TorznabResult? {
+    private fun parseItems(item: Element): List<TorznabResult> {
         val title = item.firstText("title")?.trim().orEmpty()
-        if (title.isBlank()) return null
+        if (title.isBlank()) return emptyList()
 
         val attributes = mutableMapOf<String, String>()
         val descendants = item.getElementsByTagName("*")
@@ -254,21 +289,62 @@ internal object TorznabFeedParser {
                 val encodedTitle = URLEncoder.encode(title, "UTF-8")
                 "magnet:?xt=urn:btih:$hash&dn=$encodedTitle"
             }
-            ?: return null
+            ?: return emptyList()
 
         val sizeBytes = attributes["size"]?.toLongOrNull()
             ?: item.firstText("size")?.trim()?.toLongOrNull()
+        val episodeKeys = extractEpisodeKeys(attributes["season"], attributes["episode"], title)
+            .ifEmpty { listOf(null to null) }
 
-        return TorznabResult(
-            title = title,
-            magnetUrl = magnetUrl.replace("&amp;", "&"),
-            seeders = attributes["seeders"]?.toIntOrNull() ?: 0,
-            peers = attributes["peers"]?.toIntOrNull()
-                ?: attributes["leechers"]?.toIntOrNull()
-                ?: 0,
-            sizeBytes = sizeBytes,
-            quality = detectQuality(title)
+        return episodeKeys.map { (season, episode) ->
+            TorznabResult(
+                title = title,
+                magnetUrl = magnetUrl.replace("&amp;", "&"),
+                seeders = attributes["seeders"]?.toIntOrNull() ?: 0,
+                peers = attributes["peers"]?.toIntOrNull()
+                    ?: attributes["leechers"]?.toIntOrNull()
+                    ?: 0,
+                sizeBytes = sizeBytes,
+                quality = detectQuality(title),
+                season = season,
+                episode = episode
+            )
+        }
+    }
+
+    internal fun extractEpisodeKeys(
+        seasonAttribute: String?,
+        episodeAttribute: String?,
+        title: String
+    ): List<Pair<Int, Int>> {
+        val attributeSeason = seasonAttribute?.toIntOrNull()
+        val attributeEpisodes = episodeAttribute
+            ?.let { Regex("\\d+").findAll(it).mapNotNull { match -> match.value.toIntOrNull() }.toList() }
+            .orEmpty()
+        if (attributeSeason != null && attributeEpisodes.isNotEmpty()) {
+            return attributeEpisodes.map { attributeSeason to it }.distinct()
+        }
+
+        val keys = mutableListOf<Pair<Int, Int>>()
+        val seasonBlocks = Regex(
+            """\bS(\d{1,2})((?:[ ._-]*E\d{1,3})+)""",
+            RegexOption.IGNORE_CASE
         )
+        seasonBlocks.findAll(title).forEach { block ->
+            val season = block.groupValues[1].toIntOrNull() ?: return@forEach
+            Regex("""E(\d{1,3})""", RegexOption.IGNORE_CASE)
+                .findAll(block.groupValues[2])
+                .mapNotNull { it.groupValues[1].toIntOrNull() }
+                .forEach { episode -> keys += season to episode }
+        }
+        Regex("""\b(\d{1,2})x(\d{1,3})\b""", RegexOption.IGNORE_CASE)
+            .findAll(title)
+            .forEach { match ->
+                val season = match.groupValues[1].toIntOrNull() ?: return@forEach
+                val episode = match.groupValues[2].toIntOrNull() ?: return@forEach
+                keys += season to episode
+            }
+        return keys.distinct()
     }
 
     private fun Element.firstText(tagName: String): String? {
@@ -307,7 +383,9 @@ internal data class TorznabResult(
     val seeders: Int,
     val peers: Int,
     val sizeBytes: Long?,
-    val quality: String
+    val quality: String,
+    val season: Int?,
+    val episode: Int?
 )
 
 private data class TorznabQuery(
@@ -316,10 +394,76 @@ private data class TorznabQuery(
     val category: String,
     val imdbId: String? = null,
     val season: Int? = null,
-    val episode: Int? = null
+    val episode: Int? = null,
+    val limit: Int? = null
 )
 
-private data class TorznabMatch(
+internal data class TorznabMatch(
     val source: TorznabSource,
     val result: TorznabResult
+)
+
+internal object TorznabEpisodeInventory {
+    fun aggregate(matches: List<TorznabMatch>): List<TorznabEpisodeInfo> {
+        return matches
+            .filter { match ->
+                val season = match.result.season
+                val episode = match.result.episode
+                season != null && season >= 0 && episode != null && episode > 0
+            }
+            .groupBy { requireNotNull(it.result.season) to requireNotNull(it.result.episode) }
+            .map { (key, episodeMatches) ->
+                val torrents = episodeMatches
+                    .sortedWith(
+                        compareByDescending<TorznabMatch> { it.result.seeders }
+                            .thenByDescending { it.result.peers }
+                    )
+                    .distinctBy { magnetIdentity(it.result.magnetUrl) }
+                    .map { match ->
+                        TorznabEpisodeTorrent(
+                            magnetUrl = match.result.magnetUrl,
+                            quality = match.result.quality,
+                            seeds = match.result.seeders,
+                            peers = match.result.peers,
+                            provider = "Torznab (${match.source.name})",
+                            releaseTitle = match.result.title
+                        )
+                    }
+                TorznabEpisodeInfo(
+                    season = key.first,
+                    episode = key.second,
+                    torrents = torrents
+                )
+            }
+            .sortedWith(compareBy<TorznabEpisodeInfo> { it.season }.thenBy { it.episode })
+    }
+
+    private fun magnetIdentity(magnetUrl: String): String {
+        return Regex("""(?i)xt=urn:btih:([^&]+)""")
+            .find(magnetUrl)
+            ?.groupValues
+            ?.get(1)
+            ?.lowercase()
+            ?: magnetUrl
+    }
+}
+
+data class TorznabEpisodeInfo(
+    val season: Int,
+    val episode: Int,
+    val torrents: List<TorznabEpisodeTorrent>
+)
+
+data class TorznabEpisodeTorrent(
+    val magnetUrl: String,
+    val quality: String,
+    val seeds: Int,
+    val peers: Int,
+    val provider: String,
+    val releaseTitle: String
+)
+
+private data class CachedTorznabInventory(
+    val createdAtMs: Long,
+    val episodes: List<TorznabEpisodeInfo>
 )

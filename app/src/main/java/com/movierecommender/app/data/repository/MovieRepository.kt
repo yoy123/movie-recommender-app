@@ -22,6 +22,7 @@ import com.movierecommender.app.data.remote.TorrentGalaxyService
 import com.movierecommender.app.data.remote.LeetxService
 import com.movierecommender.app.data.remote.TorznabService
 import com.movierecommender.app.data.remote.InternetArchiveService
+import com.movierecommender.app.data.remote.PublicDomainTorrentsService
 import com.movierecommender.app.data.remote.TorrentInfo
 import com.movierecommender.app.data.remote.EpisodeTorrentInfo
 import com.movierecommender.app.data.remote.StreamingAppRegistry
@@ -65,7 +66,8 @@ class MovieRepository(
     private val torrentGalaxyApi: TorrentGalaxyService = TorrentGalaxyService(),
     private val leetxApi: LeetxService = LeetxService(),
     private val torznabApi: TorznabService = TorznabService(BuildConfig.TORZNAB_SOURCES),
-    private val internetArchiveApi: InternetArchiveService = InternetArchiveService()
+    private val internetArchiveApi: InternetArchiveService = InternetArchiveService(),
+    private val publicDomainTorrentsApi: PublicDomainTorrentsService = PublicDomainTorrentsService()
 ) {
     
     // OpenAI API key from BuildConfig
@@ -2309,6 +2311,21 @@ class MovieRepository(
             android.util.Log.w("MovieRepository", "Internet Archive search failed: ${e.message}")
         }
 
+        // Public Domain Torrents also hosts HTTPS torrent files without swarm-count metadata.
+        try {
+            val publicDomainTorrent = publicDomainTorrentsApi.searchMovie(title, imdbId)
+            if (publicDomainTorrent != null) {
+                android.util.Log.d(
+                    "MovieRepository",
+                    "Found Public Domain Torrents download: ${publicDomainTorrent.quality} (${publicDomainTorrent.size})"
+                )
+                return@withContext publicDomainTorrent
+            }
+            android.util.Log.d("MovieRepository", "No Public Domain Torrents download found")
+        } catch (e: Exception) {
+            android.util.Log.w("MovieRepository", "Public Domain Torrents search failed: ${e.message}")
+        }
+
         // Fallback to PirateBay
         try {
             val pirateBayTorrent = if (imdbId != null) {
@@ -2464,7 +2481,7 @@ class MovieRepository(
     
     /**
      * Get available seasons for a TV show.
-     * Aggregates from ALL torrent APIs (Popcorn TV + EZTV) and merges/deduplicates.
+        * Aggregates from all TV-capable torrent APIs and merges/deduplicates.
      */
     suspend fun getTvShowSeasons(imdbId: String): List<Int> = withContext(Dispatchers.IO) {
         val allSeasons = mutableSetOf<Int>()
@@ -2496,8 +2513,24 @@ class MovieRepository(
                 }
             }
 
+            val torznabJob = async {
+                if (!torznabApi.isConfigured) return@async emptyList()
+                try {
+                    val seasons = torznabApi.getShowEpisodes(imdbId)
+                        .map { it.season }
+                        .distinct()
+                        .sorted()
+                    android.util.Log.d("MovieRepository", "Torznab seasons for $imdbId: $seasons")
+                    seasons
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "Torznab seasons lookup failed: ${e.message}")
+                    emptyList()
+                }
+            }
+
             allSeasons.addAll(popcornJob.await())
             allSeasons.addAll(eztvJob.await())
+            allSeasons.addAll(torznabJob.await())
         }
 
         android.util.Log.d("MovieRepository", "Aggregated seasons for $imdbId: ${allSeasons.sorted()}")
@@ -2506,12 +2539,11 @@ class MovieRepository(
     
     /**
      * Get episodes for a specific season of a TV show.
-     * Aggregates from ALL torrent APIs (Popcorn TV + EZTV) and merges by episode number.
+     * Aggregates from all TV-capable torrent APIs and merges by episode number.
      * Episodes found in multiple sources get combined torrent info.
      */
     suspend fun getTvShowEpisodes(imdbId: String, season: Int): List<PopcornEpisode> = withContext(Dispatchers.IO) {
-        // Query both APIs in parallel
-        val (popcornEpisodes, eztvEpisodes) = coroutineScope {
+        val (popcornEpisodes, eztvEpisodes, torznabEpisodes) = coroutineScope {
             val popcornJob = async {
             try {
                 val showDetails = popcornTvApi.getShowDetails(imdbId)
@@ -2557,7 +2589,40 @@ class MovieRepository(
             }
         }
 
-            Pair(popcornJob.await(), eztvJob.await())
+        val torznabJob = async {
+            if (!torznabApi.isConfigured) return@async emptyList()
+            try {
+                val episodes = torznabApi.getShowEpisodes(imdbId)
+                    .filter { it.season == season }
+                    .map { torznabEpisode ->
+                        val torrents = torznabEpisode.torrents.mapIndexed { index, torrent ->
+                            val quality = torrent.quality.ifBlank { "Unknown" }
+                            "torznab_${quality}_$index" to PopcornEpisodeTorrent(
+                                provider = torrent.provider,
+                                seeds = torrent.seeds,
+                                peers = torrent.peers,
+                                url = torrent.magnetUrl
+                            )
+                        }.toMap()
+                        PopcornEpisode(
+                            tvdbId = null,
+                            season = torznabEpisode.season,
+                            episode = torznabEpisode.episode,
+                            title = "Episode ${torznabEpisode.episode}",
+                            overview = null,
+                            firstAired = null,
+                            torrents = torrents
+                        )
+                    }
+                android.util.Log.d("MovieRepository", "Torznab found ${episodes.size} episodes for S$season")
+                episodes
+            } catch (e: Exception) {
+                android.util.Log.w("MovieRepository", "Torznab episodes lookup failed: ${e.message}")
+                emptyList()
+            }
+        }
+
+            Triple(popcornJob.await(), eztvJob.await(), torznabJob.await())
         }
 
         // Merge: use a map keyed by episode number, Popcorn data takes priority for metadata
@@ -2587,8 +2652,27 @@ class MovieRepository(
             }
         }
 
+        // Merge every configured Torznab endpoint without replacing richer episode metadata.
+        for (ep in torznabEpisodes) {
+            val epNum = ep.episode ?: continue
+            val existing = mergedMap[epNum]
+            if (existing == null) {
+                mergedMap[epNum] = ep
+            } else {
+                val mergedTorrents = (existing.torrents ?: emptyMap()).toMutableMap()
+                ep.torrents?.forEach { (key, torrent) ->
+                    mergedTorrents[key] = torrent
+                }
+                mergedMap[epNum] = existing.copy(torrents = mergedTorrents)
+            }
+        }
+
         val result = mergedMap.values.sortedBy { it.episode }
-        android.util.Log.d("MovieRepository", "Aggregated ${result.size} episodes for S$season (Popcorn: ${popcornEpisodes.size}, EZTV: ${eztvEpisodes.size})")
+        android.util.Log.d(
+            "MovieRepository",
+            "Aggregated ${result.size} episodes for S$season " +
+                "(Popcorn: ${popcornEpisodes.size}, EZTV: ${eztvEpisodes.size}, Torznab: ${torznabEpisodes.size})"
+        )
         result
     }
     
