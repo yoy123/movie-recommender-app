@@ -73,10 +73,6 @@ fun StreamingPlayerScreen(
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
-    var shouldStopStream by remember { mutableStateOf(true) }
-    var lastProgress by remember { mutableStateOf(0f) }
-    var lastProgressTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var stallRetries by remember { mutableIntStateOf(0) }
     
     // Rebuffering state: when player outruns the torrent download
     var isWaitingForData by remember { mutableStateOf(false) }
@@ -84,11 +80,14 @@ fun StreamingPlayerScreen(
     var pendingResumePosition by remember { mutableLongStateOf(0L) }
     var lastSaveTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     
-    // Load saved playback position
+    // Load saved playback state for accidental-backout recovery.
     val savedPosition = remember(magnetUrl) {
-        val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
-        val key = "position_${magnetUrl.hashCode()}"
-        prefs.getLong(key, 0L)
+        context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+            .getLong("position_${magnetUrl.hashCode()}", 0L)
+    }
+    val savedDuration = remember(magnetUrl) {
+        context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+            .getLong("duration_${magnetUrl.hashCode()}", 0L)
     }
     
     val focusRequester = remember { FocusRequester() }
