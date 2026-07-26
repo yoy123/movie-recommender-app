@@ -37,9 +37,8 @@ class BrowseGenreFragment : BrowseSupportFragment() {
     companion object {
         private const val HEADER_MOVIE_GENRES = 0L
         private const val HEADER_TV_GENRES = 1L
-        private const val HEADER_LIVE_TV = 2L
-        private const val HEADER_FAVORITES = 3L
-        private const val HEADER_SETTINGS = 4L
+        private const val HEADER_FAVORITES = 2L
+        private const val HEADER_SETTINGS = 3L
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,17 +78,12 @@ class BrowseGenreFragment : BrowseSupportFragment() {
         tvGenreAdapter.add(Genre(id = Int.MIN_VALUE, name = "Loading…"))
         rowsAdapter.add(ListRow(HeaderItem(HEADER_TV_GENRES, "TV Show Genres"), tvGenreAdapter))
 
-        // Row 3: Live TV
-        val liveTvAdapter = ArrayObjectAdapter(GenreCardPresenter())
-        liveTvAdapter.add(Genre(id = -2, name = "Live TV"))
-        rowsAdapter.add(ListRow(HeaderItem(HEADER_LIVE_TV, "Live TV"), liveTvAdapter))
-
-        // Row 4: Favorites shortcut
+        // Row 3: Favorites shortcut
         val favoritesAdapter = ArrayObjectAdapter(GenreCardPresenter())
         favoritesAdapter.add(Genre(id = -1, name = "My Favorites"))
         rowsAdapter.add(ListRow(HeaderItem(HEADER_FAVORITES, "Favorites"), favoritesAdapter))
 
-        // Row 5: Settings
+        // Row 4: Settings
         val settingsAdapter = ArrayObjectAdapter(GenreCardPresenter())
         settingsAdapter.add(Genre(id = -3, name = "Settings"))
         rowsAdapter.add(ListRow(HeaderItem(HEADER_SETTINGS, "Settings"), settingsAdapter))
@@ -109,15 +103,6 @@ class BrowseGenreFragment : BrowseSupportFragment() {
                 if (item.id == Int.MIN_VALUE) return@OnItemViewClickedListener
 
                 val headerItem = (row as? ListRow)?.headerItem
-
-                // Live TV row → open Live TV
-                if (headerItem?.id == HEADER_LIVE_TV) {
-                    val intent = Intent(requireContext(), ComposeActivity::class.java).apply {
-                        putExtra(ComposeActivity.EXTRA_SCREEN, ComposeActivity.SCREEN_LIVE_TV)
-                    }
-                    startActivity(intent)
-                    return@OnItemViewClickedListener
-                }
 
                 // Settings row → open Settings
                 if (headerItem?.id == HEADER_SETTINGS) {
