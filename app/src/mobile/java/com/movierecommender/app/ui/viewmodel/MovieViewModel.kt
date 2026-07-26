@@ -7,6 +7,7 @@ import com.movierecommender.app.data.model.Genre
 import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.TvShow
 import com.movierecommender.app.data.model.ContentMode
+import com.movierecommender.app.data.model.RecommendationSource
 import com.movierecommender.app.data.model.WatchOption
 import com.movierecommender.app.data.repository.MovieRepository
 import com.movierecommender.app.data.settings.SettingsRepository
@@ -26,7 +27,9 @@ data class MovieUiState(
     val recommendedMovies: List<Movie> = emptyList(),
     val recommendedTvShows: List<TvShow> = emptyList(), // Recommended TV shows
     val favoriteMovies: List<Movie> = emptyList(),
-    val recommendationText: String? = null, // LLM text response (TMDB fallback on failure)
+    val recommendationText: String? = null,
+    val recommendationSource: RecommendationSource? = null,
+    val recommendationFallbackNotice: String? = null,
     val isLoading: Boolean = false,
     val error: String? = null,
     val selectedGenreId: Int? = null,
@@ -72,6 +75,7 @@ class MovieViewModel(
 
     // Tracks titles recommended during this ViewModel session so user-triggered retries never return the same list again.
     private val sessionRecommendedTitles = mutableSetOf<String>()
+    private var pendingRecommendationMode: ContentMode? = null
     
     init {
         loadGenres()
@@ -182,29 +186,45 @@ class MovieViewModel(
     fun checkAndShowLlmConsentIfNeeded() {
         val state = _uiState.value
         if (!state.llmConsentAsked) {
+            pendingRecommendationMode = state.contentMode
             _uiState.value = state.copy(showLlmConsentDialog = true)
         }
     }
-    
-    /**
-     * User responded to LLM consent dialog.
-     * @param consented true if user accepts AI recommendations, false if declined
-     */
+
     fun onLlmConsentResponse(consented: Boolean) {
-        _uiState.value = _uiState.value.copy(showLlmConsentDialog = false)
-        viewModelScope.launch {
-            settings.setLlmConsent(consented)
+        val pendingMode = pendingRecommendationMode
+        pendingRecommendationMode = null
+        _uiState.value = _uiState.value.copy(
+            showLlmConsentDialog = false,
+            llmConsentGiven = consented,
+            llmConsentAsked = true
+        )
+        viewModelScope.launch { settings.setLlmConsent(consented) }
+
+        when (pendingMode) {
+            ContentMode.MOVIES -> generateRecommendations()
+            ContentMode.TV_SHOWS -> generateTvRecommendations()
+            null -> Unit
         }
     }
-    
-    /**
-     * Dismiss consent dialog without recording a decision (user tapped outside).
-     * They will be asked again next time.
-     */
+
     fun dismissLlmConsentDialog() {
+        pendingRecommendationMode = null
         _uiState.value = _uiState.value.copy(showLlmConsentDialog = false)
     }
-    
+
+    fun dismissRecommendationFallbackNotice() {
+        _uiState.value = _uiState.value.copy(recommendationFallbackNotice = null)
+    }
+
+    fun updateAiDataSharingConsent(allowed: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            llmConsentGiven = allowed,
+            llmConsentAsked = true
+        )
+        viewModelScope.launch { settings.setLlmConsent(allowed) }
+    }
+
     fun loadGenres() {
         viewModelScope.launch {
             repository.getGenres().collect { resource ->
@@ -495,6 +515,13 @@ class MovieViewModel(
     fun generateTvRecommendations(additionalExcludedTitles: List<String> = emptyList()) {
         val selectedShows = _uiState.value.selectedTvShows
         if (selectedShows.isEmpty() || selectedShows.size > 5) return
+
+        val initialState = _uiState.value
+        if (!initialState.llmConsentAsked) {
+            pendingRecommendationMode = ContentMode.TV_SHOWS
+            _uiState.value = initialState.copy(showLlmConsentDialog = true)
+            return
+        }
         
         val genreName = _uiState.value.selectedGenreName ?: "TV Shows"
         val genreId = _uiState.value.selectedGenreId
@@ -527,13 +554,18 @@ class MovieViewModel(
                             isLoading = true,
                             error = null,
                             recommendedTvShows = emptyList(),
-                            recommendationText = null
+                            recommendationText = null,
+                            recommendationSource = null,
+                            recommendationFallbackNotice = null
                         )
                     }
                     is Resource.Success -> {
-                        sessionRecommendedTitles.addAll(extractRecommendedTitlesFromText(resource.data))
+                        val result = resource.data
+                        sessionRecommendedTitles.addAll(extractRecommendedTitlesFromText(result.text))
                         _uiState.value = _uiState.value.copy(
-                            recommendationText = resource.data,
+                            recommendationText = result.text,
+                            recommendationSource = result.source,
+                            recommendationFallbackNotice = result.fallbackNotice,
                             isLoading = false,
                             error = null
                         )
@@ -649,6 +681,12 @@ class MovieViewModel(
         
         // Allow 1-5 movies
         if (selectedMovies.isEmpty() || selectedMovies.size > 5) return
+
+        if (!state.llmConsentAsked) {
+            pendingRecommendationMode = ContentMode.MOVIES
+            _uiState.value = state.copy(showLlmConsentDialog = true)
+            return
+        }
         
         viewModelScope.launch {
             repository.getRecommendations(
@@ -677,16 +715,20 @@ class MovieViewModel(
                         _uiState.value = _uiState.value.copy(
                             isLoading = true, 
                             error = null,
-                            recommendationText = null
+                            recommendationText = null,
+                            recommendationSource = null,
+                            recommendationFallbackNotice = null
                         )
                     }
                     is Resource.Success -> {
-                        // Remember these titles so a subsequent retry can't return the same list.
-                        sessionRecommendedTitles.addAll(extractRecommendedTitlesFromText(resource.data))
+                        val result = resource.data
+                        sessionRecommendedTitles.addAll(extractRecommendedTitlesFromText(result.text))
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
                             error = null,
-                            recommendationText = resource.data
+                            recommendationText = result.text,
+                            recommendationSource = result.source,
+                            recommendationFallbackNotice = result.fallbackNotice
                         )
                     }
                     is Resource.Error -> {
@@ -708,6 +750,8 @@ class MovieViewModel(
             sessionRecommendedTitles.clear()
             _uiState.value = _uiState.value.copy(
                 recommendationText = null,
+                recommendationSource = null,
+                recommendationFallbackNotice = null,
                 selectedTvShows = emptyList(),
                 recommendedTvShows = emptyList()
             )

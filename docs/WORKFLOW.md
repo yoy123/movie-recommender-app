@@ -1,6 +1,6 @@
 # OpenStream+ User Workflows
 
-**Last verified:** 2026-07-25
+**Last verified:** 2026-07-26
 
 ## 1. First Launch
 
@@ -11,16 +11,16 @@
 
 ## 2. Movie Recommendation Flow
 
-1. Select movie mode.
-2. Select a genre or favorites.
-3. Browse/search movies.
-4. Select 1–5 movies.
-5. Choose recommendation preferences.
-6. Generate recommendations.
-7. If AI has never been addressed, show the consent dialog.
-8. Use AI mode when consented/enabled; otherwise use TMDB-only mode.
-9. Display analysis and 15 recommendation entries.
-10. User may retry, favorite, open a trailer, open watch options, or start over.
+1. Select movie mode, a genre or favorites, and 1-5 movies.
+2. Configure optional preference weights.
+3. Request recommendations.
+4. On first use, answer the AI data-sharing permission prompt.
+5. Collect verified TMDB similar/recommended/discovery candidates.
+6. Apply selected, favorite, historical, and session exclusions.
+7. Rank candidates locally with Bayesian-adjusted quality and preferences.
+8. When permission and at least 15 safe candidates are available, AI reranks the bounded list.
+9. Validate the response before display.
+10. When AI cannot be used safely, display TMDB fallback plus a debug-reason dialog.
 
 ## 3. TV Recommendation Flow
 
@@ -46,17 +46,19 @@ Favorites remain stored when selection and recommendation flags are cleared.
 ```text
 Generate
    |
-AI consent given and AI enabled?
-   ├─ yes -> collect TMDB candidates -> OpenAI -> validate
-   │                                      |
-   │                               invalid/failure
-   │                                      v
-   └─ no --------------------------> TMDB local ranking
-                                          |
-                                      display results
+collect, exclude, and rank verified TMDB candidates
+   |
+AI data sharing allowed + key available + at least 15 safe candidates?
+   ├─ yes -> bounded OpenAI rerank -> strict validation
+   │                                  |
+   │                         invalid/request failure
+   │                                  v
+   └─ no -----------------------> deterministic TMDB fallback
+                                      |
+                          display result and debug reason
 ```
 
-Retry excludes titles already returned during the current session.
+Retry excludes all titles already returned during the current session in both branches.
 
 ## 6. Trailer Flow
 
@@ -129,7 +131,7 @@ The Live TV row was removed on 2026-07-25.
 
 ## 11. Settings Flow
 
-Current user-facing settings include AI recommendation enablement and recommendation preference values/toggles.
+Current user-facing settings include AI data-sharing permission and recommendation preference values/toggles. Recommendation-engine style is not selectable.
 
 Plex settings exist in DataStore but are not connected to a completed UI workflow.
 

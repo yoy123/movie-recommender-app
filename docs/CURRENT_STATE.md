@@ -1,6 +1,6 @@
 # OpenStream+ Current State
 
-**Last verified:** 2026-07-25  
+**Last verified:** 2026-07-26
 **Status:** Primary source-of-truth summary
 
 ## Product
@@ -28,8 +28,9 @@ The former embedded Live TV guide was removed on 2026-07-25 because it depended 
   - tone
   - international content
   - experimental content
-- Opt-in AI recommendations through OpenAI.
-- TMDB-only recommendation mode when AI is disabled or consent is declined.
+- AI-first recommendations through OpenAI after data-sharing permission.
+- Deterministic TMDB fallback with a visible debug reason when AI cannot be used safely.
+- No user-selectable recommendation-engine style.
 - Movie and TV trailer lookup.
 - TMDB watch-provider availability.
 - Streaming-app package mapping and deep-link attempts.
@@ -71,22 +72,15 @@ flavor-specific MovieViewModel
 - Local database: Room version 3
 - Settings: Preferences DataStore
 
-## Recommendation Modes
+## Recommendation Engine
 
-### AI mode
+AI is the default primary recommendation engine. The first recommendation request asks only for permission to send selected titles, enabled preferences, and a bounded TMDB candidate list to OpenAI. It does not ask the user to choose an AI or TMDB recommendation style.
 
-AI mode is enabled only after the user grants consent. The current OpenAI request uses `gpt-5` through the Chat Completions endpoint.
+Production AI recommendations are bounded to verified TMDB candidates. The repository requires at least 15 safe candidates, calls `gpt-5`, validates exactly 15 canonical titles, and rejects generic, duplicated, excluded, malformed, or out-of-candidate output.
 
-The two-attempt strategy now varies reasoning effort rather than unsupported legacy sampling fields:
+TMDB fallback is used when permission is declined, the OpenAI key is unavailable, the candidate pool is too small, the request fails, or validation rejects the response. The recommendation screen displays a **TMDB Fallback (Debug)** dialog with a sanitized reason. AI data permission can later be changed under Settings.
 
-1. `minimal`
-2. `low` with stricter retry instructions
-
-The repository validates output and falls back to TMDB-derived recommendations when the LLM path fails.
-
-### TMDB-only mode
-
-When AI is disabled, consent is declined, or the OpenAI path fails, the repository ranks TMDB candidates using the active preference values. This mode does not send selected titles to OpenAI.
+Candidate and fallback ranking use Bayesian-adjusted ratings so very small vote counts cannot dominate the list. Retry exclusions are applied to both AI and TMDB paths.
 
 ## External Services
 
@@ -203,7 +197,7 @@ Verified on 2026-07-25:
 
 Result: `BUILD SUCCESSFUL`.
 
-Each flavor currently reports 15 tests: 14 executed successfully and one skipped `LlmSmokeTest`. The shared deterministic suite covers torrent buffer policy, Torznab parsing/caching, Internet Archive results, and Public Domain Torrents parsing. UI, Room migration, repository orchestration, and real-device lifecycle behavior still lack automated coverage.
+Each flavor currently reports 23 tests: 22 executed successfully and one skipped `LlmSmokeTest`. The shared deterministic suite covers recommendation fallback/result policy, Bayesian recommendation ranking, OpenAI request construction, torrent buffer policy, Torznab parsing/caching, Internet Archive results, and Public Domain Torrents parsing. UI, Room migration, repository orchestration, and real-device lifecycle behavior still lack automated coverage.
 
 ## Current Engineering Risks
 

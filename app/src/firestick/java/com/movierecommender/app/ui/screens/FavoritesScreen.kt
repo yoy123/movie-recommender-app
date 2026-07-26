@@ -306,8 +306,8 @@ fun FavoritesScreen(
             currentUserName = uiState.userName,
             onPreferenceChange = { viewModel.updateIndiePreference(it) },
             onUserNameChange = { viewModel.updateUserName(it) },
-            useAiRecommendations = uiState.llmConsentGiven,
-            onUseAiRecommendationsChange = { viewModel.updateUseAiRecommendations(it) },
+            aiDataSharingAllowed = uiState.llmConsentGiven,
+            onAiDataSharingAllowedChange = { viewModel.updateAiDataSharingConsent(it) },
             // Toggles and values
             useIndiePreference = uiState.useIndiePreference,
             usePopularityPreference = uiState.usePopularityPreference,

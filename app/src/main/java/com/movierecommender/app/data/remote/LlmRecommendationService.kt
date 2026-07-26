@@ -7,6 +7,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import java.text.Normalizer
 
 class LlmRecommendationService {
     
@@ -251,11 +252,11 @@ class LlmRecommendationService {
         // 1. Production Style (Indie vs Blockbuster)
         if (useIndiePreference) {
             val styleGuidance = when {
-                indiePreference <= 0.3f -> "STRONGLY favor mainstream blockbusters, big-budget studio films, and widely distributed theatrical releases. Avoid indie films completely."
+                indiePreference <= 0.3f -> "Strongly prefer mainstream blockbusters, big-budget studio films, and widely distributed theatrical releases. Use indie films only when they are unusually strong matches for the selected titles."
                 indiePreference <= 0.45f -> "Lean heavily towards blockbusters and popular studio films. Minimize indie films."
                 indiePreference in 0.46f..0.54f -> "Balance between mainstream hits and indie films equally."
                 indiePreference <= 0.7f -> "Favor indie films, art house cinema, and smaller productions. Include some mainstream films."
-                else -> "STRONGLY favor indie films, art house cinema, and lesser-known titles. Avoid mainstream blockbusters completely."
+                else -> "Strongly prefer indie films, art house cinema, and lesser-known titles. Use mainstream blockbusters only when they are unusually strong matches."
             }
             activePreferences.add("**Production Style**: $styleGuidance")
         }
@@ -263,11 +264,11 @@ class LlmRecommendationService {
         // 2. Popularity Level (Cult vs Mainstream)
         if (usePopularityPreference) {
             val popularityGuidance = when {
-                popularityPreference <= 0.3f -> "STRONGLY emphasize cult classics, obscure gems, and lesser-known films with niche followings. Avoid widely popular films completely."
+                popularityPreference <= 0.3f -> "Strongly prefer cult classics, obscure gems, and lesser-known films with niche followings. Include a widely popular title only when it is an exceptional taste match."
                 popularityPreference <= 0.45f -> "Favor cult classics and hidden gems over mainstream hits. Minimize popular films."
                 popularityPreference in 0.46f..0.54f -> "Mix popular mainstream films with lesser-known quality titles equally."
                 popularityPreference <= 0.7f -> "Favor well-known, widely recognized films. Include some cult classics."
-                else -> "STRONGLY focus on blockbuster hits, universally known films, and mainstream favorites. Avoid obscure titles completely."
+                else -> "Strongly prefer blockbuster hits, universally known films, and mainstream favorites. Include an obscure title only when it is an exceptional taste match."
             }
             activePreferences.add("**Popularity Level**: $popularityGuidance")
         }
@@ -282,11 +283,11 @@ class LlmRecommendationService {
         // 4. Tone/Mood
         if (useTonePreference) {
             val toneGuidance = when {
-                tonePreference <= 0.3f -> "STRONGLY favor uplifting, feel-good films with lighter themes, comedy, and positive outcomes. Avoid dark content completely."
+                tonePreference <= 0.3f -> "Strongly prefer uplifting, feel-good films with lighter themes, comedy, and positive outcomes. Allow darker material only when it closely matches the selected titles."
                 tonePreference <= 0.45f -> "Lean towards lighter, more uplifting films. Minimize dark themes."
                 tonePreference in 0.46f..0.54f -> "Balance between light-hearted entertainment and serious dramatic fare equally."
                 tonePreference <= 0.7f -> "Favor more serious, dramatic films. Include some lighter content."
-                else -> "STRONGLY favor dark, intense, thought-provoking films with serious themes and complex subject matter. Avoid lighthearted content completely."
+                else -> "Strongly prefer dark, intense, thought-provoking films with serious themes and complex subject matter. Allow lighter material only when it closely matches the selected titles."
             }
             activePreferences.add("**Tone/Mood**: $toneGuidance")
         }
@@ -294,7 +295,7 @@ class LlmRecommendationService {
         // 5. International vs Domestic
         if (useInternationalPreference) {
             val internationalGuidance = when {
-                internationalPreference <= 0.3f -> "ONLY recommend American and English-language films. Completely avoid foreign language films."
+                internationalPreference <= 0.3f -> "Strongly prefer American and English-language films. Include an international title only when it is an exceptional taste match."
                 internationalPreference <= 0.45f -> "Primarily American/English films with occasional international exceptions."
                 internationalPreference in 0.46f..0.54f -> "Include both Hollywood productions and international films equally."
                 internationalPreference <= 0.7f -> "Favor international cinema with some Hollywood films."
@@ -306,11 +307,11 @@ class LlmRecommendationService {
         // 6. Experimental vs Traditional
         if (useExperimentalPreference) {
             val experimentalGuidance = when {
-                experimentalPreference <= 0.3f -> "ONLY recommend traditional narrative structures with conventional filmmaking. Completely avoid experimental films."
+                experimentalPreference <= 0.3f -> "Strongly prefer traditional narrative structures and conventional filmmaking. Include experimental work only when it is an exceptional taste match."
                 experimentalPreference <= 0.45f -> "Strongly favor traditional storytelling and conventional approaches. Minimize experimental content."
                 experimentalPreference in 0.46f..0.54f -> "Mix traditional storytelling with innovative creative filmmaking equally."
                 experimentalPreference <= 0.7f -> "Favor creative, innovative films with unique approaches. Include some traditional films."
-                else -> "STRONGLY prioritize avant-garde, unconventional films with experimental techniques. Avoid conventional narratives completely."
+                else -> "Strongly prefer avant-garde, unconventional films with experimental techniques. Include conventional narratives only when they are exceptional taste matches."
             }
             activePreferences.add("**Storytelling Style**: $experimentalGuidance")
         }
@@ -330,8 +331,8 @@ class LlmRecommendationService {
             "\n\nPREFERENCES (mandatory):\n" +
                 activePreferences.joinToString("\n\n") { "- $it" } +
                 "\n\nHard rules:\n" +
-                "- Every recommendation MUST satisfy every enabled preference\n" +
-                "- If a preference says avoid X, do not include X"
+                "- Treat enabled preferences as ranking priorities, not mutually exclusive hard filters\n" +
+                "- When preferences conflict, prioritize selected-title similarity, candidate validity, genre, exclusions, and year range"
         } else {
             ""
         }
@@ -405,23 +406,17 @@ $genreConstraintRule
 - Prefer strong matches over obvious genre staples.
 - Avoid sequels/spin-offs/franchise entries unless they are truly essential AND still satisfy preferences.
 
-OUTPUT FORMAT (must match exactly — follow the EXAMPLE ANALYSIS style, not a generic intro):
-
-EXAMPLE ANALYSIS (for illustration only — yours must reference the ACTUAL selected titles above):
-The thread connecting Mulholland Drive and Eternal Sunshine of the Spotless Mind is an obsession with fractured identity and the unreliability of memory as narrative device. Both films weaponize non-linear editing to mirror psychological disintegration — Lynch through surrealist dream logic and Gondry through a collapsing visual landscape that literalizes emotional erasure. This points to a viewer who values atmosphere and formal ambition over conventional storytelling clarity, someone drawn to films that demand active interpretation and reward multiple viewings.
-
-YOUR ANALYSIS (write about the actual selected titles above, not the example):
-[Your 3-4 sentence analysis here — must reference the user's actual selected titles]
-
-RECOMMENDATIONS:
+OUTPUT FORMAT:
+Begin with one 3-4 sentence analysis paragraph. Do not add an analysis heading.
+Then write RECOMMENDATIONS: on its own line and output exactly 15 items:
 
 1. Movie Title (YYYY)
-Summary: one-sentence plot summary of the movie.
+Summary: one-sentence plot summary.
 
 2. Movie Title (YYYY)
 Summary: one-sentence plot summary.
 
-(Continue until 15; stop immediately after item 15.)
+Continue through item 15 and stop immediately after its summary.
         """.trimIndent()
     }
     
@@ -461,22 +456,22 @@ Summary: one-sentence plot summary.
 
         if (useIndiePreference) {
             val styleGuidance = when {
-                indiePreference <= 0.3f -> "STRONGLY favor mainstream blockbusters. Avoid indie films completely."
+                indiePreference <= 0.3f -> "Strongly prefer mainstream blockbusters. Use indie films only when they are unusually strong matches."
                 indiePreference <= 0.45f -> "Lean towards blockbusters and popular studio films. Minimize indie films."
                 indiePreference in 0.46f..0.54f -> "Balance mainstream hits and indie films equally."
                 indiePreference <= 0.7f -> "Favor indie films and smaller productions. Include some mainstream films."
-                else -> "STRONGLY favor indie films and lesser-known titles. Avoid mainstream blockbusters completely."
+                else -> "Strongly prefer indie films and lesser-known titles. Use mainstream blockbusters only when they are unusually strong matches."
             }
             activePreferences.add("Production Style: $styleGuidance")
         }
 
         if (usePopularityPreference) {
             val popularityGuidance = when {
-                popularityPreference <= 0.3f -> "STRONGLY emphasize cult classics and obscure gems. Avoid widely popular films completely."
+                popularityPreference <= 0.3f -> "Strongly prefer cult classics and obscure gems. Include a widely popular title only when it is an exceptional match."
                 popularityPreference <= 0.45f -> "Favor cult classics and hidden gems. Minimize popular films."
                 popularityPreference in 0.46f..0.54f -> "Mix mainstream and lesser-known titles equally."
                 popularityPreference <= 0.7f -> "Favor well-known, widely recognized films. Include some hidden gems."
-                else -> "STRONGLY focus on mainstream favorites. Avoid obscure titles completely."
+                else -> "Strongly prefer mainstream favorites. Include an obscure title only when it is an exceptional match."
             }
             activePreferences.add("Popularity: $popularityGuidance")
         }
@@ -489,18 +484,18 @@ Summary: one-sentence plot summary.
 
         if (useTonePreference) {
             val toneGuidance = when {
-                tonePreference <= 0.3f -> "STRONGLY favor uplifting, lighter films. Avoid dark content completely."
+                tonePreference <= 0.3f -> "Strongly prefer uplifting, lighter films. Allow darker material only when it closely matches the selected titles."
                 tonePreference <= 0.45f -> "Lean towards lighter films. Minimize dark themes."
                 tonePreference in 0.46f..0.54f -> "Balance light and serious films equally."
                 tonePreference <= 0.7f -> "Favor more serious, dramatic films. Include some lighter content."
-                else -> "STRONGLY favor dark, intense films. Avoid lighthearted content completely."
+                else -> "Strongly prefer dark, intense films. Allow lighter material only when it closely matches the selected titles."
             }
             activePreferences.add("Tone/Mood: $toneGuidance")
         }
 
         if (useInternationalPreference) {
             val internationalGuidance = when {
-                internationalPreference <= 0.3f -> "ONLY recommend American/English-language films. Avoid foreign language films."
+                internationalPreference <= 0.3f -> "Strongly prefer American/English-language films. Include international titles only when they are exceptional matches."
                 internationalPreference <= 0.45f -> "Primarily American/English with occasional international picks."
                 internationalPreference in 0.46f..0.54f -> "Include both Hollywood and international films equally."
                 internationalPreference <= 0.7f -> "Favor international cinema with some Hollywood films."
@@ -511,11 +506,11 @@ Summary: one-sentence plot summary.
 
         if (useExperimentalPreference) {
             val experimentalGuidance = when {
-                experimentalPreference <= 0.3f -> "ONLY traditional narrative structures. Avoid experimental films."
+                experimentalPreference <= 0.3f -> "Strongly prefer traditional narrative structures. Include experimental work only when it is an exceptional match."
                 experimentalPreference <= 0.45f -> "Strongly favor conventional storytelling. Minimize experimental content."
                 experimentalPreference in 0.46f..0.54f -> "Mix conventional and innovative films equally."
                 experimentalPreference <= 0.7f -> "Favor innovative films. Include some traditional ones."
-                else -> "STRONGLY prioritize unconventional/experimental films. Avoid conventional narratives completely."
+                else -> "Strongly prefer unconventional and experimental films. Include conventional narratives only when they are exceptional matches."
             }
             activePreferences.add("Experimental: $experimentalGuidance")
         }
@@ -585,23 +580,17 @@ RECOMMENDATION RULES (validation-critical):
 - If year range is enabled, every recommendation MUST be within range.
 - Stop after item 15. No extra text.
 
-OUTPUT FORMAT (must match exactly — follow the EXAMPLE ANALYSIS style, not a generic intro):
-
-EXAMPLE ANALYSIS (for illustration only — yours must reference the ACTUAL selected titles above):
-The thread connecting Mulholland Drive and Eternal Sunshine of the Spotless Mind is an obsession with fractured identity and the unreliability of memory as narrative device. Both films weaponize non-linear editing to mirror psychological disintegration — Lynch through surrealist dream logic and Gondry through a collapsing visual landscape that literalizes emotional erasure. This points to a viewer who values atmosphere and formal ambition over conventional storytelling clarity, someone drawn to films that demand active interpretation and reward multiple viewings.
-
-YOUR ANALYSIS (write about the actual selected titles above, not the example):
-[Your 3-4 sentence analysis here — must reference the user's actual selected titles]
-
-RECOMMENDATIONS:
+OUTPUT FORMAT:
+Begin with one 3-4 sentence analysis paragraph. Do not add an analysis heading.
+Then write RECOMMENDATIONS: on its own line and output exactly 15 items:
 
 1. Movie Title (YYYY)
-Summary: one-sentence plot summary of the movie.
+Summary: one-sentence plot summary.
 
 2. Movie Title (YYYY)
 Summary: one-sentence plot summary.
 
-(Continue until 15; stop immediately after item 15.)
+Continue through item 15 and stop immediately after its summary.
         """.trimIndent()
     }
 
@@ -617,8 +606,6 @@ Summary: one-sentence plot summary.
         allowedCandidateTitles: List<String>?
     ): String {
         Log.d(TAG, "Starting OpenAI API call")
-        Log.d(TAG, "API Key length: ${apiKey.length}, starts with: ${apiKey.take(10)}...")
-        Log.d(TAG, "Prompt preview (first 900 chars): ${prompt.take(900)}")
         
         val json = OpenAiRequestFactory.create(prompt, reasoningEffort)
         
@@ -637,15 +624,13 @@ Summary: one-sentence plot summary.
             Log.d(TAG, "Received response - Code: ${response.code}, Success: ${response.isSuccessful}")
             
             if (!response.isSuccessful) {
-                val errorBody = response.body?.string() ?: "No error body"
+                response.body?.string()
                 Log.e(TAG, "OpenAI API error: ${response.code} - ${response.message}")
-                Log.e(TAG, "Error body: $errorBody")
-                throw Exception("OpenAI API error: ${response.code} - ${response.message} - $errorBody")
+                throw Exception("OpenAI API error: ${response.code} - ${response.message}")
             }
             
             val responseBody = response.body?.string() ?: throw Exception("Empty response")
             Log.d(TAG, "Response body length: ${responseBody.length}")
-            Log.d(TAG, "Response preview: ${responseBody.take(300)}...")
             
             val jsonResponse = JSONObject(responseBody)
             val choices = jsonResponse.getJSONArray("choices")
@@ -654,10 +639,6 @@ Summary: one-sentence plot summary.
             val message = choices.getJSONObject(0).getJSONObject("message")
             val raw = message.getString("content")
             Log.d(TAG, "Raw LLM content length: ${raw.length}")
-            Log.d(TAG, "Raw LLM content preview: ${raw.take(200)}...")
-            Log.d(TAG, "=== FULL RAW LLM RESPONSE ===")
-            Log.d(TAG, raw)
-            Log.d(TAG, "=== END FULL RAW RESPONSE ===")
             
             val processed = postProcess(
                 content = raw,
@@ -730,13 +711,12 @@ Summary: one-sentence plot summary.
         }
         // Reject generic filler analysis that doesn't actually analyze taste
         val analysisLower = analysis.lowercase()
-        val genericPatterns = listOf(
+        val genericOpenings = listOf(
             "based on your", "based off of your", "here are", "here is a list",
-            "here's a list", "heres a list", "i've selected", "i have selected",
-            "the following", "below are", "these recommendations"
+            "here's a list", "heres a list", "i've selected", "i have selected", "below are"
         )
-        if (genericPatterns.any { analysisLower.contains(it) }) {
-            Log.w(TAG, "Analysis rejected as generic filler: ${analysis.take(100)}")
+        if (genericOpenings.any { analysisLower.trimStart().startsWith(it) }) {
+            Log.w(TAG, "Analysis rejected as generic filler")
             return ""
         }
         // Require minimum substance (at least 3 sentences)
@@ -745,18 +725,37 @@ Summary: one-sentence plot summary.
             Log.w(TAG, "Analysis too short ($sentenceCount sentences): ${analysis.take(100)}")
             return ""
         }
+        val normalizedAnalysis = normalizeTitle(analysis)
+        val referenceableSelections = selectedTitles
+            .map(::normalizeTitle)
+            .filter { it.length >= 4 }
+            .distinct()
+        val requiredReferences = when {
+            referenceableSelections.isEmpty() -> 0
+            referenceableSelections.size == 1 -> 1
+            else -> 2
+        }
+        val referencedSelections = referenceableSelections.count { normalizedAnalysis.contains(it) }
+        if (referencedSelections < requiredReferences) {
+            Log.w(TAG, "Analysis rejected: referenced $referencedSelections of $requiredReferences required selections")
+            return ""
+        }
         val items = mutableListOf<Pair<String, String>>()
         val seenKeys = mutableSetOf<String>()
+        val seenNormalizedTitles = mutableSetOf<String>()
         val selectedNorm = selectedTitles.map { normalizeTitle(it) }.toSet()
         val excludedNorm = excludedTitles.map { normalizeTitle(it) }.toSet()
 
-        val allowedKeys: Set<String>? = allowedCandidateTitles
-            ?.mapNotNull { t ->
-                val y = Regex("\\((\\d{4})\\)").find(t)?.groupValues?.getOrNull(1)?.toIntOrNull()
-                if (y == null) return@mapNotNull null
-                normalizeTitle(t) + y.toString()
+        val allowedTitleByKey: Map<String, String>? = allowedCandidateTitles
+            ?.mapNotNull { candidate ->
+                val year = Regex("\\((\\d{4})\\)").find(candidate)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    ?.toIntOrNull()
+                    ?: return@mapNotNull null
+                (normalizeTitle(candidate) + year.toString()) to candidate.trim()
             }
-            ?.toSet()
+            ?.toMap()
 
         val yearInParens = Regex("\\((\\d{4})\\)")
         val yearAtEnd = Regex("(\\d{4})\\s*$")
@@ -788,13 +787,13 @@ Summary: one-sentence plot summary.
             val norm = normalizeTitle(title)
             val key = norm + year.toString()
 
-            if (allowedKeys != null && key !in allowedKeys) {
+            if (allowedTitleByKey != null && key !in allowedTitleByKey) {
                 i++
                 continue
             }
 
             // Exclude duplicates and exclude any of the user's selected titles
-            if (key in seenKeys || norm in selectedNorm || norm in excludedNorm) {
+            if (key in seenKeys || norm in seenNormalizedTitles || norm in selectedNorm || norm in excludedNorm) {
                 // Skip this title and continue scanning
                 var jSkip = i + 1
                 while (jSkip < lines.size) {
@@ -817,9 +816,16 @@ Summary: one-sentence plot summary.
                 break
             }
             if (desc.isBlank()) desc = "A critically acclaimed film."
+            desc = desc
+                .replace(Regex("^(Summary|Why this matches|Why):\\s*", RegexOption.IGNORE_CASE), "")
+                .trim()
             desc = truncateWords(desc, 75)
+            val canonicalTitle = allowedTitleByKey?.get(key) ?: title
+                .trim()
+                .trim('*', '_', '#', '"')
             seenKeys.add(key)
-            items.add(title to desc)
+            seenNormalizedTitles.add(norm)
+            items.add(canonicalTitle to desc)
             i = j
         }
         // If the model did not produce exactly 15 well-formed items, signal failure so the repository can fall back
@@ -838,9 +844,9 @@ Summary: one-sentence plot summary.
     }
 
     private fun normalizeTitle(title: String): String {
-        // Lowercase, remove year, leading articles, and non-alphanumeric for robust dedup
-        return title
-            .lowercase()
+        val ascii = Normalizer.normalize(title.lowercase(), Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+        return ascii
             .replace(Regex("\\(\\d{4}\\)"), "")
             .replace(Regex("^(the|a|an)\\s+"), "")
             .replace(Regex("[^a-z0-9]+"), "")

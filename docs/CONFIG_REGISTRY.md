@@ -136,7 +136,7 @@ Configured through KSP argument `room.schemaLocation`.
 
 - Selection range: 1–5 titles
 - Output target: 15 recommendations
-- Candidate-pool bounded-mode threshold: 25
+- Minimum safe candidate count for AI reranking: 15
 - GPT-5 retry reasoning efforts: `minimal`, then `low`
 - GPT-5 verbosity: `medium`
 - GPT-5 maximum completion tokens: 4,000

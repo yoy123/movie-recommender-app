@@ -137,18 +137,18 @@ TV shows are not stored in the `movies` Room table as a second entity. TV select
 ## Recommendation Flow
 
 ```text
-1–5 selected titles
+1-5 selected titles
     |
-preference and exclusion construction
+TMDB candidate collection + exclusions + Bayesian ranking
     |
-TMDB candidate collection
+AI data sharing allowed and at least 15 safe candidates?
+    ├─ yes -> bounded OpenAI candidate rerank -> strict validation
+    └─ no  -> deterministic TMDB fallback
     |
-AI enabled and consented?
-    ├─ yes -> OpenAI candidate rerank/open generation -> validation
-    └─ no  -> TMDB preference-based ranking
-    |
-Room recommendation flags for movies / ViewModel text and parsed results
+typed RecommendationResult -> flavor ViewModel -> result/fallback dialog
 ```
+
+Production code has no open-generation branch and no recommendation-engine selector. The consent state controls whether recommendation data may be sent externally; it is not a product-mode choice.
 
 The current OpenAI model is `gpt-5` through `/v1/chat/completions`, using bounded reasoning effort and `max_completion_tokens`.
 

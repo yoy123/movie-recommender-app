@@ -98,13 +98,13 @@ The request uses `max_completion_tokens`, medium verbosity, and GPT-5 reasoning 
 
 ### Consent
 
-OpenAI calls are permitted only when `llm_consent_given` is true. The consent dialog explains that selected titles and recommendation preferences are sent to OpenAI.
+OpenAI calls are permitted only when `llm_consent_given` is true. The prompt is a data-sharing permission, not a recommendation-style selector. Settings exposes the same permission as **AI Data Sharing**.
 
-If AI is disabled or consent is declined, the repository uses the TMDB-only ranking path.
+When permission is declined, the repository uses deterministic TMDB fallback and displays a sanitized debug reason.
 
 ### Retry behavior
 
-Both recommendation modes use two attempts:
+The bounded AI request uses two attempts:
 
 1. `minimal` reasoning effort
 2. `low` reasoning effort plus strict retry instructions
@@ -117,7 +117,10 @@ Validation includes:
 
 - expected recommendation count and format
 - duplicate and exclusion checks
-- candidate constraints in bounded mode
+- candidate membership for every production AI result
+- canonical TMDB title output
+- analysis references to selected titles
+- duplicate normalized-title rejection
 - genre constraints when enabled
 
 ## 3. IMDb Trailer Fallback

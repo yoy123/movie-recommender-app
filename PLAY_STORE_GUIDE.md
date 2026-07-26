@@ -49,7 +49,7 @@ FEATURES
 
 • Browse movies and TV shows by genre
 • Search the TMDB catalog
-• Choose optional AI recommendations or use TMDB-only recommendations
+• Get AI-first recommendations with automatic TMDB fallback
 • Tune popularity, indie, year, tone, international, and experimental preferences
 • Save favorite movies locally
 • View trailers
@@ -59,7 +59,7 @@ FEATURES
 
 PRIVACY
 
-Your favorites and settings are stored locally on your device. AI recommendations are optional and require consent before selected titles and preference settings are sent to OpenAI. You can continue using TMDB-only recommendations without enabling AI.
+Your favorites and settings are stored locally on your device. AI is the primary recommendation engine, but selected titles and preference settings are sent to OpenAI only after data-sharing permission. Without permission, automatic TMDB fallback remains available.
 ```
 
 Do not name a specific OpenAI model in store copy unless the listing will be updated whenever the implementation changes. The current code uses `gpt-5`, but model branding is not necessary for users.
@@ -85,7 +85,7 @@ Current relevant behavior:
 
 - TMDB receives search/catalog requests and title identifiers.
 - OpenAI receives selected titles and active preference values only after consent.
-- OpenAI mode can be disabled.
+- AI data sharing can be allowed or blocked; blocked requests use TMDB fallback.
 - Favorites, settings, consent state, and provider crosswalks are stored locally.
 - No analytics SDK usage was found in the current source.
 - The manifest currently requests AD_ID permission even though no advertising SDK usage was found; remove it before submission unless required.
@@ -119,7 +119,7 @@ Review the policy whenever:
 - [ ] privacy policy hosted
 - [ ] Data Safety form matches code
 - [ ] AI consent tested
-- [ ] TMDB-only mode tested
+- [ ] automatic TMDB fallback and debug notice tested
 - [ ] AD_ID permission removed or justified
 - [ ] screenshots contain no removed Live TV feature
 - [ ] no API keys printed in logs

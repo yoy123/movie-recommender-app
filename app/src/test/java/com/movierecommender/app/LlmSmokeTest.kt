@@ -26,10 +26,8 @@ class LlmSmokeTest {
             key.startsWith("sk-") && key.length > 20
         )
 
-        // Skip in CI / environments without a real key.
-        // We only log non-sensitive metadata.
-        println("LlmSmokeTest: OPENAI_API_KEY length=${key.length}, prefix='${key.take(6)}'")
-        if (key.length <= 20) return@runBlocking
+        // Skip in CI / environments without a real key. Never log key fragments.
+        println("LlmSmokeTest: OpenAI key configured")
 
         val llm = LlmRecommendationService()
 

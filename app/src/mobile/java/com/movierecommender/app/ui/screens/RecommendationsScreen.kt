@@ -41,6 +41,7 @@ import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.TvShow
 import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.ui.viewmodel.MovieViewModel
+import com.movierecommender.app.ui.dialogs.LlmConsentDialog
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavController
 
@@ -58,6 +59,27 @@ fun RecommendationsScreen(
     val isTvMode = uiState.contentMode == ContentMode.TV_SHOWS
     val hasSelections = if (isTvMode) uiState.selectedTvShows.isNotEmpty() else uiState.selectedMovies.isNotEmpty()
     val contentLabel = if (isTvMode) "TV shows" else "movies"
+
+    if (uiState.showLlmConsentDialog) {
+        LlmConsentDialog(
+            onAccept = { viewModel.onLlmConsentResponse(consented = true) },
+            onDecline = { viewModel.onLlmConsentResponse(consented = false) },
+            onDismiss = viewModel::dismissLlmConsentDialog
+        )
+    }
+
+    uiState.recommendationFallbackNotice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissRecommendationFallbackNotice,
+            title = { Text("TMDB Fallback (Debug)") },
+            text = { Text(notice) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissRecommendationFallbackNotice) {
+                    Text("OK")
+                }
+            }
+        )
+    }
 
     // Auto-generate recommendations on first entry if we have selections and nothing yet
     LaunchedEffect(uiState.selectedMovies, uiState.selectedTvShows, uiState.recommendationText, uiState.isLoading, isTvMode) {

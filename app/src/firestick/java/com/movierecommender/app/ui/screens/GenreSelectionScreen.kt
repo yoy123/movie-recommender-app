@@ -306,8 +306,8 @@ fun GenreSelectionScreen(
             currentUserName = uiState.userName,
             onPreferenceChange = { viewModel.updateIndiePreference(it) },
             onUserNameChange = { viewModel.updateUserName(it) },
-            useAiRecommendations = uiState.llmConsentGiven,
-            onUseAiRecommendationsChange = { viewModel.updateUseAiRecommendations(it) },
+            aiDataSharingAllowed = uiState.llmConsentGiven,
+            onAiDataSharingAllowedChange = { viewModel.updateAiDataSharingConsent(it) },
             // Toggles and values
             useIndiePreference = uiState.useIndiePreference,
             usePopularityPreference = uiState.usePopularityPreference,
@@ -517,8 +517,8 @@ fun PreferenceSettingsDialog(
     onPreferenceChange: (Float) -> Unit,
     onUserNameChange: (String) -> Unit,
     onDismiss: () -> Unit,
-    useAiRecommendations: Boolean = false,
-    onUseAiRecommendationsChange: (Boolean) -> Unit = {},
+    aiDataSharingAllowed: Boolean = false,
+    onAiDataSharingAllowedChange: (Boolean) -> Unit = {},
     // All preference values
     useIndiePreference: Boolean = true,
     usePopularityPreference: Boolean = true,
@@ -664,33 +664,36 @@ fun PreferenceSettingsDialog(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Recommendation Engine",
+                            text = "AI Data Sharing",
                             style = MaterialTheme.typography.titleSmall
                         )
                         Text(
-                            text = if (useAiRecommendations) "AI Recommendations" else "TMDB Recommendations",
+                            text = if (aiDataSharingAllowed) {
+                                "Allowed — AI is the primary recommendation engine"
+                            } else {
+                                "Blocked — recommendations use TMDB fallback"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    val recommendationSwitchInteraction = remember { MutableInteractionSource() }
-                    val recommendationSwitchFocused by recommendationSwitchInteraction.collectIsFocusedAsState()
-
+                    val aiConsentInteraction = remember { MutableInteractionSource() }
+                    val aiConsentFocused by aiConsentInteraction.collectIsFocusedAsState()
                     Surface(
                         modifier = Modifier.padding(4.dp),
                         shape = MaterialTheme.shapes.small,
-                        border = if (recommendationSwitchFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
-                        color = if (recommendationSwitchFocused) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                        border = if (aiConsentFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
+                        color = if (aiConsentFocused) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
                     ) {
                         Switch(
-                            checked = useAiRecommendations,
-                            onCheckedChange = onUseAiRecommendationsChange,
-                            interactionSource = recommendationSwitchInteraction,
+                            checked = aiDataSharingAllowed,
+                            onCheckedChange = onAiDataSharingAllowedChange,
+                            interactionSource = aiConsentInteraction,
                             modifier = Modifier.padding(8.dp)
                         )
                     }
                 }
-                
+
                 // Divider
                 Divider(modifier = Modifier.padding(bottom = 16.dp))
                 

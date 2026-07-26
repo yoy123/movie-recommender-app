@@ -15,7 +15,7 @@ The embedded Firestick Live TV guide was removed on 2026-07-25 because it depend
 
 - Browse and search movies and TV shows through TMDB.
 - Select 1–5 titles to seed recommendations.
-- Choose AI recommendations or TMDB-only recommendations.
+- Use AI-first recommendations with verified TMDB candidates and automatic TMDB fallback.
 - Tune recommendation preferences for popularity, indie content, year range, tone, international content, and experimental content.
 - Maintain a local favorites collection.
 - View trailers and TMDB watch-provider availability.
@@ -77,7 +77,7 @@ Release builds require the signing properties documented in [`docs/DEPLOYMENT.md
 ./gradlew :app:testFirestickDebugUnitTest
 ```
 
-Both flavor suites currently discover 15 tests: 14 execute successfully and the opt-in `LlmSmokeTest` remains skipped. Coverage includes torrent buffer policy and several torrent-source parsers; UI, Room migration, repository orchestration, and Android lifecycle behavior still require broader testing.
+Both flavor suites currently discover 23 tests: 22 execute successfully and the opt-in `LlmSmokeTest` remains skipped. Coverage includes recommendation result/ranking policy, torrent buffer policy, OpenAI request construction, and several torrent-source parsers; UI, Room migration, repository orchestration, and Android lifecycle behavior still require broader testing.
 
 ## Documentation
 

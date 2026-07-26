@@ -1,23 +1,28 @@
 package com.movierecommender.app.ui.dialogs
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 
 /**
- * GDPR/CCPA compliant consent dialog for LLM-based recommendations.
- * 
- * Displays when users first attempt to generate recommendations.
- * Explains that movie selection data will be sent to OpenAI for personalized recommendations.
- * Users can accept for AI recommendations or decline for TMDB-only fallback.
+ * One-time privacy consent for sending recommendation inputs to OpenAI.
+ * AI is the default recommendation engine; declining data sharing uses TMDB fallback.
  */
 @Composable
 fun LlmConsentDialog(
@@ -33,7 +38,7 @@ fun LlmConsentDialog(
         ),
         title = {
             Text(
-                text = "AI-Powered Recommendations",
+                text = "Allow AI Data Sharing?",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
@@ -42,44 +47,37 @@ fun LlmConsentDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .wrapContentHeight()
+                    .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    text = "This app can use AI to provide personalized movie recommendations based on your selections.",
+                    text = "OpenStream+ uses AI by default to analyze your selections and rerank verified TMDB titles.",
                     style = MaterialTheme.typography.bodyMedium
                 )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
+
+                Spacer(modifier = Modifier.height(12.dp))
+
                 Text(
-                    text = "What data is shared:",
+                    text = "Data sent to OpenAI:",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
-                
                 Text(
-                    text = "• Titles of movies you select (1-5 movies)\n" +
-                           "• Your genre preference\n" +
-                           "• Your recommendation preferences (indie/mainstream, tone, etc.)",
+                    text = "• Selected movie or TV-show titles\n" +
+                        "• Selected genre\n" +
+                        "• Enabled recommendation preferences\n" +
+                        "• A bounded list of candidate titles from TMDB",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Your name, favorites list, playback history, and account information are not sent. Declining does not disable recommendations; the app will use its TMDB fallback and display a diagnostic notice.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    text = "This data is sent to OpenAI's servers for processing. No personal identifying information is collected or stored.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    text = "If you decline, you'll still get recommendations using our standard algorithm (TMDB-based), just without AI personalization.",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium
                 )
             }
         },
@@ -90,12 +88,12 @@ fun LlmConsentDialog(
                     containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
-                Text("Accept AI Recommendations")
+                Text("Allow AI")
             }
         },
         dismissButton = {
             OutlinedButton(onClick = onDecline) {
-                Text("Use Standard Recommendations")
+                Text("Don't Share")
             }
         }
     )

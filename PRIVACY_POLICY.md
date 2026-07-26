@@ -42,9 +42,9 @@ Requests can include:
 
 ### OpenAI API
 
-AI recommendations are optional. Before the first AI recommendation request, OpenStream+ asks for consent.
+AI is the app's default primary recommendation engine. Before the first external AI request, OpenStream+ asks for permission to share recommendation inputs with OpenAI. This is a privacy permission, not a choice between recommendation styles.
 
-When AI mode is enabled, the app may send:
+When AI data sharing is allowed, the app may send:
 
 - selected movie or TV-show titles
 - release years where available
@@ -53,7 +53,7 @@ When AI mode is enabled, the app may send:
 
 OpenStream+ does not need to send your chosen display name for recommendation generation.
 
-When AI mode is disabled or consent is declined, OpenStream+ uses TMDB-only recommendations and does not send recommendation prompts to OpenAI.
+When AI data sharing is blocked or declined, OpenStream+ uses its local TMDB fallback and does not send recommendation prompts to OpenAI. The permission can be changed later in Settings.
 
 OpenAI states that API inputs and outputs are not used to train its models by default unless the API customer explicitly opts in. OpenAI may retain certain API data for abuse monitoring for a limited period under its current API data controls. OpenAI's current terms and policies govern its processing.
 

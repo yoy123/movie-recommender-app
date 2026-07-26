@@ -61,7 +61,7 @@ Reduce repeated requests and retry later.
 
 ## OpenAI Problems
 
-### AI disabled or consent declined
+### AI data sharing blocked or declined
 
 This is not an error. The repository should use TMDB-only recommendations.
 
@@ -212,7 +212,7 @@ Include:
 - device/Fire OS or Android version
 - exact navigation steps
 - relevant Logcat section
-- whether AI mode was enabled
+- whether AI data sharing was allowed
 - title/year/episode involved
 - provider/torrent source if shown
 - whether the problem reproduces after a clean launch

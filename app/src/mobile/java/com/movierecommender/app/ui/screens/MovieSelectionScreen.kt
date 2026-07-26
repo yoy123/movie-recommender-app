@@ -167,18 +167,12 @@ fun MovieSelectionScreen(
             if (selectedCount > 0) {
                 ExtendedFloatingActionButton(
                     onClick = {
-                        if (isTvMode) {
-                            // TV shows don't use LLM, go straight to recommendations
-                            viewModel.generateTvRecommendations()
-                            onGenerateRecommendations()
+                        if (!uiState.llmConsentAsked) {
+                            viewModel.checkAndShowLlmConsentIfNeeded()
                         } else {
-                            // Check if consent is needed before generating recommendations
-                            if (!uiState.llmConsentAsked) {
-                                viewModel.checkAndShowLlmConsentIfNeeded()
-                            } else {
-                                viewModel.generateRecommendations()
-                                onGenerateRecommendations()
-                            }
+                            if (isTvMode) viewModel.generateTvRecommendations()
+                            else viewModel.generateRecommendations()
+                            onGenerateRecommendations()
                         }
                     },
                     icon = { Icon(Icons.Default.Check, "Generate") },
@@ -266,6 +260,8 @@ fun MovieSelectionScreen(
             currentUserName = uiState.userName,
             onPreferenceChange = { viewModel.updateIndiePreference(it) },
             onUserNameChange = { viewModel.updateUserName(it) },
+            aiDataSharingAllowed = uiState.llmConsentGiven,
+            onAiDataSharingAllowedChange = { viewModel.updateAiDataSharingConsent(it) },
             useIndiePreference = uiState.useIndiePreference,
             usePopularityPreference = uiState.usePopularityPreference,
             releaseYearStart = uiState.releaseYearStart,
@@ -301,19 +297,13 @@ fun MovieSelectionScreen(
         LlmConsentDialog(
             onAccept = {
                 viewModel.onLlmConsentResponse(consented = true)
-                // After consent, proceed to generate recommendations
-                viewModel.generateRecommendations()
                 onGenerateRecommendations()
             },
             onDecline = {
                 viewModel.onLlmConsentResponse(consented = false)
-                // Still generate recommendations, but will use TMDB fallback
-                viewModel.generateRecommendations()
                 onGenerateRecommendations()
             },
-            onDismiss = {
-                viewModel.dismissLlmConsentDialog()
-            }
+            onDismiss = viewModel::dismissLlmConsentDialog
         )
     }
 }

@@ -133,8 +133,8 @@ Minimum manual checks:
 - settings row
 - picker selection of 1–5 titles
 - card entry and nested-action navigation
-- recommendation generation in AI and TMDB modes
-- consent dialog navigation
+- AI-first recommendation generation and automatic TMDB fallback
+- AI data-sharing permission navigation
 - trailer playback
 - watch-option dialog
 - external provider launch failure/success

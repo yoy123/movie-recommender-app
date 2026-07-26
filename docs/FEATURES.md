@@ -46,20 +46,26 @@ Firestick uses a Leanback browse screen and picker. Mobile uses Compose screens.
 
 ## Recommendations
 
-### AI mode
+### AI-first engine
 
-AI mode sends selected titles and active preference values to OpenAI after explicit consent.
+OpenStream+ has one primary recommendation strategy. It collects and ranks verified TMDB candidates, then uses AI to analyze the selected titles and rerank exactly 15 candidates after data-sharing permission is granted.
 
-The service produces personalized analysis plus 15 recommendations. Output is validated and deduplicated.
+There is no AI-versus-TMDB style selector. The one-time prompt is a privacy permission only. Settings exposes **AI Data Sharing** so a previous decline can be changed later.
 
-### TMDB-only mode
+AI output is validated for:
 
-TMDB-only mode ranks TMDB candidate titles locally using active preferences. It is used when:
+- substantive analysis tied to the selected titles
+- exactly 15 numbered titles with years
+- membership in the supplied candidate list
+- exclusions and session deduplication
+- duplicate normalized titles
+- enabled year limits
 
-- AI is disabled
-- consent is declined
-- the OpenAI request fails
-- output validation fails
+### TMDB fallback
+
+TMDB fallback is automatic when AI permission or a safe AI response is unavailable. It uses Bayesian-adjusted quality ranking plus enabled year, popularity, production-scale, and tone preferences.
+
+A **TMDB Fallback (Debug)** dialog reports why fallback occurred without exposing API keys, prompts, raw model responses, or full response bodies.
 
 ### Preferences
 
@@ -71,6 +77,8 @@ Each preference has a value and enable toggle:
 - tone
 - international
 - experimental
+
+Preferences are ranking priorities rather than mutually exclusive hard filters.
 
 ## Favorites
 

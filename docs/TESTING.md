@@ -22,20 +22,24 @@ The shared JVM test suite runs once for each flavor.
 | Test class | Tests per flavor | Result |
 |---|---:|---|
 | `InternetArchiveServiceTest` | 3 | pass |
+| `LlmSmokeTest` | 1 | skipped unless explicitly enabled |
+| `OpenAiRequestFactoryTest` | 1 | pass |
+| `PirateBayEpisodeParserTest` | 1 | pass |
 | `PublicDomainTorrentsServiceTest` | 3 | pass |
-| `TorznabServiceTest` | 3 | pass |
+| `RecommendationRankingPolicyTest` | 2 | pass |
+| `RecommendationResultTest` | 3 | pass |
 | `TorrentBufferPolicyTest` | 5 | pass |
-| `LlmSmokeTest` | 1 | skipped |
+| `TorznabServiceTest` | 4 | pass |
 
 Per flavor:
 
-- total discovered: 15
-- executed: 14
+- total discovered: 23
+- executed: 22
 - skipped: 1
 - failures: 0
 - errors: 0
 
-Across both variants, Gradle records 28 successful deterministic test executions and two skipped smoke-test executions. This is useful coverage, but it is not broad application coverage.
+Across both variants, Gradle records 44 successful deterministic test executions and two skipped smoke-test executions. Recommendation tests currently cover typed fallback notices and Bayesian quality ranking; repository orchestration, prompt post-processing, consent UI, and fallback dialogs still require broader integration/UI coverage.
 
 ## Torrent Buffer Policy Coverage
 
@@ -58,7 +62,7 @@ Add fake-service/DAO tests for:
 
 - AI success and two-attempt retry
 - AI validation failure to TMDB fallback
-- AI disabled means no OpenAI request
+- blocked AI data sharing means no OpenAI request and produces TMDB fallback
 - movie torrent fallback order
 - one failed source does not stop the provider chain
 - TV episode result selection

@@ -73,35 +73,49 @@ fun RecommendationsScreen(
     val isTvMode = uiState.contentMode == ContentMode.TV_SHOWS
     val hasSelections = if (isTvMode) uiState.selectedTvShows.isNotEmpty() else uiState.selectedMovies.isNotEmpty()
 
-    // Auto-generate recommendations on first entry if we have selections and nothing yet
-    LaunchedEffect(uiState.selectedMovies, uiState.selectedTvShows, uiState.recommendationText, uiState.isLoading, isTvMode, uiState.llmConsentGiven, uiState.llmConsentAsked) {
+    // Auto-generate recommendations on first entry. The ViewModel handles privacy consent.
+    LaunchedEffect(uiState.selectedMovies, uiState.selectedTvShows, uiState.recommendationText, uiState.isLoading, isTvMode) {
         if (!uiState.isLoading && uiState.recommendationText == null && hasSelections) {
-            if (!uiState.llmConsentAsked) {
-                // Show consent dialog before generating
-                viewModel.checkAndShowLlmConsentIfNeeded()
-            } else {
-                if (isTvMode) {
-                    viewModel.generateTvRecommendations()
-                } else {
-                    viewModel.generateRecommendations()
-                }
-            }
+            if (isTvMode) viewModel.generateTvRecommendations()
+            else viewModel.generateRecommendations()
         }
     }
 
     // LLM Consent Dialog (GDPR/CCPA compliance)
     if (uiState.showLlmConsentDialog) {
         LlmConsentDialog(
-            onAccept = {
-                viewModel.onLlmConsentResponse(consented = true)
-            },
-            onDecline = {
-                viewModel.onLlmConsentResponse(consented = false)
-            },
-            onDismiss = {
-                viewModel.dismissLlmConsentDialog()
-            }
+            onAccept = { viewModel.onLlmConsentResponse(consented = true) },
+            onDecline = { viewModel.onLlmConsentResponse(consented = false) },
+            onDismiss = viewModel::dismissLlmConsentDialog
         )
+    }
+
+    uiState.recommendationFallbackNotice?.let { notice ->
+        Dialog(
+            onDismissRequest = viewModel::dismissRecommendationFallbackNotice,
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            LeanbackPanel(modifier = Modifier.fillMaxWidth(0.64f)) {
+                Text(
+                    text = "TMDB Fallback (Debug)",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = notice,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    LeanbackTextButton(
+                        label = "OK",
+                        onClick = viewModel::dismissRecommendationFallbackNotice,
+                        emphasized = true
+                    )
+                }
+            }
+        }
     }
     
     LeanbackBackdrop {
