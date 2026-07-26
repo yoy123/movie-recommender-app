@@ -44,9 +44,10 @@ Both use shared code from `app/src/main` and separate UI/ViewModel source sets.
 ### Recommendation service
 
 - endpoint: OpenAI Chat Completions
-- model: `gpt-4.1-mini`
-- open-mode temperatures: 0.6, 0.3
-- bounded-mode temperatures: 0.4, 0.2
+- model: `gpt-5`
+- retry reasoning efforts: `minimal`, then `low`
+- verbosity: `medium`
+- maximum completion tokens: 4,000
 - TMDB fallback: active
 - explicit AI consent: active
 
@@ -70,7 +71,7 @@ The cache is a single active resumable session with a tested storage and buffer 
 
 ### Testing
 
-Both debug flavors build. Each flavor discovers 15 tests: 14 execute successfully and the opt-in `LlmSmokeTest` is skipped. Current deterministic coverage includes torrent buffer policy and several torrent-source parsers; UI, Room migration, repository orchestration, and Android lifecycle behavior remain uncovered.
+Both debug flavors build. Deterministic coverage includes torrent buffer policy, torrent-source parsers, Torznab pagination metadata, Pirate Bay episode parsing, and the GPT-5 request contract. The opt-in `LlmSmokeTest` remains skipped by default; UI, Room migration, repository orchestration, and Android lifecycle behavior remain partially uncovered.
 
 ## Documentation Corrections Made
 
@@ -79,7 +80,7 @@ The July 2026 refresh corrected these stale claims:
 - Room v2 -> Room v3
 - one `Movie` entity -> two Room entities
 - 16/17 preferences -> 26 DataStore keys
-- GPT-4o-mini -> `gpt-4.1-mini`
+- GPT-4o-mini / GPT-4.1-mini -> `gpt-5`
 - fixed/percentage torrent cache -> tested 500 MB reserve, source-fit admission, and 60-minute resumable session
 - six integrations -> expanded movie/TV/provider integration set
 - Plex described as complete -> implemented but unwired

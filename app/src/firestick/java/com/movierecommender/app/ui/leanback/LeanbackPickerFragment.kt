@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -49,6 +50,7 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
         private const val ARG_GENRE_ID = "arg_genre_id"
         private const val ARG_GENRE_NAME = "arg_genre_name"
         private const val ARG_CONTENT_MODE = "arg_content_mode"
+        private const val ARG_SEARCH_MODE = "arg_search_mode"
 
         private const val HEADER_ACTIONS = 0L
         private const val HEADER_CONTENT = 1L
@@ -63,12 +65,14 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
         fun newInstance(
             genreId: Int,
             genreName: String,
-            contentModeName: String
+            contentModeName: String,
+            searchMode: Boolean = false
         ): LeanbackPickerFragment = LeanbackPickerFragment().apply {
             arguments = bundleOf(
                 ARG_GENRE_ID to genreId,
                 ARG_GENRE_NAME to genreName,
-                ARG_CONTENT_MODE to contentModeName
+                ARG_CONTENT_MODE to contentModeName,
+                ARG_SEARCH_MODE to searchMode
             )
         }
     }
@@ -82,6 +86,7 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
     private var genreId: Int = -1
     private var genreName: String = ""
     private var contentMode: ContentMode = ContentMode.MOVIES
+    private var searchMode: Boolean = false
     private var currentMediaId: Int? = null
     private var cachedContentIds: List<Int> = emptyList()
     private var latestState: MovieUiState = MovieUiState()
@@ -100,6 +105,7 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
         contentMode = runCatching {
             ContentMode.valueOf(requireArguments().getString(ARG_CONTENT_MODE).orEmpty())
         }.getOrDefault(ContentMode.MOVIES)
+        searchMode = requireArguments().getBoolean(ARG_SEARCH_MODE)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -110,7 +116,11 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
         observeViewModel()
 
         viewModel.setContentMode(contentMode)
-        viewModel.selectGenre(genreId, genreName)
+        if (searchMode) {
+            view.post { showSearchDialog() }
+        } else {
+            viewModel.selectGenre(genreId, genreName)
+        }
     }
 
     private fun setupUi() {
@@ -167,9 +177,18 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
 
             when (item) {
                 is PickerActionItem -> handleAction(item.id)
-                is Movie -> viewModel.toggleMovieSelection(item)
-                is TvShow -> viewModel.toggleTvShowSelection(item)
+                is Movie -> handleTitleClick { viewModel.toggleMovieSelection(item) }
+                is TvShow -> handleTitleClick { viewModel.toggleTvShowSelection(item) }
             }
+        }
+    }
+
+    private fun handleTitleClick(defaultAction: () -> Unit) {
+        if (searchMode) {
+            updateActionRow(latestState)
+            setSelectedPosition(0, true)
+        } else {
+            defaultAction()
         }
     }
 
@@ -333,7 +352,12 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
 
     private fun updateTitle(state: MovieUiState) {
         val count = if (contentMode == ContentMode.TV_SHOWS) state.selectedTvShows.size else state.selectedMovies.size
-        val base = if (contentMode == ContentMode.TV_SHOWS) "Select TV Shows" else "Select Movies"
+        val base = when {
+            searchMode && contentMode == ContentMode.TV_SHOWS -> "Search TV Shows"
+            searchMode -> "Search Movies"
+            contentMode == ContentMode.TV_SHOWS -> "Select TV Shows"
+            else -> "Select Movies"
+        }
         title = if (genreName.isBlank()) "$base • $count selected" else "$base • $count selected • $genreName"
     }
 
@@ -519,14 +543,14 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
         override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
             return ComposeView(requireContext()).apply {
                 setContent {
-                    var options by mutableStateOf<List<WatchOption>>(emptyList())
-                    var isLoading by mutableStateOf(true)
-                    var trailerUrl by mutableStateOf<String?>(null)
-                    var showEpisodePicker by mutableStateOf(false)
-                    var availableSeasons by mutableStateOf<List<Int>>(emptyList())
-                    var selectedSeason by mutableStateOf(1)
-                    var resolvedImdbId by mutableStateOf<String?>(null)
-                    var isLoadingSeasons by mutableStateOf(false)
+                    var options by remember { mutableStateOf<List<WatchOption>>(emptyList()) }
+                    var isLoading by remember { mutableStateOf(true) }
+                    var trailerUrl by remember { mutableStateOf<String?>(null) }
+                    var showEpisodePicker by remember { mutableStateOf(false) }
+                    var availableSeasons by remember { mutableStateOf<List<Int>>(emptyList()) }
+                    var selectedSeason by remember { mutableStateOf(1) }
+                    var resolvedImdbId by remember { mutableStateOf<String?>(null) }
+                    var isLoadingSeasons by remember { mutableStateOf(false) }
                     val coroutineScope = rememberCoroutineScope()
 
                     androidx.compose.runtime.LaunchedEffect(Unit) {

@@ -1785,6 +1785,19 @@ class MovieRepository(
             }
         }
 
+        try {
+            val result = pirateBayApi.searchEpisode(
+                title = title,
+                imdbId = resolvedImdbId,
+                season = 1,
+                episode = 1,
+                preferredQuality = "720p"
+            )
+            if (result != null) return@withContext result
+        } catch (e: Exception) {
+            android.util.Log.e("MovieRepository", "PirateBay fallback failed: ${e.message}")
+        }
+
         null
     }
 
@@ -2464,12 +2477,37 @@ class MovieRepository(
                 }
             }
 
+            val pirateBayJob = async {
+                try {
+                    val torrent = pirateBayApi.searchEpisode(
+                        title = showTitle,
+                        imdbId = resolvedImdbId,
+                        season = season,
+                        episode = episode,
+                        preferredQuality = preferredQuality
+                    )
+                    if (torrent != null) {
+                        android.util.Log.d("MovieRepository", "Found PirateBay episode torrent: ${torrent.quality} with ${torrent.seeds} seeds")
+                    }
+                    torrent
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "PirateBay episode lookup failed: ${e.message}")
+                    null
+                }
+            }
+
             val popcornResult = popcornJob.await()
             val eztvResult = eztvJob.await()
             val torznabResult = torznabJob.await()
+            val pirateBayResult = pirateBayJob.await()
 
             // Pick the best torrent (most seeds)
-            val best = listOfNotNull(popcornResult, eztvResult, torznabResult).maxByOrNull { it.seeds }
+            val best = listOfNotNull(
+                popcornResult,
+                eztvResult,
+                torznabResult,
+                pirateBayResult
+            ).maxByOrNull { it.seeds }
             if (best != null) {
                 android.util.Log.d("MovieRepository", "Best torrent for $showTitle S${season}E${episode}: ${best.provider} ${best.quality} (${best.seeds} seeds)")
             } else {
@@ -2528,9 +2566,24 @@ class MovieRepository(
                 }
             }
 
+            val pirateBayJob = async {
+                try {
+                    val seasons = pirateBayApi.getShowEpisodes("", imdbId)
+                        .map { it.season }
+                        .distinct()
+                        .sorted()
+                    android.util.Log.d("MovieRepository", "PirateBay seasons for $imdbId: $seasons")
+                    seasons
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "PirateBay seasons lookup failed: ${e.message}")
+                    emptyList()
+                }
+            }
+
             allSeasons.addAll(popcornJob.await())
             allSeasons.addAll(eztvJob.await())
             allSeasons.addAll(torznabJob.await())
+            allSeasons.addAll(pirateBayJob.await())
         }
 
         android.util.Log.d("MovieRepository", "Aggregated seasons for $imdbId: ${allSeasons.sorted()}")
@@ -2543,7 +2596,7 @@ class MovieRepository(
      * Episodes found in multiple sources get combined torrent info.
      */
     suspend fun getTvShowEpisodes(imdbId: String, season: Int): List<PopcornEpisode> = withContext(Dispatchers.IO) {
-        val (popcornEpisodes, eztvEpisodes, torznabEpisodes) = coroutineScope {
+        val (popcornEpisodes, eztvEpisodes, torznabEpisodes, pirateBayEpisodes) = coroutineScope {
             val popcornJob = async {
             try {
                 val showDetails = popcornTvApi.getShowDetails(imdbId)
@@ -2622,7 +2675,43 @@ class MovieRepository(
             }
         }
 
-            Triple(popcornJob.await(), eztvJob.await(), torznabJob.await())
+        val pirateBayJob = async {
+            try {
+                val episodes = pirateBayApi.getShowEpisodes("", imdbId)
+                    .filter { it.season == season }
+                    .map { pirateBayEpisode ->
+                        val torrents = pirateBayEpisode.torrents.mapIndexed { index, torrent ->
+                            "piratebay_${torrent.quality}_$index" to PopcornEpisodeTorrent(
+                                provider = torrent.provider,
+                                seeds = torrent.seeds,
+                                peers = torrent.peers,
+                                url = torrent.magnetUrl
+                            )
+                        }.toMap()
+                        PopcornEpisode(
+                            tvdbId = null,
+                            season = pirateBayEpisode.season,
+                            episode = pirateBayEpisode.episode,
+                            title = "Episode ${pirateBayEpisode.episode}",
+                            overview = null,
+                            firstAired = null,
+                            torrents = torrents
+                        )
+                    }
+                android.util.Log.d("MovieRepository", "PirateBay found ${episodes.size} episodes for S$season")
+                episodes
+            } catch (e: Exception) {
+                android.util.Log.w("MovieRepository", "PirateBay episodes lookup failed: ${e.message}")
+                emptyList()
+            }
+        }
+
+            TvEpisodeSourceResults(
+                popcorn = popcornJob.await(),
+                eztv = eztvJob.await(),
+                torznab = torznabJob.await(),
+                pirateBay = pirateBayJob.await()
+            )
         }
 
         // Merge: use a map keyed by episode number, Popcorn data takes priority for metadata
@@ -2667,14 +2756,37 @@ class MovieRepository(
             }
         }
 
+        // Merge PirateBay episode releases while retaining richer metadata from Popcorn.
+        for (ep in pirateBayEpisodes) {
+            val epNum = ep.episode ?: continue
+            val existing = mergedMap[epNum]
+            if (existing == null) {
+                mergedMap[epNum] = ep
+            } else {
+                val mergedTorrents = (existing.torrents ?: emptyMap()).toMutableMap()
+                ep.torrents?.forEach { (key, torrent) ->
+                    mergedTorrents[key] = torrent
+                }
+                mergedMap[epNum] = existing.copy(torrents = mergedTorrents)
+            }
+        }
+
         val result = mergedMap.values.sortedBy { it.episode }
         android.util.Log.d(
             "MovieRepository",
             "Aggregated ${result.size} episodes for S$season " +
-                "(Popcorn: ${popcornEpisodes.size}, EZTV: ${eztvEpisodes.size}, Torznab: ${torznabEpisodes.size})"
+                "(Popcorn: ${popcornEpisodes.size}, EZTV: ${eztvEpisodes.size}, " +
+                "Torznab: ${torznabEpisodes.size}, PirateBay: ${pirateBayEpisodes.size})"
         )
         result
     }
+
+    private data class TvEpisodeSourceResults(
+        val popcorn: List<PopcornEpisode>,
+        val eztv: List<PopcornEpisode>,
+        val torznab: List<PopcornEpisode>,
+        val pirateBay: List<PopcornEpisode>
+    )
     
     /**
      * Get IMDB ID for a TV show from TMDB.

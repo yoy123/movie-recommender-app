@@ -547,38 +547,39 @@ fun PreferenceSettingsDialog(
     onPopularityChange: (Float) -> Unit = {},
     // Dark mode
     isDarkMode: Boolean = true,
-    onDarkModeChange: (Boolean) -> Unit = {}
+    onDarkModeChange: (Boolean) -> Unit = {},
+    fullScreen: Boolean = false
 ) {
     var nameText by remember { mutableStateOf(currentUserName) }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnClickOutside = false
-        )
-    ) {
+    val settingsPanel: @Composable () -> Unit = {
         LeanbackPanel(
-            modifier = Modifier
-                .fillMaxWidth(0.78f)
-                .fillMaxHeight(0.9f)
+            modifier = if (fullScreen) {
+                Modifier.fillMaxSize()
+            } else {
+                Modifier
+                    .fillMaxWidth(0.78f)
+                    .fillMaxHeight(0.9f)
+            }
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Settings",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
+            if (!fullScreen) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Settings",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
 
-                LeanbackTextButton(
-                    label = "Done",
-                    onClick = onDismiss,
-                    emphasized = true
-                )
+                    LeanbackTextButton(
+                        label = "Done",
+                        onClick = onDismiss,
+                        emphasized = true
+                    )
+                }
             }
 
             Column(
@@ -775,16 +776,32 @@ fun PreferenceSettingsDialog(
                 )
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                LeanbackTextButton(
-                    label = "Done",
-                    onClick = onDismiss,
-                    emphasized = true
-                )
+            if (!fullScreen) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    LeanbackTextButton(
+                        label = "Done",
+                        onClick = onDismiss,
+                        emphasized = true
+                    )
+                }
             }
+        }
+    }
+
+    if (fullScreen) {
+        settingsPanel()
+    } else {
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnClickOutside = false
+            )
+        ) {
+            settingsPanel()
         }
     }
 }

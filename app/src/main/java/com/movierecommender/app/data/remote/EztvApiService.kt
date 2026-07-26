@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
@@ -31,6 +32,8 @@ class EztvApiService {
 
         private const val TIMEOUT_SECONDS = 15L
         private const val MAX_RESULTS_PER_PAGE = 100
+        private const val MAX_INVENTORY_PAGES = 20
+        private const val INVENTORY_CACHE_TTL_MS = 5 * 60 * 1000L
         private const val USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -42,21 +45,28 @@ class EztvApiService {
         .build()
 
     private val gson = Gson()
+    private val inventoryCache = ConcurrentHashMap<String, CachedEztvInventory>()
 
     /**
      * Get all torrents for a TV show by IMDB ID.
-     * Fetches up to [maxPages] pages (100 torrents each).
+    * Fetches up to [maxPages] pages (100 torrents each) and caches full inventories.
      *
      * @param imdbId IMDB ID with or without "tt" prefix (e.g., "tt0944947" or "0944947")
-     * @param maxPages Maximum number of pages to fetch (default 3 = up to 300 torrents)
+    * @param maxPages Maximum number of pages to fetch (default 20 = up to 2,000 torrents)
      * @return List of EZTV torrents, or empty list if not found
      */
     suspend fun getTorrentsByImdbId(
         imdbId: String,
-        maxPages: Int = 3
+        maxPages: Int = MAX_INVENTORY_PAGES
     ): List<EztvTorrent> = withContext(Dispatchers.IO) {
         // EZTV expects IMDB ID without "tt" prefix
         val cleanId = imdbId.removePrefix("tt")
+        val now = System.currentTimeMillis()
+        if (maxPages == MAX_INVENTORY_PAGES) {
+            inventoryCache[cleanId]
+                ?.takeIf { now - it.createdAtMs < INVENTORY_CACHE_TTL_MS }
+                ?.let { return@withContext it.torrents }
+        }
 
         android.util.Log.d("EztvApi", "Fetching torrents for IMDB ID: $cleanId")
 
@@ -77,8 +87,15 @@ class EztvApiService {
             page++
         }
 
-        android.util.Log.d("EztvApi", "Found ${allTorrents.size} torrents for IMDB $cleanId")
-        allTorrents
+        val deduplicated = allTorrents.distinctBy { torrent ->
+            torrent.hash?.lowercase() ?: torrent.magnetUrl ?: torrent.id
+        }
+        if (maxPages == MAX_INVENTORY_PAGES) {
+            inventoryCache[cleanId] = CachedEztvInventory(now, deduplicated)
+        }
+
+        android.util.Log.d("EztvApi", "Found ${deduplicated.size} torrents for IMDB $cleanId")
+        deduplicated
     }
 
     /**
@@ -341,4 +358,9 @@ data class EztvEpisodeInfo(
     val title: String?,
     val torrentCount: Int,
     val bestSeeds: Int
+)
+
+private data class CachedEztvInventory(
+    val createdAtMs: Long,
+    val torrents: List<EztvTorrent>
 )

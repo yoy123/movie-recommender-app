@@ -104,6 +104,94 @@ class PirateBayApiService {
     }
 
     /**
+     * Enumerate episode releases from both HD and standard TV categories.
+     * Title and IMDb searches are combined because mirrors vary in IMDb indexing quality.
+     */
+    suspend fun getShowEpisodes(title: String, imdbId: String?): List<PirateBayEpisodeInfo> =
+        withContext(Dispatchers.IO) {
+            val queries = buildList {
+                if (!imdbId.isNullOrBlank()) {
+                    add(if (imdbId.startsWith("tt")) imdbId else "tt$imdbId")
+                }
+                if (title.isNotBlank()) add(title)
+            }.distinct()
+
+            val torrents = mutableListOf<PirateBayTorrent>()
+            for (query in queries) {
+                for (category in listOf(CAT_HD_TV, CAT_TV)) {
+                    try {
+                        torrents += search(query, category)
+                    } catch (e: Exception) {
+                        android.util.Log.w(
+                            "PirateBayApi",
+                            "TV inventory failed (cat=$category): ${e.message}"
+                        )
+                    }
+                }
+            }
+
+            PirateBayEpisodeParser.aggregate(
+                torrents = torrents.distinctBy { it.infoHash.lowercase() },
+                provider = "PirateBay"
+            ) { torrent -> torrent.toEpisodeTorrentInfo() }
+        }
+
+    suspend fun searchEpisode(
+        title: String,
+        imdbId: String?,
+        season: Int,
+        episode: Int,
+        preferredQuality: String = "720p"
+    ): EpisodeTorrentInfo? = withContext(Dispatchers.IO) {
+        val episodeToken = "S%02dE%02d".format(season, episode)
+        val targetedResults = mutableListOf<PirateBayTorrent>()
+        for (category in listOf(CAT_HD_TV, CAT_TV)) {
+            try {
+                targetedResults += search("$title $episodeToken", category)
+            } catch (e: Exception) {
+                android.util.Log.w(
+                    "PirateBayApi",
+                    "Episode search failed (cat=$category): ${e.message}"
+                )
+            }
+        }
+
+        val targeted = PirateBayEpisodeParser.aggregate(
+            torrents = targetedResults.distinctBy { it.infoHash.lowercase() },
+            provider = "PirateBay"
+        ) { torrent -> torrent.toEpisodeTorrentInfo() }
+            .firstOrNull { it.season == season && it.episode == episode }
+
+        val candidates = targeted?.torrents
+            ?: getShowEpisodes(title, imdbId)
+                .firstOrNull { it.season == season && it.episode == episode }
+                ?.torrents
+            ?: return@withContext null
+
+        val best = candidates.maxByOrNull { torrent ->
+            val qualityBonus = when (torrent.quality) {
+                preferredQuality -> 300
+                "1080p" -> 200
+                "720p" -> 150
+                else -> 0
+            }
+            qualityBonus + torrent.seeds
+        } ?: return@withContext null
+
+        EpisodeTorrentInfo(
+            magnetUrl = best.magnetUrl,
+            quality = best.quality,
+            seeds = best.seeds,
+            peers = best.peers,
+            provider = best.provider,
+            season = season,
+            episode = episode,
+            episodeTitle = best.releaseTitle,
+            showTitle = title
+        )
+    }
+
+    /**
      * Perform a raw search against the apibay.org API.
      */
     private fun search(query: String, category: String): List<PirateBayTorrent> {
@@ -197,6 +285,17 @@ class PirateBayApiService {
         )
     }
 
+    private fun PirateBayTorrent.toEpisodeTorrentInfo(): PirateBayEpisodeTorrent {
+        return PirateBayEpisodeTorrent(
+            magnetUrl = buildMagnetUrl(infoHash, name),
+            quality = detectQuality(name),
+            seeds = seeders?.toIntOrNull() ?: 0,
+            peers = leechers?.toIntOrNull() ?: 0,
+            provider = "PirateBay",
+            releaseTitle = name
+        )
+    }
+
     /**
      * Build a magnet URL from info_hash.
      */
@@ -237,6 +336,71 @@ class PirateBayApiService {
         }
     }
 }
+
+internal object PirateBayEpisodeParser {
+    fun aggregate(
+        torrents: List<PirateBayTorrent>,
+        provider: String,
+        convert: (PirateBayTorrent) -> PirateBayEpisodeTorrent
+    ): List<PirateBayEpisodeInfo> {
+        return torrents
+            .flatMap { torrent ->
+                extractEpisodeKeys(torrent.name).map { key -> key to torrent }
+            }
+            .groupBy({ it.first }, { it.second })
+            .map { (key, episodeTorrents) ->
+                PirateBayEpisodeInfo(
+                    season = key.first,
+                    episode = key.second,
+                    torrents = episodeTorrents
+                        .filter { (it.seeders?.toIntOrNull() ?: 0) > 0 }
+                        .distinctBy { it.infoHash.lowercase() }
+                        .map(convert)
+                        .sortedWith(
+                            compareByDescending<PirateBayEpisodeTorrent> { it.seeds }
+                                .thenByDescending { it.peers }
+                        )
+                        .map { it.copy(provider = provider) }
+                )
+            }
+            .filter { it.torrents.isNotEmpty() }
+            .sortedWith(compareBy<PirateBayEpisodeInfo> { it.season }.thenBy { it.episode })
+    }
+
+    internal fun extractEpisodeKeys(title: String): List<Pair<Int, Int>> {
+        val keys = mutableListOf<Pair<Int, Int>>()
+        Regex("""\bS(\d{1,2})[ ._-]*E(\d{1,3})\b""", RegexOption.IGNORE_CASE)
+            .findAll(title)
+            .forEach { match ->
+                val season = match.groupValues[1].toIntOrNull() ?: return@forEach
+                val episode = match.groupValues[2].toIntOrNull() ?: return@forEach
+                keys += season to episode
+            }
+        Regex("""\b(\d{1,2})x(\d{1,3})\b""", RegexOption.IGNORE_CASE)
+            .findAll(title)
+            .forEach { match ->
+                val season = match.groupValues[1].toIntOrNull() ?: return@forEach
+                val episode = match.groupValues[2].toIntOrNull() ?: return@forEach
+                keys += season to episode
+            }
+        return keys.distinct()
+    }
+}
+
+data class PirateBayEpisodeInfo(
+    val season: Int,
+    val episode: Int,
+    val torrents: List<PirateBayEpisodeTorrent>
+)
+
+data class PirateBayEpisodeTorrent(
+    val magnetUrl: String,
+    val quality: String,
+    val seeds: Int,
+    val peers: Int,
+    val provider: String,
+    val releaseTitle: String
+)
 
 /**
  * Raw torrent result from apibay.org JSON API.

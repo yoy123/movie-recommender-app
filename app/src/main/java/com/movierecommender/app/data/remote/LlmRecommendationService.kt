@@ -65,17 +65,11 @@ class LlmRecommendationService {
             // Two attempts: first is creative, second is more strict/compliant.
             val attempts = listOf(
                 OpenAiAttempt(
-                    // The current recommendation model tends to comply better with moderate temperature and penalties.
-                    // Very high penalties can cause strange phrasing and format drift.
-                    temperature = 0.6,
-                    frequencyPenalty = 1.0,
-                    presencePenalty = 0.6,
+                    reasoningEffort = "minimal",
                     extraInstructions = ""
                 ),
                 OpenAiAttempt(
-                    temperature = 0.3,
-                    frequencyPenalty = 1.0,
-                    presencePenalty = 0.6,
+                    reasoningEffort = "low",
                     extraInstructions = "\n\nSTRICT RETRY (FINAL):\n" +
                         "The previous response failed validation. Follow the rules exactly:\n" +
                         "- Start with a concise 3-4 sentence taste analysis that references the selected titles\n" +
@@ -117,9 +111,7 @@ class LlmRecommendationService {
                     releaseYearStart = releaseYearStart,
                     releaseYearEnd = releaseYearEnd,
                     useReleaseYearPreference = useReleaseYearPreference,
-                    temperature = attempt.temperature,
-                    frequencyPenalty = attempt.frequencyPenalty,
-                    presencePenalty = attempt.presencePenalty,
+                    reasoningEffort = attempt.reasoningEffort,
                     allowedCandidateTitles = null
                 )
 
@@ -168,15 +160,11 @@ class LlmRecommendationService {
         return try {
             val attempts = listOf(
                 OpenAiAttempt(
-                    temperature = 0.4,
-                    frequencyPenalty = 1.0,
-                    presencePenalty = 0.6,
+                    reasoningEffort = "minimal",
                     extraInstructions = ""
                 ),
                 OpenAiAttempt(
-                    temperature = 0.2,
-                    frequencyPenalty = 1.0,
-                    presencePenalty = 0.6,
+                    reasoningEffort = "low",
                     extraInstructions = "\n\nSTRICT RETRY (FINAL):\n" +
                         "Your previous response failed validation. Follow the rules exactly:\n" +
                         "- Start with a concise 3-4 sentence taste analysis that references the selected titles\n" +
@@ -218,9 +206,7 @@ class LlmRecommendationService {
                     releaseYearStart = releaseYearStart,
                     releaseYearEnd = releaseYearEnd,
                     useReleaseYearPreference = useReleaseYearPreference,
-                    temperature = attempt.temperature,
-                    frequencyPenalty = attempt.frequencyPenalty,
-                    presencePenalty = attempt.presencePenalty,
+                    reasoningEffort = attempt.reasoningEffort,
                     allowedCandidateTitles = candidates
                 )
 
@@ -440,9 +426,7 @@ Summary: one-sentence plot summary.
     }
     
     private data class OpenAiAttempt(
-        val temperature: Double,
-        val frequencyPenalty: Double,
-        val presencePenalty: Double,
+        val reasoningEffort: String,
         val extraInstructions: String
     )
 
@@ -629,32 +613,14 @@ Summary: one-sentence plot summary.
         releaseYearStart: Float,
         releaseYearEnd: Float,
         useReleaseYearPreference: Boolean,
-        temperature: Double,
-        frequencyPenalty: Double,
-        presencePenalty: Double,
+        reasoningEffort: String,
         allowedCandidateTitles: List<String>?
     ): String {
         Log.d(TAG, "Starting OpenAI API call")
         Log.d(TAG, "API Key length: ${apiKey.length}, starts with: ${apiKey.take(10)}...")
         Log.d(TAG, "Prompt preview (first 900 chars): ${prompt.take(900)}")
         
-        val json = JSONObject().apply {
-            put("model", "gpt-4.1-mini")
-            put("messages", JSONArray().apply {
-                put(JSONObject().apply {
-                    put("role", "system")
-                    put("content", "You are an expert film curator and critic with deep knowledge of cinema history, genres, directors, and thematic elements. You excel at understanding WHY someone loves specific films and finding other films that share those same qualities. Your analysis paragraphs must be deeply personal and insightful - dissect the user's taste by naming their selected films and explaining the specific cinematic threads that connect them. NEVER write a generic intro like 'Based on your selections, here are some movies' - that will be rejected. Provide thoughtful, personalized recommendations - never generic suggestions. Write naturally in plain text, no markdown or formatting symbols.")
-                })
-                put(JSONObject().apply {
-                    put("role", "user")
-                    put("content", prompt)
-                })
-            })
-            put("temperature", temperature)
-            put("max_tokens", 2000)             // More room for comprehensive analysis + quality descriptions
-            put("frequency_penalty", frequencyPenalty)       // Strong penalty to avoid repetitive phrasing
-            put("presence_penalty", presencePenalty)        // Encourage diverse vocabulary and ideas
-        }
+        val json = OpenAiRequestFactory.create(prompt, reasoningEffort)
         
         Log.d(TAG, "Request JSON length: ${json.toString().length}")
         
@@ -893,4 +859,50 @@ Summary: one-sentence plot summary.
     }
     
 
+}
+
+internal object OpenAiRequestFactory {
+    const val MODEL = "gpt-5"
+
+    fun create(prompt: String, reasoningEffort: String): JSONObject {
+        val spec = OpenAiRequestSpec.create(prompt, reasoningEffort)
+        return JSONObject().apply {
+            put("model", spec.model)
+            put("messages", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", spec.systemPrompt)
+                })
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", spec.userPrompt)
+                })
+            })
+            put("reasoning_effort", spec.reasoningEffort)
+            put("verbosity", spec.verbosity)
+            put("max_completion_tokens", spec.maxCompletionTokens)
+        }
+    }
+}
+
+internal data class OpenAiRequestSpec(
+    val model: String,
+    val systemPrompt: String,
+    val userPrompt: String,
+    val reasoningEffort: String,
+    val verbosity: String,
+    val maxCompletionTokens: Int
+) {
+    companion object {
+        fun create(prompt: String, reasoningEffort: String): OpenAiRequestSpec {
+            return OpenAiRequestSpec(
+                model = OpenAiRequestFactory.MODEL,
+                systemPrompt = "You are an expert film curator and critic with deep knowledge of cinema history, genres, directors, and thematic elements. You excel at understanding WHY someone loves specific films and finding other films that share those same qualities. Your analysis paragraphs must be deeply personal and insightful - dissect the user's taste by naming their selected films and explaining the specific cinematic threads that connect them. NEVER write a generic intro like 'Based on your selections, here are some movies' - that will be rejected. Provide thoughtful, personalized recommendations - never generic suggestions. Write naturally in plain text, no markdown or formatting symbols.",
+                userPrompt = prompt,
+                reasoningEffort = reasoningEffort,
+                verbosity = "medium",
+                maxCompletionTokens = 4_000
+            )
+        }
+    }
 }

@@ -35,7 +35,7 @@ When documents disagree, use this order:
 
 - Product flavors: `mobile` and `firestick`
 - Room database: version 3
-- OpenAI model: `gpt-4.1-mini`
+- OpenAI model: `gpt-5`
 - AI recommendations: opt-in; TMDB-only mode remains available
 - Torrent cache: one active source, 500 MB device reserve, contiguous no-stall gate, and 60-minute resume retention
 - Embedded Live TV: removed on 2026-07-25

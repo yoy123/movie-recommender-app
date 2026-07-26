@@ -47,11 +47,16 @@ import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.TvShow
 import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.ui.leanback.LeanbackActionButton
+import com.movierecommender.app.ui.leanback.LeanbackBackdrop
+import com.movierecommender.app.ui.leanback.LeanbackPanel
+import com.movierecommender.app.ui.leanback.LeanbackTextButton
 import com.movierecommender.app.ui.leanback.LeanbackTopBar
 import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
 import com.movierecommender.app.ui.dialogs.firestick.LlmConsentDialog
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavController
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,8 +104,10 @@ fun RecommendationsScreen(
         )
     }
     
-    Scaffold(
-        topBar = {
+    LeanbackBackdrop {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
             LeanbackTopBar(
                 title = "Analysis",
                 subtitle = if (hasSelections) "Built from your current picks" else "Review the current recommendation pass",
@@ -127,16 +134,16 @@ fun RecommendationsScreen(
                     )
                 }
             )
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                when {
-                    uiState.isLoading -> {
+            }
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    when {
+                        uiState.isLoading -> {
                         Column(
                             modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 96.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
@@ -163,26 +170,14 @@ fun RecommendationsScreen(
                             )
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // Focusable retry button
-                            val retryInteraction = remember { MutableInteractionSource() }
-                            val retryFocused by retryInteraction.collectIsFocusedAsState()
-
-                            Button(
-                                onClick = { 
+                            LeanbackTextButton(
+                                label = "Retry",
+                                onClick = {
                                     if (isTvMode) viewModel.generateTvRecommendations() 
                                     else viewModel.generateRecommendations() 
                                 },
-                                interactionSource = retryInteraction,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (retryFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
-                                ),
-                                border = if (retryFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null
-                            ) {
-                                Text(
-                                    "Retry",
-                                    color = if (retryFocused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
+                                emphasized = true
+                            )
                         }
                     }
                     else -> {
@@ -250,14 +245,14 @@ fun RecommendationsScreen(
                                 // Analysis section - focusable
                                 if (intro.isNotBlank()) {
                                     item {
-                                        FocusableCard(containerColor = Color.White) {
+                                        FocusableCard(containerColor = MaterialTheme.colorScheme.surfaceVariant) {
                                             Column(modifier = Modifier.padding(20.dp)) {
                                                 Text(
                                                     text = "Analysis",
                                                     style = MaterialTheme.typography.headlineMedium,
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 26.sp,
-                                                    color = Color.Black
+                                                    color = MaterialTheme.colorScheme.onSurface
                                                 )
                                                 Spacer(modifier = Modifier.height(12.dp))
                                                 Text(
@@ -268,7 +263,7 @@ fun RecommendationsScreen(
                                                     style = MaterialTheme.typography.bodyLarge,
                                                     fontSize = 18.sp,
                                                     lineHeight = 28.sp,
-                                                    color = Color(0xFF333333)
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
                                             }
                                         }
@@ -277,13 +272,13 @@ fun RecommendationsScreen(
 
                                 if (items.isNotEmpty()) {
                                     item {
-                                        FocusableCard(containerColor = MaterialTheme.colorScheme.primary) {
+                                        FocusableCard(containerColor = MaterialTheme.colorScheme.tertiaryContainer) {
                                             Text(
                                                 text = "RECOMMENDATIONS",
                                                 style = MaterialTheme.typography.headlineMedium,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 24.sp,
-                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                color = MaterialTheme.colorScheme.onTertiaryContainer,
                                                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
                                             )
                                         }
@@ -308,30 +303,46 @@ fun RecommendationsScreen(
             }
         }
     }
+    }
 
     if (showStartOverConfirm) {
-        AlertDialog(
+        Dialog(
             onDismissRequest = { showStartOverConfirm = false },
-            title = { Text("Start Over?") },
-            text = { Text("This will clear your current picks and return to title selection.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showStartOverConfirm = false
-                        if (isTvMode) viewModel.clearTvShowSelections()
-                        else viewModel.clearSelections()
-                        onStartOver()
-                    }
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            LeanbackPanel(modifier = Modifier.fillMaxWidth(0.48f)) {
+                Text(
+                    text = "Start over?",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "This will clear your current picks and return to title selection.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    Text("Clear Picks")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showStartOverConfirm = false }) {
-                    Text("Cancel")
+                    LeanbackTextButton(
+                        label = "Cancel",
+                        onClick = { showStartOverConfirm = false },
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+                    LeanbackTextButton(
+                        label = "Clear picks",
+                        emphasized = true,
+                        onClick = {
+                            showStartOverConfirm = false
+                            if (isTvMode) viewModel.clearTvShowSelections()
+                            else viewModel.clearSelections()
+                            onStartOver()
+                        }
+                    )
                 }
             }
-        )
+        }
     }
 }
 
@@ -568,7 +579,10 @@ private fun FocusableCard(
             .fillMaxWidth()
             .focusable(interactionSource = interactionSource),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = if (isFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
+        border = BorderStroke(
+            if (isFocused) 3.dp else 1.dp,
+            if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
+        ),
         elevation = CardDefaults.cardElevation(
             defaultElevation = if (isFocused) 8.dp else 2.dp
         )
@@ -619,9 +633,12 @@ private fun RecommendationCard(
             .fillMaxWidth()
             .focusable(interactionSource = cardInteraction),
         colors = CardDefaults.cardColors(
-            containerColor = if (cardFocused) MaterialTheme.colorScheme.primaryContainer else Color.White
+            containerColor = if (cardFocused) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
         ),
-        border = if (cardFocused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
+        border = BorderStroke(
+            if (cardFocused) 3.dp else 1.dp,
+            if (cardFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
+        ),
         elevation = CardDefaults.cardElevation(
             defaultElevation = if (cardFocused) 8.dp else 2.dp
         )
@@ -643,7 +660,7 @@ private fun RecommendationCard(
                     append(displayTitle)
                     if (ratingText != null) {
                         append("  ")
-                        withStyle(SpanStyle(color = Color(0xFF666666), fontSize = 16.sp)) {
+                        withStyle(SpanStyle(color = MaterialTheme.colorScheme.tertiary, fontSize = 16.sp)) {
                             append("★ $ratingText")
                         }
                     }
@@ -651,7 +668,7 @@ private fun RecommendationCard(
                 style = MaterialTheme.typography.titleLarge,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = if (cardFocused) MaterialTheme.colorScheme.onPrimaryContainer else Color.Black
+                color = if (cardFocused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
             )
             
             // Description
@@ -662,7 +679,7 @@ private fun RecommendationCard(
                     style = MaterialTheme.typography.bodyLarge,
                     fontSize = 17.sp,
                     lineHeight = 24.sp,
-                    color = if (cardFocused) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else Color(0xFF444444)
+                    color = if (cardFocused) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             
@@ -691,14 +708,14 @@ private fun RecommendationCard(
                     border = if (trailerFocused) BorderStroke(4.dp, Color.White) else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                     modifier = Modifier
                         .focusable(interactionSource = trailerInteraction)
-                        .height(if (trailerFocused) 56.dp else 48.dp),
+                        .height(56.dp),
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = if (trailerFocused) 8.dp else 2.dp
                     )
                 ) {
                     Text(
                         "Watch Trailer",
-                        fontSize = if (trailerFocused) 18.sp else 16.sp,
+                        fontSize = 16.sp,
                         fontWeight = if (trailerFocused) FontWeight.Bold else FontWeight.Normal,
                         color = if (trailerFocused) Color.White else MaterialTheme.colorScheme.onPrimaryContainer
                     )
@@ -762,7 +779,7 @@ private fun RecommendationCard(
                     border = if (watchNowFocused) BorderStroke(4.dp, Color.White) else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                     modifier = Modifier
                         .focusable(interactionSource = watchNowInteraction)
-                        .height(if (watchNowFocused) 56.dp else 48.dp),
+                        .height(56.dp),
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = if (watchNowFocused) 8.dp else 2.dp
                     ),
@@ -778,7 +795,7 @@ private fun RecommendationCard(
                     }
                     Text(
                         if (isLoadingWatchOptions) "Finding..." else "Watch Options",
-                        fontSize = if (watchNowFocused) 18.sp else 16.sp,
+                        fontSize = 16.sp,
                         fontWeight = if (watchNowFocused) FontWeight.Bold else FontWeight.Normal,
                         color = if (watchNowFocused) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
                     )

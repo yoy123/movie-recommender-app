@@ -139,10 +139,20 @@ class BrowseGenreFragment : BrowseSupportFragment() {
         }
 
         setOnSearchClickedListener {
-            // Could launch a SearchFragment or Compose search screen in the future
-            android.widget.Toast.makeText(
-                requireContext(), "Search coming soon", android.widget.Toast.LENGTH_SHORT
-            ).show()
+            val labels = arrayOf("Movies", "TV Shows")
+            android.app.AlertDialog.Builder(requireContext())
+                .setTitle("Search Titles")
+                .setItems(labels) { _, index ->
+                    val mode = if (index == 1) ContentMode.TV_SHOWS else ContentMode.MOVIES
+                    val intent = Intent(requireContext(), LeanbackPickerActivity::class.java).apply {
+                        putExtra(LeanbackPickerActivity.EXTRA_GENRE_NAME, "Search")
+                        putExtra(LeanbackPickerActivity.EXTRA_CONTENT_MODE, mode.name)
+                        putExtra(LeanbackPickerActivity.EXTRA_SEARCH_MODE, true)
+                    }
+                    startActivity(intent)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
     }
 

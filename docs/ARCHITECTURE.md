@@ -150,7 +150,7 @@ AI enabled and consented?
 Room recommendation flags for movies / ViewModel text and parsed results
 ```
 
-The current OpenAI model is `gpt-4.1-mini` through `/v1/chat/completions`.
+The current OpenAI model is `gpt-5` through `/v1/chat/completions`, using bounded reasoning effort and `max_completion_tokens`.
 
 AI failure falls back to TMDB-based recommendation text.
 
@@ -184,7 +184,7 @@ Swarm API results must report at least one seed or peer. The two public-domain c
 
 ### TV episodes
 
-Popcorn TV, EZTV, and configured Torznab endpoints are queried concurrently when possible. The repository selects the result with the highest seed count. Season and episode lists merge Popcorn TV and EZTV.
+Popcorn TV, EZTV, configured Torznab endpoints, and Pirate Bay TV are queried concurrently when possible. The repository selects the result with the highest seed count. Season and episode lists merge all available inventories while preserving Popcorn metadata.
 
 ## Playback
 

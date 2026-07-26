@@ -40,7 +40,7 @@ class GenreCardPresenter : Presenter() {
     }
 
     override fun onCreateViewHolder(parent: ViewGroup): ViewHolder {
-        val cardView = ImageCardView(parent.context).apply {
+        val cardView = FocusBorderImageCardView(parent.context).apply {
             isFocusable = true
             isFocusableInTouchMode = true
             setMainImageDimensions(CARD_WIDTH, CARD_HEIGHT)

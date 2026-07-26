@@ -29,7 +29,8 @@ class TorznabService(config: String) {
         private const val TIMEOUT_SECONDS = 15L
         private const val MOVIE_CATEGORY = "2000"
         private const val TV_CATEGORY = "5000"
-        private const val SHOW_INVENTORY_LIMIT = 100
+        private const val SHOW_INVENTORY_PAGE_SIZE = 100
+        private const val MAX_INVENTORY_PAGES = 20
         private const val INVENTORY_CACHE_TTL_MS = 5 * 60 * 1000L
     }
 
@@ -114,13 +115,13 @@ class TorznabService(config: String) {
             ?.takeIf { now - it.createdAtMs < INVENTORY_CACHE_TTL_MS }
             ?.let { return@withContext it.episodes }
 
-        val matches = fetchMatches(
+        val matches = fetchInventoryMatches(
             TorznabQuery(
                 type = "tvsearch",
                 query = "",
                 category = TV_CATEGORY,
                 imdbId = imdbId,
-                limit = SHOW_INVENTORY_LIMIT
+                limit = SHOW_INVENTORY_PAGE_SIZE
             )
         )
         val episodes = TorznabEpisodeInventory.aggregate(matches)
@@ -156,8 +157,53 @@ class TorznabService(config: String) {
         }.awaitAll().flatten()
     }
 
+    private suspend fun fetchInventoryMatches(query: TorznabQuery): List<TorznabMatch> = coroutineScope {
+        sources.map { source ->
+            async {
+                try {
+                    fetchInventory(source, query).map { TorznabMatch(source, it) }
+                } catch (e: Exception) {
+                    android.util.Log.w("Torznab", "${source.name} inventory failed: ${e.message}")
+                    emptyList()
+                }
+            }
+        }.awaitAll().flatten()
+    }
+
+    private fun fetchInventory(source: TorznabSource, query: TorznabQuery): List<TorznabResult> {
+        val results = mutableListOf<TorznabResult>()
+        val identities = mutableSetOf<String>()
+        var offset = 0
+        var pagesFetched = 0
+
+        while (pagesFetched < MAX_INVENTORY_PAGES) {
+            val page = fetchPage(source, query.copy(offset = offset))
+            if (page.itemCount == 0) break
+
+            val newResults = page.results.filter { result ->
+                identities.add("${result.magnetUrl}#${result.season}#${result.episode}")
+            }
+            if (page.results.isNotEmpty() && newResults.isEmpty()) break
+            results += newResults
+            pagesFetched++
+
+            val nextOffset = (page.offset ?: offset) + page.itemCount
+            val hasMore = page.total?.let { nextOffset < it }
+                ?: (page.itemCount >= (query.limit ?: SHOW_INVENTORY_PAGE_SIZE))
+            if (!hasMore || nextOffset <= offset) break
+            offset = nextOffset
+        }
+
+        return results
+    }
+
     private fun fetch(source: TorznabSource, query: TorznabQuery): List<TorznabResult> {
-        val baseUrl = source.endpoint.toHttpUrlOrNull() ?: return emptyList()
+        return fetchPage(source, query).results
+    }
+
+    private fun fetchPage(source: TorznabSource, query: TorznabQuery): TorznabFeedPage {
+        val baseUrl = source.endpoint.toHttpUrlOrNull()
+            ?: return TorznabFeedPage(emptyList(), null, null, 0)
         val url = baseUrl.newBuilder()
             .addQueryParameter("t", query.type)
             .addQueryParameter("cat", query.category)
@@ -168,6 +214,7 @@ class TorznabService(config: String) {
                 query.season?.let { addQueryParameter("season", it.toString()) }
                 query.episode?.let { addQueryParameter("ep", it.toString()) }
                 query.limit?.let { addQueryParameter("limit", it.toString()) }
+                query.offset?.let { addQueryParameter("offset", it.toString()) }
             }
             .build()
 
@@ -183,7 +230,7 @@ class TorznabService(config: String) {
             response.body?.string().orEmpty()
         }
 
-        return TorznabFeedParser.parse(xml)
+        return TorznabFeedParser.parsePage(xml)
     }
 
     private fun score(
@@ -239,7 +286,11 @@ internal object TorznabSourceConfig {
 
 internal object TorznabFeedParser {
     fun parse(xml: String): List<TorznabResult> {
-        if (xml.isBlank()) return emptyList()
+        return parsePage(xml).results
+    }
+
+    fun parsePage(xml: String): TorznabFeedPage {
+        if (xml.isBlank()) return TorznabFeedPage(emptyList(), null, null, 0)
 
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = true
@@ -252,12 +303,26 @@ internal object TorznabFeedParser {
         val document = factory.newDocumentBuilder().parse(InputSource(StringReader(xml)))
         val items = document.getElementsByTagName("item")
 
-        return buildList {
+        val results = buildList {
             for (index in 0 until items.length) {
                 val item = items.item(index) as? Element ?: continue
                 addAll(parseItems(item))
             }
         }
+        val response = document.getElementsByTagName("*")
+            .let { nodes ->
+                (0 until nodes.length)
+                    .asSequence()
+                    .mapNotNull { nodes.item(it) as? Element }
+                    .firstOrNull { it.localName == "response" || it.tagName.endsWith(":response") }
+            }
+
+        return TorznabFeedPage(
+            results = results,
+            offset = response?.getAttribute("offset")?.toIntOrNull(),
+            total = response?.getAttribute("total")?.toIntOrNull(),
+            itemCount = items.length
+        )
     }
 
     private fun parseItems(item: Element): List<TorznabResult> {
@@ -395,7 +460,15 @@ private data class TorznabQuery(
     val imdbId: String? = null,
     val season: Int? = null,
     val episode: Int? = null,
-    val limit: Int? = null
+    val limit: Int? = null,
+    val offset: Int? = null
+)
+
+internal data class TorznabFeedPage(
+    val results: List<TorznabResult>,
+    val offset: Int?,
+    val total: Int?,
+    val itemCount: Int
 )
 
 internal data class TorznabMatch(

@@ -1,11 +1,13 @@
 package com.movierecommender.app.torrent
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.MediaMetadataRetriever
 import android.os.Binder
 import android.os.Build
@@ -611,6 +613,13 @@ class TorrentStreamService : Service(), TorrentListener {
     private fun updateNotification(status: String) {
         val now = System.currentTimeMillis()
         if (now - lastNotificationMs < 5_000L) return
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
         lastNotificationMs = now
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, createNotification(status))

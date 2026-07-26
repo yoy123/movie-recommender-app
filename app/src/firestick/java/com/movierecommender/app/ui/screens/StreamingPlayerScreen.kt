@@ -392,26 +392,25 @@ fun StreamingPlayerScreen(
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_LEFT -> {
-                            if (isPlayerReady) {
-                                showControls = true
-                                // Seek backward 10 seconds
-                                exoPlayer?.let { player ->
-                                    player.seekTo((player.currentPosition - 10000).coerceAtLeast(0))
-                                }
+                            if (!isPlayerReady) return@onKeyEvent false
+                            showControls = true
+                            // Seek backward 10 seconds
+                            exoPlayer?.let { player ->
+                                player.seekTo((player.currentPosition - 10000).coerceAtLeast(0))
                             }
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                            if (isPlayerReady) {
-                                showControls = true
-                                // Seek forward 10 seconds
-                                exoPlayer?.let { player ->
-                                    player.seekTo((player.currentPosition + 10000).coerceAtMost(player.duration))
-                                }
+                            if (!isPlayerReady) return@onKeyEvent false
+                            showControls = true
+                            // Seek forward 10 seconds
+                            exoPlayer?.let { player ->
+                                player.seekTo((player.currentPosition + 10000).coerceAtMost(player.duration))
                             }
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            if (!isPlayerReady) return@onKeyEvent false
                             showControls = true
                             true
                         }

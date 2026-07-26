@@ -53,20 +53,15 @@ When the pool is too small, the service can use open generation with stronger po
 
 ```text
 POST https://api.openai.com/v1/chat/completions
-model: gpt-4.1-mini
+model: gpt-5
 ```
 
-### Open generation attempts
+### Attempts
 
-1. temperature `0.6`
-2. temperature `0.3`
+1. `minimal` reasoning effort
+2. `low` reasoning effort with strict retry instructions
 
-### Bounded rerank attempts
-
-1. temperature `0.4`
-2. temperature `0.2`
-
-The second attempt is stricter and intended to correct formatting, duplication, or constraint failures.
+Both modes use medium verbosity and a 4,000-token completion budget. The second attempt is stricter and intended to correct formatting, duplication, or constraint failures.
 
 ### Output
 

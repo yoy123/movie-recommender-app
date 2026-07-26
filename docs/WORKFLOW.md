@@ -83,10 +83,10 @@ Retry excludes titles already returned during the current session.
 
 1. User selects Browse Episodes.
 2. Resolve IMDb ID through Popcorn TV or TMDB external IDs.
-3. Merge available seasons from Popcorn TV and EZTV.
+3. Merge available seasons from Popcorn TV, EZTV, configured Torznab endpoints, and Pirate Bay TV.
 4. Merge episodes for the selected season.
 5. User selects an episode.
-6. Query Popcorn TV and EZTV concurrently.
+6. Query all available TV torrent sources concurrently.
 7. Select the result with the highest seed count.
 8. Start torrent playback.
 

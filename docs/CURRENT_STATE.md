@@ -75,17 +75,12 @@ flavor-specific MovieViewModel
 
 ### AI mode
 
-AI mode is enabled only after the user grants consent. The current OpenAI request uses `gpt-4.1-mini` through the Chat Completions endpoint.
+AI mode is enabled only after the user grants consent. The current OpenAI request uses `gpt-5` through the Chat Completions endpoint.
 
-Movie open-mode retry temperatures:
+The two-attempt strategy now varies reasoning effort rather than unsupported legacy sampling fields:
 
-1. `0.6`
-2. `0.3`
-
-Bounded candidate reranking uses a stricter pair:
-
-1. `0.4`
-2. `0.2`
+1. `minimal`
+2. `low` with stricter retry instructions
 
 The repository validates output and falls back to TMDB-derived recommendations when the LLM path fails.
 
@@ -121,8 +116,9 @@ Swarm API results must report live peers. The public-domain catalogs provide ver
 - Popcorn TV
 - EZTV
 - configured Torznab endpoints
+- Pirate Bay TV categories
 
-Episode lookups query both sources concurrently when possible and select the result with the highest seed count.
+Episode lookups query all available sources concurrently and select the result with the highest seed count. Torznab and EZTV inventories paginate up to bounded 2,000-release safety limits and use short-lived caches for season/episode browsing.
 
 ### Watch-provider handling
 

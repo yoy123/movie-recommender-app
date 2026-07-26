@@ -11,6 +11,7 @@ class LeanbackPickerActivity : FragmentActivity() {
         const val EXTRA_GENRE_ID = "extra_genre_id"
         const val EXTRA_GENRE_NAME = "extra_genre_name"
         const val EXTRA_CONTENT_MODE = "extra_content_mode"
+        const val EXTRA_SEARCH_MODE = "extra_search_mode"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -21,7 +22,8 @@ class LeanbackPickerActivity : FragmentActivity() {
             val fragment = LeanbackPickerFragment.newInstance(
                 genreId = intent.getIntExtra(EXTRA_GENRE_ID, -1),
                 genreName = intent.getStringExtra(EXTRA_GENRE_NAME).orEmpty(),
-                contentModeName = intent.getStringExtra(EXTRA_CONTENT_MODE).orEmpty()
+                contentModeName = intent.getStringExtra(EXTRA_CONTENT_MODE).orEmpty(),
+                searchMode = intent.getBooleanExtra(EXTRA_SEARCH_MODE, false)
             )
 
             supportFragmentManager.beginTransaction()

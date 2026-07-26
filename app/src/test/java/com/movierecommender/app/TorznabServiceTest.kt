@@ -65,8 +65,30 @@ class TorznabServiceTest {
         assertEquals(listOf(2 to 3, 2 to 4, 3 to 5), results.drop(2).map { it.season to it.episode })
     }
 
-      @Test
-      fun episodeInventory_mergesEndpointsAndDeduplicatesInfoHashes() {
+    @Test
+    fun feedParser_readsPaginationMetadataWithoutCountingExpandedEpisodes() {
+        val xml = """
+            <rss xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+              <channel>
+                <newznab:response offset="100" total="245" />
+                <item>
+                  <title>Example Show S02E03E04 1080p</title>
+                  <newznab:attr name="infohash" value="abcdef0123456789abcdef0123456789abcdef01" />
+                </item>
+              </channel>
+            </rss>
+        """.trimIndent()
+
+        val page = TorznabFeedParser.parsePage(xml)
+
+        assertEquals(100, page.offset)
+        assertEquals(245, page.total)
+        assertEquals(1, page.itemCount)
+        assertEquals(2, page.results.size)
+    }
+
+    @Test
+    fun episodeInventory_mergesEndpointsAndDeduplicatesInfoHashes() {
         val primary = TorznabSource("Primary", "https://primary.example/api", "key")
         val backup = TorznabSource("Backup", "https://backup.example/api", "key")
         val duplicateHash = "0123456789abcdef0123456789abcdef01234567"

@@ -440,7 +440,16 @@ class MovieViewModel(
     fun searchTvShows(query: String) {
         _uiState.value = _uiState.value.copy(searchQuery = query)
         if (query.isBlank()) {
-            _uiState.value.selectedGenreId?.let { loadTvShowsByGenre(genreId = it, reset = true) }
+            val selectedGenreId = _uiState.value.selectedGenreId
+            if (selectedGenreId != null) {
+                loadTvShowsByGenre(genreId = selectedGenreId, reset = true)
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    tvShows = emptyList(),
+                    isLoading = false,
+                    error = null
+                )
+            }
             return
         }
 
@@ -569,7 +578,16 @@ class MovieViewModel(
     fun searchMovies(query: String) {
         _uiState.value = _uiState.value.copy(searchQuery = query)
         if (query.isBlank()) {
-            _uiState.value.selectedGenreId?.let { loadMoviesByGenre(genreId = it, reset = true) }
+            val selectedGenreId = _uiState.value.selectedGenreId
+            if (selectedGenreId != null) {
+                loadMoviesByGenre(genreId = selectedGenreId, reset = true)
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    movies = emptyList(),
+                    isLoading = false,
+                    error = null
+                )
+            }
             return
         }
         // While searching, disable genre paging.

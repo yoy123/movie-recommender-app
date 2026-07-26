@@ -62,7 +62,7 @@ PRIVACY
 Your favorites and settings are stored locally on your device. AI recommendations are optional and require consent before selected titles and preference settings are sent to OpenAI. You can continue using TMDB-only recommendations without enabling AI.
 ```
 
-Do not name a specific OpenAI model in store copy unless the listing will be updated whenever the implementation changes. The current code uses `gpt-4.1-mini`, but model branding is not necessary for users.
+Do not name a specific OpenAI model in store copy unless the listing will be updated whenever the implementation changes. The current code uses `gpt-5`, but model branding is not necessary for users.
 
 ## Screenshots
 

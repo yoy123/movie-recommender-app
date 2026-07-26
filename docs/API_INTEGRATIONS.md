@@ -91,10 +91,10 @@ OPENAI_API_KEY=...
 
 ```text
 POST https://api.openai.com/v1/chat/completions
-model: gpt-4.1-mini
+model: gpt-5
 ```
 
-Older documentation referred to GPT-4o-mini. That is no longer the model configured in `LlmRecommendationService`.
+The request uses `max_completion_tokens`, medium verbosity, and GPT-5 reasoning effort instead of legacy sampling penalties.
 
 ### Consent
 
@@ -104,15 +104,10 @@ If AI is disabled or consent is declined, the repository uses the TMDB-only rank
 
 ### Retry behavior
 
-Open generation:
+Both recommendation modes use two attempts:
 
-1. temperature `0.6`
-2. temperature `0.3`
-
-Bounded candidate reranking:
-
-1. temperature `0.4`
-2. temperature `0.2`
+1. `minimal` reasoning effort
+2. `low` reasoning effort plus strict retry instructions
 
 The second attempt uses stricter instructions. Invalid or incomplete output returns control to the repository fallback path.
 
@@ -187,11 +182,17 @@ Uses IMDb ID and provides:
 - quality detection
 - first-episode and specific-episode selection
 
+The full inventory is paginated up to a 2,000-release safety limit and cached for five minutes.
+
+### Pirate Bay TV
+
+Uses the existing Pirate Bay API adapter's TV and HD TV categories. Strict `SxxEyy` and `NxYY` parsing excludes season packs from the episode picker.
+
 ### Repository behavior
 
-For a specific episode, Popcorn TV, EZTV, and configured Torznab endpoints are queried concurrently when possible. The result with the highest seed count is selected. Torznab is also used as the final S01E01 quick-play fallback.
+For a specific episode, Popcorn TV, EZTV, configured Torznab endpoints, and Pirate Bay TV are queried concurrently when possible. The result with the highest seed count is selected. All four sources participate in S01E01 quick-play fallback.
 
-Season and episode lists merge both sources, with Popcorn metadata preferred when both describe the same episode.
+Season and episode lists merge all available sources, with Popcorn metadata preferred when several sources describe the same episode. Torznab follows advertised result offsets across every configured endpoint, up to a 2,000-release safety limit per endpoint.
 
 ## 6. Watch Providers and Deep Links
 

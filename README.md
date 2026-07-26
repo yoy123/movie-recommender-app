@@ -22,7 +22,7 @@ The embedded Firestick Live TV guide was removed on 2026-07-25 because it depend
 - Launch supported streaming applications through mapped package names and deep links.
 - Store exact provider-content links in a Room-backed crosswalk.
 - Find movie torrents through a multi-source fallback chain.
-- Browse TV seasons and episodes with Popcorn TV and EZTV coverage.
+- Browse TV seasons and episodes across Popcorn TV, EZTV, configured Torznab endpoints, and Pirate Bay TV.
 - Play torrent-backed media through Media3 ExoPlayer and `TorrentStreamService`.
 
 ## Technology
@@ -34,7 +34,7 @@ The embedded Firestick Live TV guide was removed on 2026-07-25 because it depend
 - Room database version 3
 - Preferences DataStore
 - Retrofit and OkHttp
-- OpenAI Chat Completions (`gpt-4.1-mini`)
+- OpenAI Chat Completions (`gpt-5`)
 - TMDB
 - Media3 ExoPlayer
 - TorrentStream-Android

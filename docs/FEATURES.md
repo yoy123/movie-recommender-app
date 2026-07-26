@@ -130,9 +130,10 @@ TV recommendation and selection cards open an episode picker instead of blindly 
 The picker:
 
 - resolves an IMDb ID
-- merges seasons from Popcorn TV and EZTV
-- merges episode lists
-- searches the selected episode in both sources
+- merges seasons from Popcorn TV, EZTV, configured Torznab endpoints, and Pirate Bay TV
+- merges episode lists while preserving Popcorn metadata
+- paginates bounded Torznab and EZTV inventories for long-running shows
+- searches the selected episode in all available sources
 - selects the highest-seed result
 
 ## Playback

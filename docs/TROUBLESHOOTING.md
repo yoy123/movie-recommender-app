@@ -82,7 +82,7 @@ The service performs a stricter second attempt. If validation still fails, the r
 Current model:
 
 ```text
-gpt-4.1-mini
+gpt-5
 ```
 
 ## Database Problems
