@@ -9,17 +9,21 @@
 ```properties
 TMDB_API_KEY=...
 OPENAI_API_KEY=...
+TORZNAB_SOURCES=...
 ```
 
-Both values are read by `app/build.gradle.kts` and compiled into `BuildConfig`.
+The values are read by `app/build.gradle.kts` and compiled into `BuildConfig`.
 
 | BuildConfig field | Value source |
 | --- | --- |
 | `TMDB_API_KEY` | `local.properties` |
 | `TMDB_BASE_URL` | hardcoded `https://api.themoviedb.org/3/` |
 | `OPENAI_API_KEY` | `local.properties` |
+| `TORZNAB_SOURCES` | optional semicolon-separated Torznab endpoint configuration from `local.properties` |
 
 `OMDB_API_KEY` is not defined. OMDb code was removed.
+
+`TORZNAB_SOURCES` entries use `Name|HTTPS endpoint|API key`. Multiple entries are separated with semicolons. An empty value disables the integration.
 
 ## Android Configuration
 

@@ -12,6 +12,7 @@
 | IMDb scraper | Trailer fallback from IMDb pages | None | Active fallback |
 | YTS | Movie torrent lookup | None | Active |
 | Popcorn movie API | Movie torrent lookup | None | Active |
+| Torznab | Configurable movie and TV torrent lookup through authorized Jackett/Prowlarr endpoints | API key | Optional |
 | Pirate Bay adapter | Movie torrent lookup | None | Active fallback |
 | TorrentGalaxy adapter | Movie torrent lookup | None | Active fallback |
 | 1337x adapter | Movie torrent lookup | None | Active fallback |
@@ -136,9 +137,10 @@ Because IMDb HTML is not a stable API contract, scraper failure must remain non-
 
 1. YTS
 2. Popcorn movie API
-3. Pirate Bay adapter
-4. TorrentGalaxy adapter
-5. 1337x adapter (`LeetxService`)
+3. Configured Torznab endpoints
+4. Pirate Bay adapter
+5. TorrentGalaxy adapter
+6. 1337x adapter (`LeetxService`)
 
 IMDb ID is resolved through TMDB where useful. A torrent is returned only when it reports at least one seed or peer.
 
@@ -149,6 +151,16 @@ YTS and Popcorn generally prefer the smallest available file for faster startup.
 ### Reliability
 
 These are unofficial third-party services. Hostnames, response formats, anti-bot behavior, and availability may change without notice.
+
+### Torznab configuration
+
+Torznab support is optional and accepts multiple semicolon-separated endpoints in `local.properties`:
+
+```properties
+TORZNAB_SOURCES=Jackett|https://indexer.example/api/v2.0/indexers/all/results/torznab/|api_key;Backup|https://backup.example/torznab/api|api_key
+```
+
+Each entry uses `Name|HTTPS endpoint|API key`. The app queries configured endpoints concurrently and chooses a live result using title, year, quality, and seed count. Use only endpoints and content sources you are authorized to access.
 
 ## 5. TV Torrent Sources
 
@@ -173,7 +185,7 @@ Uses IMDb ID and provides:
 
 ### Repository behavior
 
-For a specific episode, Popcorn TV and EZTV are queried concurrently when possible. The result with the highest seed count is selected.
+For a specific episode, Popcorn TV, EZTV, and configured Torznab endpoints are queried concurrently when possible. The result with the highest seed count is selected. Torznab is also used as the final S01E01 quick-play fallback.
 
 Season and episode lists merge both sources, with Popcorn metadata preferred when both describe the same episode.
 

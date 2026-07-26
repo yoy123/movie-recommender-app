@@ -37,6 +37,10 @@ android {
         buildConfigField("String", "TMDB_API_KEY", "\"${localProperties.getProperty("TMDB_API_KEY", "")}\"")
         buildConfigField("String", "TMDB_BASE_URL", "\"https://api.themoviedb.org/3/\"")
         buildConfigField("String", "OPENAI_API_KEY", "\"${localProperties.getProperty("OPENAI_API_KEY", "")}\"")
+        val torznabSources = localProperties.getProperty("TORZNAB_SOURCES", "")
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+        buildConfigField("String", "TORZNAB_SOURCES", "\"$torznabSources\"")
         // OMDB_API_KEY removed - OmdbApiService was dead code (never called)
     }
 

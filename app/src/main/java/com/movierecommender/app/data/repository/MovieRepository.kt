@@ -20,6 +20,7 @@ import com.movierecommender.app.data.remote.EztvApiService
 import com.movierecommender.app.data.remote.PirateBayApiService
 import com.movierecommender.app.data.remote.TorrentGalaxyService
 import com.movierecommender.app.data.remote.LeetxService
+import com.movierecommender.app.data.remote.TorznabService
 import com.movierecommender.app.data.remote.TorrentInfo
 import com.movierecommender.app.data.remote.EpisodeTorrentInfo
 import com.movierecommender.app.data.remote.StreamingAppRegistry
@@ -61,7 +62,8 @@ class MovieRepository(
     private val eztvApi: EztvApiService = EztvApiService(),
     private val pirateBayApi: PirateBayApiService = PirateBayApiService(),
     private val torrentGalaxyApi: TorrentGalaxyService = TorrentGalaxyService(),
-    private val leetxApi: LeetxService = LeetxService()
+    private val leetxApi: LeetxService = LeetxService(),
+    private val torznabApi: TorznabService = TorznabService(BuildConfig.TORZNAB_SOURCES)
 ) {
     
     // OpenAI API key from BuildConfig
@@ -1750,6 +1752,7 @@ class MovieRepository(
         try {
             // Resolve IMDB ID via TMDB if we don't have one yet
             val imdbId = resolvedImdbId ?: resolveImdbIdForTvShow(title, year)
+            resolvedImdbId = imdbId
             if (imdbId != null) {
                 val result = eztvApi.getFirstEpisodeTorrent(imdbId, showTitle = title)
                 if (result != null) {
@@ -1760,6 +1763,22 @@ class MovieRepository(
             android.util.Log.w("MovieRepository", "EZTV also failed for: $title")
         } catch (e: Exception) {
             android.util.Log.e("MovieRepository", "EZTV fallback failed: ${e.message}")
+        }
+
+        if (torznabApi.isConfigured) {
+            android.util.Log.d("MovieRepository", "Trying Torznab fallback for: $title")
+            try {
+                val result = torznabApi.searchEpisode(
+                    showTitle = title,
+                    imdbId = resolvedImdbId,
+                    season = 1,
+                    episode = 1,
+                    preferredQuality = "720p"
+                )
+                if (result != null) return@withContext result
+            } catch (e: Exception) {
+                android.util.Log.e("MovieRepository", "Torznab fallback failed: ${e.message}")
+            }
         }
 
         null
@@ -2259,6 +2278,20 @@ class MovieRepository(
             android.util.Log.w("MovieRepository", "Popcorn API search failed: ${e.message}")
         }
 
+        // Configurable Torznab endpoints can aggregate multiple authorized indexers.
+        if (torznabApi.isConfigured) {
+            try {
+                val torznabTorrent = torznabApi.searchMovie(title, year, imdbId)
+                if (torznabTorrent != null && hasLivePeers(torznabTorrent)) {
+                    android.util.Log.d("MovieRepository", "Found ${torznabTorrent.provider} torrent: ${torznabTorrent.quality} with ${torznabTorrent.seeds} seeds")
+                    return@withContext torznabTorrent
+                }
+                android.util.Log.d("MovieRepository", "No Torznab torrent found")
+            } catch (e: Exception) {
+                android.util.Log.w("MovieRepository", "Torznab search failed: ${e.message}")
+            }
+        }
+
         // Fallback to PirateBay
         try {
             val pirateBayTorrent = if (imdbId != null) {
@@ -2377,11 +2410,32 @@ class MovieRepository(
                 }
             }
 
+            val torznabJob = async {
+                if (!torznabApi.isConfigured) return@async null
+                try {
+                    val torrent = torznabApi.searchEpisode(
+                        showTitle = showTitle,
+                        imdbId = resolvedImdbId,
+                        season = season,
+                        episode = episode,
+                        preferredQuality = preferredQuality
+                    )
+                    if (torrent != null) {
+                        android.util.Log.d("MovieRepository", "Found ${torrent.provider} episode torrent: ${torrent.quality} with ${torrent.seeds} seeds")
+                    }
+                    torrent
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "Torznab episode lookup failed: ${e.message}")
+                    null
+                }
+            }
+
             val popcornResult = popcornJob.await()
             val eztvResult = eztvJob.await()
+            val torznabResult = torznabJob.await()
 
             // Pick the best torrent (most seeds)
-            val best = listOfNotNull(popcornResult, eztvResult).maxByOrNull { it.seeds }
+            val best = listOfNotNull(popcornResult, eztvResult, torznabResult).maxByOrNull { it.seeds }
             if (best != null) {
                 android.util.Log.d("MovieRepository", "Best torrent for $showTitle S${season}E${episode}: ${best.provider} ${best.quality} (${best.seeds} seeds)")
             } else {
