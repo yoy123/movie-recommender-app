@@ -152,14 +152,19 @@ Favorites are never deleted by orphan cleanup.
 
 ## Torrent Cache Configuration
 
-Defined in `TorrentStreamService`:
+Defined across `TorrentStreamService`, `TorrentBufferPolicy`, and `TorrentCachePolicy`:
 
-- minimum cache allowance: 100 MB
 - reserved device space: 500 MB
-- fraction of remaining free space: 75%
-- explicit maximum: none
+- minimum protected startup buffer: 256 MB, capped by remaining media bytes
+- peak-rate headroom: 10 minutes
+- peak bitrate factor: 1.5
+- measured-speed safety factor: 0.65
+- active-session retention after player exit: 60 minutes
+- no-progress failure threshold before playback: 3 minutes
+- piece-priority lookahead: 15 minutes
+- Media3 minimum/maximum buffers: 60 seconds / 300 seconds
 
-The function comment currently says 50%, while the actual constant is 75%. Code behavior is authoritative.
+The selected source must fit within the physically safe cache allowance before playback starts. The allowance includes already allocated cache blocks plus currently free storage above the 500 MB reserve.
 
 ## Removed Configuration
 

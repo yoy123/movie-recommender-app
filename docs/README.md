@@ -37,9 +37,9 @@ When documents disagree, use this order:
 - Room database: version 3
 - OpenAI model: `gpt-4.1-mini`
 - AI recommendations: opt-in; TMDB-only mode remains available
-- Torrent cache: dynamic, not a fixed 500 MB
+- Torrent cache: one active source, 500 MB device reserve, contiguous no-stall gate, and 60-minute resume retention
 - Embedded Live TV: removed on 2026-07-25
-- Automated tests: tasks pass, but the only unit test is skipped
+- Automated tests: 14 executed successfully per flavor; `LlmSmokeTest` remains skipped
 
 ## Maintenance Rule
 

@@ -9,23 +9,23 @@ There are no known compile-blocking issues in either debug flavor. The largest r
 
 ## High Priority
 
-### 1. No executing automated test coverage
+### 1. Automated coverage is still narrow
 
-Both flavor unit-test tasks pass, but the only test method in `LlmSmokeTest` is skipped.
+Each flavor currently executes 14 deterministic tests successfully and skips the opt-in `LlmSmokeTest`. Coverage is concentrated on torrent buffer policy and torrent-source parsing.
 
 Impact:
 
-- recommendation parsing can regress silently
+- recommendation parsing and repository fallback orchestration can regress silently
 - DPAD focus bugs require manual discovery
 - Room migrations are not actively verified
-- provider/torrent schema changes can break runtime behavior
+- Android alarm, reboot, task-removal, and process-lifecycle behavior are not instrumented
 
 Recommended action:
 
-- add deterministic unit tests for recommendation parsing/scoring
+- add deterministic tests for recommendation parsing/scoring and repository orchestration
 - add Room migration tests for 1->2->3
 - add UI tests for core mobile navigation
-- add Firestick focus/key-event instrumentation coverage
+- add Firestick focus/key-event and torrent-cache lifecycle instrumentation coverage
 
 ### 2. Unofficial network integrations are fragile
 

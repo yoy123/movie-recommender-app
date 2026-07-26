@@ -52,12 +52,14 @@ Both use shared code from `app/src/main` and separate UI/ViewModel source sets.
 
 ### Torrent cache
 
-The cache is dynamic, not fixed at 500 MB:
+The cache is a single active resumable session with a tested storage and buffer policy:
 
-- reserve 500 MB
-- use 75% of remaining free space
-- minimum 100 MB
-- no explicit maximum
+- preserve 500 MB of actually available device storage
+- count physically allocated cache blocks
+- reject sources that cannot safely fit
+- require a contiguous protected region before playback
+- retain interrupted playback for 60 minutes
+- clear on timeout, full app/task exit, prior-process termination detected at next launch, source switch, or reboot
 
 ### Firestick
 
@@ -68,7 +70,7 @@ The cache is dynamic, not fixed at 500 MB:
 
 ### Testing
 
-Both debug flavors build. Both flavor unit-test tasks complete, but the only test is skipped, leaving zero executing automated tests.
+Both debug flavors build. Each flavor discovers 15 tests: 14 execute successfully and the opt-in `LlmSmokeTest` is skipped. Current deterministic coverage includes torrent buffer policy and several torrent-source parsers; UI, Room migration, repository orchestration, and Android lifecycle behavior remain uncovered.
 
 ## Documentation Corrections Made
 
@@ -78,11 +80,11 @@ The July 2026 refresh corrected these stale claims:
 - one `Movie` entity -> two Room entities
 - 16/17 preferences -> 26 DataStore keys
 - GPT-4o-mini -> `gpt-4.1-mini`
-- fixed 500 MB torrent cache -> dynamic allowance
+- fixed/percentage torrent cache -> tested 500 MB reserve, source-fit admission, and 60-minute resumable session
 - six integrations -> expanded movie/TV/provider integration set
 - Plex described as complete -> implemented but unwired
 - Live TV described as active -> removed
-- test tasks mistaken for coverage -> tests pass but execute zero test methods
+- test tasks mistaken for coverage -> current suites execute 14 deterministic tests per flavor, with substantial application gaps remaining
 - old unresolved security/migration issues -> resolved history
 
 ## Remaining Documentation Caveats

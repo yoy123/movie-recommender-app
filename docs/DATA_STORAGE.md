@@ -153,18 +153,18 @@ Coil manages image caching. The project does not currently define a custom disk-
 
 ### Torrent cache
 
-TorrentStream uses an application cache directory managed by `TorrentStreamService`.
+TorrentStream uses `cacheDir/torrent_stream`, managed jointly by `TorrentStreamService` and `TorrentCachePolicy`.
 
-Allowance calculation:
+Safe total-session allowance:
 
 ```text
-usable MB = max(free MB - 500, 0)
-allowance = max(usable MB * 0.75, 100 MB)
+allocated current cache
++ max(available device storage - 500 MB, 0)
 ```
 
-There is no explicit upper cap.
+Allocated filesystem blocks are measured so sparse-file logical length does not distort actual disk use. The selected video's full size must fit within this allowance before playback starts.
 
-The service exposes a clear-cache intent. Playback activities request cleanup during destruction, but process crashes can leave cache data until a later cleanup.
+When the user leaves the player, the active cache and saved position/duration remain available for 60 minutes and the foreground service continues downloading. Cleanup occurs on timeout, root task/app exit, previous-process termination detected at next launch, device reboot, source switch, or explicit clear. Activity recreation and normal backgrounding do not clear the cache.
 
 ## Android Backup
 

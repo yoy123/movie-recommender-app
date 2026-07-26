@@ -77,7 +77,7 @@ Release builds require the signing properties documented in [`docs/DEPLOYMENT.md
 ./gradlew :app:testFirestickDebugUnitTest
 ```
 
-The tasks currently pass, but the only unit test is skipped. There is effectively no executing automated test coverage.
+Both flavor suites currently discover 15 tests: 14 execute successfully and the opt-in `LlmSmokeTest` remains skipped. Coverage includes torrent buffer policy and several torrent-source parsers; UI, Room migration, repository orchestration, and Android lifecycle behavior still require broader testing.
 
 ## Documentation
 

@@ -69,7 +69,7 @@ Older documentation stated that release builds were minified. That is not the cu
   :app:testFirestickDebugUnitTest
 ```
 
-Because the only unit test is skipped, manual regression testing is currently mandatory.
+The shared suite currently executes 14 successful tests per flavor and skips the opt-in `LlmSmokeTest`. Manual regression remains mandatory for UI, Firestick DPAD behavior, Room migrations, and Android cache-lifecycle behavior.
 
 ## Mobile Distribution
 

@@ -2,156 +2,7 @@
 
 **Last verified:** 2026-07-25
 
-## Current Automated Status
-
-Commands:
-
-```bash
-./gradlew :app:testMobileDebugUnitTest
-./gradlew :app:testFirestickDebugUnitTest
-```
-
-Both tasks complete successfully.
-
-Actual test inventory:
-
-- `app/src/test/java/com/movierecommender/app/LlmSmokeTest.kt`
-- one test per flavor variant
-- test result: skipped
-
-Therefore, the project currently has no executing automated unit-test coverage.
-
-## Current Build Verification
-
-```bash
-./gradlew \
-  :app:assembleFirestickDebug \
-  :app:assembleMobileDebug \
-  :app:testFirestickDebugUnitTest \
-  :app:testMobileDebugUnitTest
-```
-
-Verified result on 2026-07-25: `BUILD SUCCESSFUL`.
-
-The local JDK reports Java 8 source/target obsolescence warnings.
-
-## Required Test Layers
-
-### Unit tests
-
-Highest-priority targets:
-
-1. LLM response parsing
-2. exclusion and deduplication rules
-3. TMDB preference scoring
-4. title/year normalization
-5. torrent live-peer filtering
-6. provider deep-link construction
-7. exact provider-content resolver parsing
-8. user-name sanitization
-9. torrent cache allowance calculation
-
-### Repository integration tests
-
-Use fake services/DAOs to verify:
-
-- AI success path
-- AI retry path
-- AI validation failure -> TMDB fallback
-- AI disabled -> no LLM call
-- movie torrent provider fallback order
-- one provider failure does not stop the chain
-- TV episode result chooses highest seeds
-- watch options combine providers and torrent correctly
-
-### Room migration tests
-
-Required paths:
-
-- schema 1 -> 2
-- schema 2 -> 3
-- schema 1 -> 3
-
-Assertions:
-
-- existing movie/favorite rows survive
-- provider crosswalk table exists at version 3
-- composite primary key works
-
-### UI tests
-
-Mobile:
-
-- genre -> selection -> recommendation
-- consent accept/decline
-- favorites
-- trailer navigation
-- watch options
-- playback error recovery
-
-Firestick:
-
-- initial focus
-- row traversal
-- selection count/action cards
-- card entry without accidental action
-- consume center `KeyDown` and matching `KeyUp`
-- back exits nested action focus
-- settings and favorites shortcuts
-- episode picker
-
-## Manual Regression Checklist
-
-### Both flavors
-
-- [ ] cold launch
-- [ ] first-run name flow
-- [ ] movie genres load
-- [ ] TV genres load
-- [ ] search
-- [ ] select 1 title
-- [ ] select 5 titles
-- [ ] reject sixth title
-- [ ] AI consent accepted
-- [ ] AI consent declined
-- [ ] AI disabled uses TMDB mode
-- [ ] retry does not repeat current-session results
-- [ ] add/remove favorite
-- [ ] movie trailer
-- [ ] TV trailer
-- [ ] watch providers
-- [ ] missing provider app
-- [ ] movie torrent found
-- [ ] no-live-peer torrent rejected
-- [ ] TV season/episode picker
-- [ ] playback start, pause, seek, exit
-- [ ] network-off error handling
-
-### Firestick-specific
-
-- [ ] launcher banner and icon
-- [ ] movie row
-- [ ] TV row
-- [ ] favorites row
-- [ ] settings row
-- [ ] no Live TV row
-- [ ] visible focus on every control
-- [ ] nested card-action navigation
-- [ ] remote back behavior
-- [ ] screensaver blocked during playback
-
-## Removed Live TV Regression
-
-After the 2026-07-25 removal, verify:
-
-- no Live TV row appears
-- no `live_tv` route exists
-- no `tvpass` or `thetvapp` URL remains
-- Firestick build does not require `media3-exoplayer-hls`
-
-## CI Recommendation
-
-A minimal CI workflow should run:
+## Verified Commands
 
 ```bash
 ./gradlew \
@@ -159,18 +10,188 @@ A minimal CI workflow should run:
   :app:assembleFirestickDebug \
   :app:testMobileDebugUnitTest \
   :app:testFirestickDebugUnitTest \
-  --no-daemon
+  --stacktrace
 ```
 
-Once real tests exist, CI should also publish JUnit reports and fail when the suite contains zero executed tests.
+Result: `BUILD SUCCESSFUL`.
 
-## Definition of Done for New Features
+## Current Unit-Test Results
+
+The shared JVM test suite runs once for each flavor.
+
+| Test class | Tests per flavor | Result |
+|---|---:|---|
+| `InternetArchiveServiceTest` | 3 | pass |
+| `PublicDomainTorrentsServiceTest` | 3 | pass |
+| `TorznabServiceTest` | 3 | pass |
+| `TorrentBufferPolicyTest` | 5 | pass |
+| `LlmSmokeTest` | 1 | skipped |
+
+Per flavor:
+
+- total discovered: 15
+- executed: 14
+- skipped: 1
+- failures: 0
+- errors: 0
+
+Across both variants, Gradle records 28 successful deterministic test executions and two skipped smoke-test executions. This is useful coverage, but it is not broad application coverage.
+
+## Torrent Buffer Policy Coverage
+
+`TorrentBufferPolicyTest` verifies:
+
+1. The cache budget preserves the 500 MB device-storage reserve.
+2. Existing allocated cache is counted in the total session allowance.
+3. A sufficiently slow torrent requires the full remaining movie before playback.
+4. Resume buffering does not require bytes behind the saved position.
+5. A fast torrent uses substantial peak-rate headroom without requiring the whole movie.
+6. Partial-megabyte source sizes round upward for storage admission.
+
+The Android-specific alarm, boot receiver, foreground-service lifecycle, task-removal behavior, and real torrent-piece availability still require instrumentation or device testing.
+
+## Remaining Automated Gaps
+
+### Repository behavior
+
+Add fake-service/DAO tests for:
+
+- AI success and two-attempt retry
+- AI validation failure to TMDB fallback
+- AI disabled means no OpenAI request
+- movie torrent fallback order
+- one failed source does not stop the provider chain
+- TV episode result selection
+- provider/torrent watch-option combination
+
+### Persistence
+
+Add Room migration tests for:
+
+- schema 1 to 2
+- schema 2 to 3
+- schema 1 to 3
+- favorite preservation
+- provider crosswalk composite keys
+
+Add persistence tests for saved playback position, duration, retention deadline, and cleanup of the active magnet's state.
+
+### Android lifecycle
+
+Add instrumentation tests for:
+
+- leaving the player retains the torrent session
+- returning within 60 minutes resumes from the saved position
+- expiry receiver clears cache and position after the deadline
+- task removal clears immediately
+- root app finish clears immediately
+- device reboot receiver clears retained cache
+- activity recreation does not clear cache
+- previous-process marker clears stale cache on the next launch
+
+### UI
+
+Mobile:
+
+- genre to selection to recommendation
+- consent accepted/declined
+- favorites
+- trailer and watch-option navigation
+- playback resume/error recovery
+
+Firestick:
+
+- initial focus and row traversal
+- nested card/action focus
+- center `KeyDown` plus matching `KeyUp` consumption
+- remote back behavior
+- episode picker
+- playback backout and resume
+
+## Manual Torrent Playback Checklist
+
+### Buffering and storage
+
+- [ ] Start a torrent with stable peers.
+- [ ] Confirm the player remains on the prebuffer screen until the contiguous gate completes.
+- [ ] Verify a high-bitrate scene plays without a mid-playback stall.
+- [ ] Verify a slow swarm waits longer rather than starting prematurely.
+- [ ] Verify a torrent with no progress for three minutes returns an actionable error.
+- [ ] Verify an oversized source is rejected while preserving 500 MB of device storage.
+- [ ] Confirm sparse-file logical size does not cause a false cache-full condition.
+
+### Resume lifecycle
+
+- [ ] Back out of playback and return immediately; confirm the same cache is reused.
+- [ ] Confirm playback resumes near the saved position.
+- [ ] Confirm the torrent continues downloading during the 60-minute window.
+- [ ] Return before 60 minutes and confirm the deadline is canceled/replaced by active playback.
+- [ ] Leave unused beyond 60 minutes and confirm cache plus saved position are removed.
+- [ ] Remove/close the app task and confirm immediate cleanup.
+- [ ] Finish the root app activity and confirm cleanup.
+- [ ] Rotate/recreate the mobile activity and confirm no cleanup occurs.
+- [ ] Restart the Firestick and confirm cleanup.
+- [ ] Force-stop or terminate the process, reopen the app, and confirm stale cache cleanup.
+- [ ] Select a different torrent and confirm the previous cache is removed.
+
+### Playback controls
+
+- [ ] Pause and resume.
+- [ ] Seek backward.
+- [ ] Seek forward into available data.
+- [ ] Seek forward into missing data and verify priority/recovery behavior.
+- [ ] Confirm the Fire TV screensaver remains blocked during playback.
+- [ ] Repeat with a TV episode.
+
+## General Regression Checklist
+
+### Both flavors
+
+- [ ] cold launch
+- [ ] onboarding/name flow
+- [ ] movie and TV genres
+- [ ] search
+- [ ] select one to five titles
+- [ ] reject a sixth title
+- [ ] AI consent accepted and declined
+- [ ] AI-disabled TMDB path
+- [ ] session recommendation deduplication
+- [ ] add/remove favorites
+- [ ] movie and TV trailers
+- [ ] watch providers and missing-provider-app handling
+- [ ] movie torrent lookup
+- [ ] TV season/episode picker
+- [ ] network-off error handling
+
+### Firestick-specific
+
+- [ ] launcher banner/icon
+- [ ] movie, TV, favorites, and settings rows
+- [ ] no Live TV row
+- [ ] visible focus on all controls
+- [ ] nested action navigation
+- [ ] remote back behavior
+
+## Current Warnings
+
+The verified build still reports:
+
+- unused `excludedTitles` parameter in `MovieRepository`
+- unused `year` parameter in `MovieRepository`
+- Java 8 source/target obsolescence warnings from the local JDK/toolchain
+
+## CI Recommendation
+
+Run the verified command on every change and publish the JUnit XML reports. CI should fail on test failures and should separately report skipped tests so `LlmSmokeTest` does not create a false impression of coverage.
+
+## Definition of Done
 
 A change is complete when:
 
 1. both affected flavors compile
-2. automated tests cover deterministic logic
-3. Firestick changes are manually DPAD-tested
-4. docs are updated
-5. no secrets or generated APKs are added to Git
-6. unrelated working-tree changes are preserved
+2. deterministic logic has automated tests
+3. Android lifecycle behavior is tested on an emulator or device when applicable
+4. Firestick changes are manually DPAD-tested
+5. documentation is updated
+6. secrets and generated APKs are not committed
+7. unrelated working-tree changes are preserved

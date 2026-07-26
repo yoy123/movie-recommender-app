@@ -207,15 +207,15 @@ Verified on 2026-07-25:
 
 Result: `BUILD SUCCESSFUL`.
 
-The only unit test class is `LlmSmokeTest`; its test is skipped in both flavors. The project therefore has no executing automated unit-test coverage despite the successful test tasks.
+Each flavor currently reports 15 tests: 14 executed successfully and one skipped `LlmSmokeTest`. The shared deterministic suite covers torrent buffer policy, Torznab parsing/caching, Internet Archive results, and Public Domain Torrents parsing. UI, Room migration, repository orchestration, and real-device lifecycle behavior still lack automated coverage.
 
 ## Current Engineering Risks
 
-1. No active automated regression coverage.
+1. Automated coverage remains narrow and does not exercise UI, Room migrations, repository fallback orchestration, or Android lifecycle receivers.
 2. Several network integrations depend on unofficial third-party services and may break without notice.
 3. `MovieRepository` is very large and owns too many responsibilities.
 4. Plex configuration/service code is currently unwired.
-5. Torrent cache calculation has no maximum cap and its comment does not match the 75% constant.
+5. Torrent playback cannot guarantee uninterrupted operation after total peer loss, network failure, process termination during playback, or malformed media.
 6. Build targets Java 8 while the local toolchain is much newer, producing obsolete source/target warnings.
 7. API keys are compiled into the application package through `BuildConfig`; they should be treated as extractable client secrets.
 
