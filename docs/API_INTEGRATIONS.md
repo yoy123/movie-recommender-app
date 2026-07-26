@@ -6,7 +6,7 @@
 ## Integration Summary
 
 | Integration | Purpose | Auth | Current status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | TMDB | Movies, TV, genres, videos, recommendations, external IDs, watch providers | API key | Active |
 | OpenAI | Personalized recommendation text/reranking | API key | Active, opt-in |
 | IMDb scraper | Trailer fallback from IMDb pages | None | Active fallback |
@@ -26,7 +26,7 @@ The previous embedded Live TV playlist and EPG integration was removed on 2026-0
 
 ## 1. TMDB
 
-### Configuration
+### OpenAI Configuration
 
 ```properties
 TMDB_API_KEY=...

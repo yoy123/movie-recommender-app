@@ -165,16 +165,21 @@ On application startup, orphaned movie rows older than 30 days are removed when 
 
 - Media3 ExoPlayer renders local torrent-streamed files.
 - `TorrentStreamService` runs as a media-playback foreground service.
-- Adaptive prebuffering estimates the amount of data needed before playback starts or resumes.
+- Playback begins only after a contiguous no-stall buffer is available from the start or saved resume position.
+- Buffer sizing uses file size, duration, conservative observed speed, peak-rate headroom, and the projected remaining download deficit.
+- Media3 keeps 60 seconds minimum and up to five minutes of local read-ahead after playback starts.
+- Torrent pieces are prioritized from the first missing piece ahead of the player.
 - The screen is kept awake during playback.
-- Cache is cleared when playback activities are destroyed through the service clear-cache intent.
 
-Torrent cache allowance is dynamic:
+Torrent cache behavior:
 
-- reserves 500 MB of device space
-- uses 75% of the remaining free space
-- enforces a minimum allowance of 100 MB
-- currently has no explicit upper cap
+- preserves at least 500 MB of actually available device storage
+- measures allocated filesystem blocks so sparse-file length does not overstate disk use
+- rejects a source that cannot safely fit before starting playback
+- retains the active torrent, position, and duration for 60 minutes after accidental player backout
+- continues downloading during the resume window
+- deletes on 60-minute inactivity, root app/task exit, previous-process termination detected at next launch, device reboot, explicit clear, or source switch
+- does not delete merely because the player activity is recreated, backgrounded, or navigated away from
 
 ## Build Configuration
 
