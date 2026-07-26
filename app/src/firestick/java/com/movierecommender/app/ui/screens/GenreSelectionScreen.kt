@@ -810,6 +810,70 @@ fun PreferenceSettingsDialog(
 }
 
 @Composable
+private fun DpadPreferenceToggle(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = { onCheckedChange(!checked) },
+        interactionSource = interactionSource,
+        shape = MaterialTheme.shapes.medium,
+        color = if (isFocused) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        border = BorderStroke(
+            width = if (isFocused) 3.dp else 1.dp,
+            color = if (isFocused) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (isFocused) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
+                )
+                Text(
+                    text = if (checked) "Enabled — press Select to turn off" else "Disabled — press Select to turn on",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isFocused) {
+                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+
+            Checkbox(
+                checked = checked,
+                onCheckedChange = null
+            )
+        }
+    }
+}
+
+@Composable
 fun PreferenceSliderWithToggle(
     title: String,
     leftLabel: String,
@@ -822,20 +886,11 @@ fun PreferenceSliderWithToggle(
     Column(
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall
-            )
-            Checkbox(
-                checked = enabled,
-                onCheckedChange = onEnabledChange
-            )
-        }
+        DpadPreferenceToggle(
+            title = title,
+            checked = enabled,
+            onCheckedChange = onEnabledChange
+        )
         
         if (enabled) {
             Spacer(modifier = Modifier.height(8.dp))
@@ -889,20 +944,11 @@ fun ReleaseYearRangeSlider(
     Column(
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Release Year Range",
-                style = MaterialTheme.typography.titleSmall
-            )
-            Checkbox(
-                checked = enabled,
-                onCheckedChange = onEnabledChange
-            )
-        }
+        DpadPreferenceToggle(
+            title = "Release Year Range",
+            checked = enabled,
+            onCheckedChange = onEnabledChange
+        )
         
         if (enabled) {
             Spacer(modifier = Modifier.height(8.dp))
