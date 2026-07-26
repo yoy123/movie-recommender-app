@@ -5,6 +5,7 @@ import com.movierecommender.app.data.local.AppDatabase
 import com.movierecommender.app.data.remote.TmdbApiService
 import com.movierecommender.app.data.settings.SettingsRepository
 import com.movierecommender.app.data.repository.MovieRepository
+import com.movierecommender.app.torrent.TorrentCachePolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,7 +29,10 @@ class MovieRecommenderApplication : Application() {
     
     override fun onCreate() {
         super.onCreate()
-        
+
+        // Clears a torrent cache left by a reboot or an expired resume window.
+        TorrentCachePolicy.initialize(this)
+
         // Run database cleanup on app startup (non-blocking)
         performDatabaseCleanupIfNeeded()
     }

@@ -6,9 +6,12 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.media.MediaMetadataRetriever
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.StatFs
+import androidx.core.app.ContextCompat
 import androidx.core.app.NotificationCompat
 import com.github.se_bastiaan.torrentstream.StreamStatus
 import com.github.se_bastiaan.torrentstream.Torrent
@@ -17,348 +20,554 @@ import com.github.se_bastiaan.torrentstream.TorrentStream
 import com.github.se_bastiaan.torrentstream.listeners.TorrentListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
-import android.os.StatFs
 import java.io.File
 
 /**
- * Service for streaming torrent video content.
- * Manages torrent download and provides a local file path for playback.
+ * Foreground service that downloads the active torrent into a single resumable cache and exposes
+ * the local video file to Media3. Playback starts only after a conservative no-stall buffer gate.
  */
 class TorrentStreamService : Service(), TorrentListener {
-    
+
     companion object {
+        private const val TAG = "TorrentStreamService"
         private const val NOTIFICATION_CHANNEL_ID = "torrent_streaming"
         private const val NOTIFICATION_ID = 9001
         private const val ACTION_CLEAR_CACHE = "com.movierecommender.app.torrent.CLEAR_CACHE"
-        
-        // Dynamic cache size constants
-        private const val MIN_CACHE_SIZE_MB = 100  // Minimum cache to ensure streaming works
-        private const val FREE_SPACE_PERCENTAGE = 0.75 // Use 75% of available free space
-        private const val RESERVED_SPACE_MB = 500 // Always leave at least 500MB free on device
-        
+        private const val MIN_SPEED_SAMPLES = 10
+        private const val SPEED_SAMPLE_WINDOW = 30
+        private const val NO_PROGRESS_TIMEOUT_MS = 180_000L
+        private const val PRIORITY_LOOKAHEAD_MS = 15L * 60L * 1000L
+        private const val BYTES_PER_MB = 1024L * 1024L
+
         /**
-         * Calculate optimal cache size based on available free space.
-         * Uses 50% of free space with a minimum of MIN_CACHE_SIZE_MB.
-         * Also ensures at least RESERVED_SPACE_MB remains free on the device.
+         * Returns the total size the current session cache may reach while preserving 500 MB of
+         * genuinely available storage. Existing cache bytes are included in the total allowance.
          */
         fun calculateDynamicCacheSize(cacheDir: File): Int {
             return try {
+                if (!cacheDir.exists()) cacheDir.mkdirs()
                 val statFs = StatFs(cacheDir.absolutePath)
-                val freeSpaceMB = statFs.availableBytes / (1024 * 1024)
-                
-                // Calculate usable space (free space minus reserved)
-                val usableSpaceMB = (freeSpaceMB - RESERVED_SPACE_MB).coerceAtLeast(0)
-                
-                // Take percentage of usable space
-                val calculatedSizeMB = (usableSpaceMB * FREE_SPACE_PERCENTAGE).toInt()
-                
-                // Ensure minimum size
-                val finalSize = calculatedSizeMB.coerceAtLeast(MIN_CACHE_SIZE_MB)
-                
-                android.util.Log.d("TorrentStreamService", 
-                    "Dynamic cache: freeSpace=${freeSpaceMB}MB, usable=${usableSpaceMB}MB, " +
-                    "calculated=${calculatedSizeMB}MB, final=${finalSize}MB")
-                
-                finalSize
+                val freeSpaceMb = statFs.availableBytes / BYTES_PER_MB
+                val existingCacheMb = cacheDir.walkTopDown()
+                    .filter { it.isFile }
+                    .sumOf { it.length() } / BYTES_PER_MB
+                val limit = TorrentBufferPolicy.calculateCacheLimitMb(freeSpaceMb, existingCacheMb)
+                android.util.Log.d(
+                    TAG,
+                    "Cache budget: free=${freeSpaceMb}MB existing=${existingCacheMb}MB " +
+                        "reserve=${TorrentBufferPolicy.RESERVED_DEVICE_SPACE_MB}MB limit=${limit}MB"
+                )
+                limit
             } catch (e: Exception) {
-                android.util.Log.w("TorrentStreamService", 
-                    "Failed to calculate dynamic cache size, using default", e)
-                MIN_CACHE_SIZE_MB // Safe fallback
+                android.util.Log.w(TAG, "Failed to calculate torrent cache budget", e)
+                0
             }
         }
-        
-        fun getIntent(context: Context): Intent {
-            return Intent(context, TorrentStreamService::class.java)
-        }
 
-        fun getClearCacheIntent(context: Context): Intent {
-            return Intent(context, TorrentStreamService::class.java).apply {
-                action = ACTION_CLEAR_CACHE
+        fun getIntent(context: Context): Intent = Intent(context, TorrentStreamService::class.java)
+
+        fun getClearCacheIntent(context: Context): Intent =
+            Intent(context, TorrentStreamService::class.java).apply { action = ACTION_CLEAR_CACHE }
+
+        fun requestImmediateCacheClear(context: Context) {
+            val appContext = context.applicationContext
+            val intent = getClearCacheIntent(appContext)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(appContext, intent)
+            } else {
+                appContext.startService(intent)
             }
         }
     }
-    
+
     private val binder = TorrentBinder()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var retentionJob: Job? = null
     private var torrentStream: TorrentStream? = null
     private var currentTorrent: Torrent? = null
     private var currentMagnetUrl: String? = null
+    private var currentMagnetHash: Int? = null
+    private var requestedPlaybackPosition = 0L
     private var currentPlaybackPosition = 0L
     private var currentPlaybackDuration = 0L
     private var cacheDir: File? = null
-    private var isCleaningCache = false
     private var isDownloadPaused = false
     private var lastCacheCheckMs = 0L
     private var lastNotificationMs = 0L
-    private var lastCleanupMs = 0L
-    private var dynamicMaxCacheSizeMB: Int = MIN_CACHE_SIZE_MB // Recalculated on init
+    private var lastPriorityUpdateMs = 0L
+    private var dynamicMaxCacheSizeMB = 0
 
-    // Rolling window of recent download-speed samples (bytes/sec) used to smooth out
-    // the library's jittery instantaneous reports when computing pre-buffer targets.
     private val speedSamples = ArrayDeque<Int>()
-    private val SPEED_SAMPLE_WINDOW = 10
 
     private val _streamState = MutableStateFlow<TorrentStreamState>(TorrentStreamState.Idle)
     val streamState: StateFlow<TorrentStreamState> = _streamState.asStateFlow()
-    
+
     private val _downloadProgress = MutableStateFlow(0f)
     val downloadProgress: StateFlow<Float> = _downloadProgress.asStateFlow()
-    
+
     private val _downloadSpeed = MutableStateFlow(0)
     val downloadSpeed: StateFlow<Int> = _downloadSpeed.asStateFlow()
-    
+
     private val _seeds = MutableStateFlow(0)
     val seeds: StateFlow<Int> = _seeds.asStateFlow()
-    
+
     private val _cacheUsageMB = MutableStateFlow(0)
     val cacheUsageMB: StateFlow<Int> = _cacheUsageMB.asStateFlow()
-    
+
     inner class TorrentBinder : Binder() {
         fun getService(): TorrentStreamService = this@TorrentStreamService
     }
-    
+
     override fun onCreate() {
         super.onCreate()
+        TorrentCachePolicy.initialize(this)
         createNotificationChannel()
         initTorrentStream()
     }
-    
+
     override fun onBind(intent: Intent?): IBinder = binder
-    
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startForeground(NOTIFICATION_ID, createNotification("Preparing torrent session..."))
+
         if (intent?.action == ACTION_CLEAR_CACHE) {
-            stopStream()
-            clearCacheDirectory()
-            stopSelf()
-            return START_NOT_STICKY
+            serviceScope.launch {
+                stopStream()
+                TorrentCachePolicy.clearCacheAndPlayback(
+                    applicationContext,
+                    "app closed or explicit cleanup"
+                )
+                stopSelf()
+            }
         }
-        startForeground(NOTIFICATION_ID, createNotification("Preparing stream..."))
         return START_NOT_STICKY
     }
-    
+
+    /** Called when the user removes/exits the app task. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        serviceScope.launch {
+            stopStream()
+            TorrentCachePolicy.clearCacheAndPlayback(applicationContext, "app task closed")
+            stopSelf()
+        }
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
-        serviceScope.cancel()
-        stopStream()
+        retentionJob?.cancel()
+        torrentStream?.removeListener(this)
         torrentStream?.stopStream()
         torrentStream = null
-        // Clean up cache when service is destroyed (app exits)
-        clearCacheDirectory()
+        currentTorrent = null
+        serviceScope.cancel()
+        // Do not delete here: Android may destroy a service for resource pressure. Explicit task
+        // removal, reboot, timeout, and clear actions own deletion so accidental backout can resume.
         super.onDestroy()
     }
-    
+
     /**
-     * Update playback position for intelligent cache management AND torrent piece prioritization.
-     * This is critical: it tells the torrent to prioritize downloading data near the playback position.
-     * Without this, the torrent may download pieces out of order after the initial buffer.
-     * File operations run on IO dispatcher to prevent UI freeze.
+     * Starts or resumes a torrent. Cached pieces for the same magnet are reused by libtorrent.
+     */
+    fun startStream(
+        magnetUrl: String,
+        resumePositionMs: Long = 0L,
+        knownDurationMs: Long = 0L
+    ) {
+        val preparedMagnetUrl = TorrentMagnetUtils.enrichMagnetUrl(magnetUrl)
+        val magnetHash = preparedMagnetUrl.hashCode()
+        retentionJob?.cancel()
+        TorrentCachePolicy.markActive(applicationContext, magnetHash)
+        requestedPlaybackPosition = resumePositionMs.coerceAtLeast(0L)
+        currentPlaybackPosition = requestedPlaybackPosition
+        if (knownDurationMs > 0L) currentPlaybackDuration = knownDurationMs
+
+        if (currentMagnetUrl == preparedMagnetUrl && currentTorrent != null) {
+            resumeDownloadInternal()
+            prioritizeFirstMissingPiece(requestedPlaybackPosition, PRIORITY_LOOKAHEAD_MS)
+            currentTorrent?.videoFile?.absolutePath?.let {
+                _streamState.value = TorrentStreamState.Ready(it)
+            }
+            updateNotification("Resuming cached playback...")
+            return
+        }
+
+        if (currentMagnetUrl != null && currentMagnetUrl != preparedMagnetUrl) {
+            stopStream()
+            TorrentCachePolicy.clearCacheAndPlayback(applicationContext, "switching torrents")
+            ensureCacheDirectory()
+            dynamicMaxCacheSizeMB = calculateDynamicCacheSize(requireNotNull(cacheDir))
+            TorrentCachePolicy.markActive(applicationContext, magnetHash)
+        }
+
+        currentMagnetUrl = preparedMagnetUrl
+        currentMagnetHash = magnetHash
+        _streamState.value = TorrentStreamState.Connecting
+        _downloadProgress.value = 0f
+        speedSamples.clear()
+        torrentStream?.startStream(preparedMagnetUrl)
+    }
+
+    /**
+     * Leaves the torrent downloading in the foreground for up to 60 minutes so an accidental
+     * player backout can resume immediately. The timeout is persisted and backed by an alarm.
+     */
+    fun retainCurrentStreamForResume(positionMs: Long, durationMs: Long) {
+        val hash = currentMagnetHash ?: return
+        currentPlaybackPosition = positionMs.coerceAtLeast(0L)
+        if (durationMs > 0L) currentPlaybackDuration = durationMs
+        val retainUntil = TorrentCachePolicy.retainForResume(applicationContext, hash)
+        updateNotification("Cached for resume for 60 minutes")
+
+        retentionJob?.cancel()
+        retentionJob = serviceScope.launch {
+            val delayMs = (retainUntil - System.currentTimeMillis()).coerceAtLeast(0L)
+            delay(delayMs)
+            if (TorrentCachePolicy.isExpired(applicationContext)) {
+                stopStream()
+                TorrentCachePolicy.clearCacheAndPlayback(
+                    applicationContext,
+                    "60 minutes without returning to playback"
+                )
+                stopSelf()
+            }
+        }
+    }
+
+    /** Stops network activity but deliberately leaves cache ownership to TorrentCachePolicy. */
+    fun stopStream() {
+        currentTorrent = null
+        currentMagnetUrl = null
+        currentMagnetHash = null
+        torrentStream?.stopStream()
+        isDownloadPaused = false
+        _streamState.value = TorrentStreamState.Idle
+        _downloadProgress.value = 0f
+        _downloadSpeed.value = 0
+        _seeds.value = 0
+        speedSamples.clear()
+    }
+
+    fun getVideoFilePath(): String? = currentTorrent?.videoFile?.absolutePath
+
+    fun updatePlaybackDuration(durationMs: Long) {
+        if (durationMs > 0L) currentPlaybackDuration = durationMs
+    }
+
+    /**
+     * Tracks playback and continually prioritizes the first missing piece ahead of the player,
+     * rather than jumping to an arbitrary point and leaving holes in the playable region.
      */
     fun updatePlaybackPosition(positionMs: Long) {
-        currentPlaybackPosition = positionMs
-        
-        // Tell the torrent to prioritize pieces near the current playback position.
-        // Convert time position to approximate byte offset using file size and duration.
-        currentTorrent?.let { torrent ->
-            try {
-                val videoFile = torrent.videoFile ?: return@let
-                if (!videoFile.exists()) return@let
-                val fileSize = videoFile.length()
-                // We need duration to convert time → bytes.
-                if (currentPlaybackDuration > 0L && positionMs > 0L) {
-                    val byteOffset = (positionMs.toDouble() / currentPlaybackDuration * fileSize).toLong()
-                    // Add margin: prioritize data starting from current position + 30 seconds ahead
-                    val aheadBytes = (30000.0 / currentPlaybackDuration * fileSize).toLong()
-                    val targetOffset = (byteOffset + aheadBytes).coerceAtMost(fileSize)
-                    torrent.setInterestedBytes(targetOffset)
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("TorrentStreamService", "Failed to set interested bytes", e)
-            }
-        }
-        
+        currentPlaybackPosition = positionMs.coerceAtLeast(0L)
         val now = System.currentTimeMillis()
-        // Throttle file operations to every 10 seconds to prevent freeze
-        if (currentPlaybackPosition > 0L && now - lastCleanupMs > 10000) {
-            lastCleanupMs = now
-            serviceScope.launch {
-                cleanupOldChunks()
-                manageCacheSize()
-                if (isDownloadPaused) {
-                    maybeResumeDownload()
-                }
-            }
+        if (now - lastPriorityUpdateMs >= 2_000L) {
+            lastPriorityUpdateMs = now
+            prioritizeFirstMissingPiece(currentPlaybackPosition, PRIORITY_LOOKAHEAD_MS)
         }
+        serviceScope.launch { manageCacheSize() }
     }
-    
-    /**
-     * Update the media duration so we can convert time positions to byte offsets.
-     * Must be called once ExoPlayer determines the actual duration.
-     */
-    fun updatePlaybackDuration(durationMs: Long) {
-        if (durationMs > 0L) {
-            currentPlaybackDuration = durationMs
-        }
-    }
-    
-    /**
-     * Check if the torrent has downloaded the data at the given byte offset.
-     * Returns true if the piece containing that byte is available.
-     */
+
     fun hasBytesAt(byteOffset: Long): Boolean {
-        return try {
-            currentTorrent?.hasBytes(byteOffset) ?: false
-        } catch (e: Exception) {
-            false
-        }
+        val torrent = currentTorrent ?: return false
+        val fileSize = torrent.videoFile?.length() ?: return false
+        if (fileSize <= 0L) return false
+        return runCatching {
+            torrent.hasBytes(byteOffset.coerceIn(0L, fileSize - 1L))
+        }.getOrDefault(false)
     }
-    
-    /**
-     * Check if the torrent has downloaded data for a given time position.
-     * Converts time to byte offset using file size and duration.
-     */
+
     fun hasBytesAtTime(positionMs: Long): Boolean {
-        if (currentPlaybackDuration <= 0L || positionMs < 0L) return false
-        val videoFile = currentTorrent?.videoFile ?: return false
-        val fileSize = videoFile.length()
-        val byteOffset = (positionMs.toDouble() / currentPlaybackDuration * fileSize).toLong()
+        val durationMs = currentPlaybackDuration
+        val fileSize = currentTorrent?.videoFile?.length() ?: return false
+        if (durationMs <= 0L || fileSize <= 0L) return false
+        val byteOffset = timeToByteOffset(positionMs, durationMs, fileSize)
         return hasBytesAt(byteOffset)
     }
-    
-    /**
-     * Clear the entire torrent cache directory.
-     */
-    private fun clearCacheDirectory() {
-        cacheDir?.let { dir ->
-            if (dir.exists()) {
-                dir.deleteRecursively()
-                android.util.Log.d("TorrentStreamService", "Cache cleared")
-            }
-        }
-    }
-    
-    /**
-     * Monitor cache size and manage disk space.
-     * Pauses downloading if cache is full, resumes when space is available.
-     * Uses dynamically calculated cache limit based on available free space.
-     */
-    private fun manageCacheSize() {
-        val now = System.currentTimeMillis()
-        if (now - lastCacheCheckMs < 5000) return
-        lastCacheCheckMs = now
-        cacheDir?.let { dir ->
-            val cacheSizeMB = getCacheSizeInMB(dir)
-            _cacheUsageMB.value = cacheSizeMB
-            
-            // If cache is over dynamic limit, clean old chunks more aggressively
-            if (cacheSizeMB > dynamicMaxCacheSizeMB) {
-                pauseDownloadIfPossible()
-                cleanupOldChunks(aggressive = true)
-            } else if (isDownloadPaused) {
-                maybeResumeDownload()
-            }
-        }
-    }
-    
-    /**
-     * Delete chunks older than current playback position to free cache.
-     */
-    private fun cleanupOldChunks(aggressive: Boolean = false) {
-        if (isCleaningCache) return
-        cacheDir?.let { dir ->
-            isCleaningCache = true
-            try {
-                val files = dir.listFiles() ?: emptyArray()
-                val videoPath = currentTorrent?.videoFile?.absolutePath
-                files.forEach { file ->
-                    if (file.isFile) {
-                        if (videoPath != null && file.absolutePath == videoPath) return@forEach
-                        if (file.name.endsWith(".torrent", ignoreCase = true)) return@forEach
-                        val fileAgeMs = System.currentTimeMillis() - file.lastModified()
-                        val oneMinuteMs = 60 * 1000
 
-                        // Delete files if:
-                        // 1. File is older than 1 minute AND playback has passed it, OR
-                        // 2. In aggressive mode and cache is full
-                        if ((fileAgeMs > oneMinuteMs && currentPlaybackPosition > 0) || aggressive) {
-                            if (file.delete()) {
-                                android.util.Log.d("TorrentStreamService", "Deleted cache file: ${file.name}")
-                            }
-                        }
-                    }
-                }
-            } finally {
-                isCleaningCache = false
-            }
-        }
-    }
+    fun pauseDownloadIfPossiblePublic(): Boolean = pauseDownloadInternal()
 
-    private fun pauseDownloadIfPossible() {
-        pauseDownloadInternal()
-    }
-
-    private fun maybeResumeDownload() {
-        val cacheSizeMB = cacheDir?.let { getCacheSizeInMB(it) } ?: return
-        if (cacheSizeMB <= dynamicMaxCacheSizeMB) {
-            resumeDownloadInternal()
-        }
-    }
-
-    fun pauseDownloadIfPossiblePublic(): Boolean {
-        return pauseDownloadInternal()
-    }
-
-    fun resumeDownloadIfPossiblePublic(): Boolean {
-        return resumeDownloadInternal()
-    }
+    fun resumeDownloadIfPossiblePublic(): Boolean = resumeDownloadInternal()
 
     private fun pauseDownloadInternal(): Boolean {
         if (isDownloadPaused) return true
         val paused = runCatching {
-            val method = torrentStream?.javaClass?.getMethod("pauseStream")
-            method?.invoke(torrentStream)
+            currentTorrent?.pause() ?: return@runCatching false
             true
         }.getOrDefault(false)
-
         if (paused) {
             isDownloadPaused = true
-            updateNotification("Cache full — pausing download")
+            updateNotification("Torrent download paused")
         }
         return paused
     }
 
     private fun resumeDownloadInternal(): Boolean {
+        val torrent = currentTorrent ?: return false
         val resumed = runCatching {
-            val method = torrentStream?.javaClass?.getMethod("resumeStream")
-            method?.invoke(torrentStream)
+            torrent.resume()
             true
         }.getOrDefault(false)
-
         if (resumed) {
             isDownloadPaused = false
-            updateNotification("Resumed download")
+            updateNotification("Torrent download resumed")
         }
         return resumed
     }
-    
-    /**
-     * Get total cache directory size in MB.
-     */
-    private fun getCacheSizeInMB(dir: File): Int {
-        var size = 0L
-        dir.walkTopDown().forEach { file ->
-            if (file.isFile) {
-                size += file.length()
-            }
-        }
-        return (size / (1024 * 1024)).toInt()
+
+    private fun initTorrentStream() {
+        ensureCacheDirectory()
+        dynamicMaxCacheSizeMB = calculateDynamicCacheSize(requireNotNull(cacheDir))
+        val options = TorrentOptions.Builder()
+            .saveLocation(requireNotNull(cacheDir))
+            .removeFilesAfterStop(false)
+            .maxConnections(200)
+            .maxDownloadSpeed(0)
+            .maxUploadSpeed(0)
+            .prepareSize(15L * BYTES_PER_MB)
+            .build()
+        torrentStream = TorrentStream.init(options)
+        torrentStream?.addListener(this)
     }
-    
+
+    private fun ensureCacheDirectory() {
+        val directory = TorrentCachePolicy.cacheDirectory(applicationContext)
+        if (!directory.exists()) directory.mkdirs()
+        cacheDir = directory
+    }
+
+    private fun manageCacheSize() {
+        val now = System.currentTimeMillis()
+        if (now - lastCacheCheckMs < 5_000L) return
+        lastCacheCheckMs = now
+        val directory = cacheDir ?: return
+        val cacheSizeMb = getCacheSizeInMb(directory)
+        _cacheUsageMB.value = cacheSizeMb
+        if (dynamicMaxCacheSizeMB > 0 && cacheSizeMb > dynamicMaxCacheSizeMB && !isDownloadPaused) {
+            pauseDownloadInternal()
+            _streamState.value = TorrentStreamState.Error(
+                "The Fire TV storage reserve was reached. Free storage or choose a smaller source."
+            )
+        }
+    }
+
+    private fun getCacheSizeInMb(directory: File): Int =
+        (directory.walkTopDown().filter { it.isFile }.sumOf { it.length() } / BYTES_PER_MB).toInt()
+
+    private fun timeToByteOffset(positionMs: Long, durationMs: Long, fileSize: Long): Long {
+        if (durationMs <= 0L || fileSize <= 0L) return 0L
+        return (positionMs.coerceIn(0L, durationMs).toDouble() / durationMs.toDouble() * fileSize)
+            .toLong()
+            .coerceIn(0L, fileSize - 1L)
+    }
+
+    private fun contiguousAvailableBytes(startByte: Long, maximumBytes: Long): Long {
+        val torrent = currentTorrent ?: return 0L
+        val fileSize = torrent.videoFile?.length() ?: return 0L
+        if (fileSize <= 0L || maximumBytes <= 0L) return 0L
+        val pieceLength = runCatching {
+            torrent.torrentHandle.torrentFile().pieceLength().toLong()
+        }.getOrDefault(0L)
+        if (pieceLength <= 0L) return 0L
+
+        val boundedStart = startByte.coerceIn(0L, fileSize - 1L)
+        val boundedMaximum = minOf(maximumBytes, fileSize - boundedStart)
+        var available = 0L
+        while (available < boundedMaximum) {
+            val offset = (boundedStart + available).coerceAtMost(fileSize - 1L)
+            if (!runCatching { torrent.hasBytes(offset) }.getOrDefault(false)) break
+            available += pieceLength
+        }
+        return available.coerceAtMost(boundedMaximum)
+    }
+
+    private fun prioritizeFirstMissingPiece(positionMs: Long, lookAheadMs: Long) {
+        val torrent = currentTorrent ?: return
+        val durationMs = currentPlaybackDuration
+        val fileSize = torrent.videoFile?.length() ?: return
+        if (durationMs <= 0L || fileSize <= 0L) return
+
+        val startByte = timeToByteOffset(positionMs, durationMs, fileSize)
+        val endPositionMs = (positionMs + lookAheadMs).coerceAtMost(durationMs)
+        val endByte = timeToByteOffset(endPositionMs, durationMs, fileSize)
+        val maximumAhead = (endByte - startByte).coerceAtLeast(0L)
+        val contiguous = contiguousAvailableBytes(startByte, maximumAhead)
+        val firstMissing = (startByte + contiguous).coerceAtMost(fileSize - 1L)
+        runCatching { torrent.setInterestedBytes(firstMissing) }
+            .onFailure { android.util.Log.w(TAG, "Failed to prioritize torrent piece", it) }
+    }
+
+    private fun conservativeDownloadSpeed(): Long {
+        val positive = speedSamples.filter { it > 0 }.sorted()
+        if (positive.isEmpty()) return 0L
+        val index = ((positive.size - 1) * 0.25).toInt()
+        return positive[index].toLong()
+    }
+
+    private fun readDurationMs(videoPath: String): Long {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(videoPath)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Could not read media duration before playback", e)
+            0L
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    override fun onStreamPrepared(torrent: Torrent?) {
+        currentTorrent = torrent
+        torrent?.startDownload()
+        if (currentPlaybackDuration > 0L && requestedPlaybackPosition > 0L) {
+            prioritizeFirstMissingPiece(requestedPlaybackPosition, PRIORITY_LOOKAHEAD_MS)
+        }
+    }
+
+    override fun onStreamStarted(torrent: Torrent?) {
+        _streamState.value = TorrentStreamState.Buffering(0f)
+        updateNotification("Downloading startup pieces...")
+    }
+
+    override fun onStreamReady(torrent: Torrent?) {
+        currentTorrent = torrent
+        val videoFile = torrent?.videoFile ?: return
+        val videoPath = videoFile.absolutePath
+        val fileSize = videoFile.length()
+        if (currentPlaybackDuration <= 0L) {
+            currentPlaybackDuration = readDurationMs(videoPath)
+        }
+
+        dynamicMaxCacheSizeMB = calculateDynamicCacheSize(requireNotNull(cacheDir))
+        val requiredStorageMb = TorrentBufferPolicy.requiredStorageMb(fileSize)
+        if (dynamicMaxCacheSizeMB <= 0 || requiredStorageMb > dynamicMaxCacheSizeMB) {
+            pauseDownloadInternal()
+            _streamState.value = TorrentStreamState.Error(
+                "This source needs ${requiredStorageMb} MB of cache, but only " +
+                    "${dynamicMaxCacheSizeMB.coerceAtLeast(0)} MB is safely available. " +
+                    "Free storage or choose a smaller source."
+            )
+            return
+        }
+
+        serviceScope.launch { runNoStallPreBuffer(videoPath, fileSize) }
+    }
+
+    /**
+     * Builds a contiguous playback region before opening Media3. There is no arbitrary three-minute
+     * startup cap: a slow swarm waits longer at startup rather than predictably buffering later.
+     */
+    private suspend fun runNoStallPreBuffer(videoPath: String, fileSize: Long) {
+        _streamState.value = TorrentStreamState.PreBuffering(videoPath, 0f)
+        updateNotification("Building no-stall playback buffer...")
+
+        val durationMs = currentPlaybackDuration.takeIf { it > 0L } ?: 90L * 60L * 1000L
+        val startPositionMs = requestedPlaybackPosition.coerceIn(0L, durationMs)
+        val startByte = timeToByteOffset(startPositionMs, durationMs, fileSize)
+        val remainingBytes = (fileSize - startByte).coerceAtLeast(0L)
+        var lockedTargetBytes = minOf(
+            remainingBytes,
+            TorrentBufferPolicy.MINIMUM_START_BUFFER_MB * BYTES_PER_MB
+        )
+        var lastAdvanceAt = System.currentTimeMillis()
+        var lastContiguousBytes = 0L
+        var lastOverallProgress = _downloadProgress.value
+
+        while (true) {
+            if (_downloadProgress.value >= 100f) break
+
+            val positiveSampleCount = speedSamples.count { it > 0 }
+            if (positiveSampleCount >= MIN_SPEED_SAMPLES) {
+                val required = TorrentBufferPolicy.requiredContiguousBufferBytes(
+                    fileSizeBytes = fileSize,
+                    durationMs = durationMs,
+                    startPositionMs = startPositionMs,
+                    measuredDownloadBytesPerSecond = conservativeDownloadSpeed()
+                )
+                // A later slowdown may increase the requirement, but a brief spike can never reduce it.
+                lockedTargetBytes = maxOf(lockedTargetBytes, required).coerceAtMost(remainingBytes)
+            }
+
+            val contiguousBytes = contiguousAvailableBytes(startByte, lockedTargetBytes)
+            val firstMissingByte = (startByte + contiguousBytes).coerceAtMost(fileSize - 1L)
+            currentTorrent?.let { torrent ->
+                runCatching { torrent.setInterestedBytes(firstMissingByte) }
+            }
+
+            val progress = if (lockedTargetBytes > 0L) {
+                (contiguousBytes.toFloat() / lockedTargetBytes.toFloat()).coerceIn(0f, 1f)
+            } else {
+                1f
+            }
+            _streamState.value = TorrentStreamState.PreBuffering(videoPath, progress)
+
+            val overallProgress = _downloadProgress.value
+            if (contiguousBytes > lastContiguousBytes || overallProgress > lastOverallProgress + 0.01f) {
+                lastAdvanceAt = System.currentTimeMillis()
+                lastContiguousBytes = contiguousBytes
+                lastOverallProgress = overallProgress
+            }
+
+            android.util.Log.d(
+                TAG,
+                "NoStallBuffer: target=${lockedTargetBytes / BYTES_PER_MB}MB " +
+                    "contiguous=${contiguousBytes / BYTES_PER_MB}MB " +
+                    "speed=${conservativeDownloadSpeed() / 1024}KB/s " +
+                    "samples=$positiveSampleCount"
+            )
+
+            if (positiveSampleCount >= MIN_SPEED_SAMPLES && contiguousBytes >= lockedTargetBytes) break
+            if (System.currentTimeMillis() - lastAdvanceAt >= NO_PROGRESS_TIMEOUT_MS) {
+                pauseDownloadInternal()
+                _streamState.value = TorrentStreamState.Error(
+                    "The torrent stopped making progress for three minutes. Try another source."
+                )
+                return
+            }
+            delay(1_000L)
+        }
+
+        _streamState.value = TorrentStreamState.Ready(videoPath)
+        updateNotification("Playing from protected buffer")
+    }
+
+    override fun onStreamProgress(torrent: Torrent?, status: StreamStatus?) {
+        status ?: return
+        _downloadProgress.value = status.progress
+        _downloadSpeed.value = status.downloadSpeed
+        _seeds.value = status.seeds
+        speedSamples.addLast(status.downloadSpeed)
+        while (speedSamples.size > SPEED_SAMPLE_WINDOW) speedSamples.removeFirst()
+        serviceScope.launch { manageCacheSize() }
+
+        val speedMbps = status.downloadSpeed / BYTES_PER_MB
+        updateNotification(
+            "Streaming: ${status.progress.toInt()}% (${speedMbps} MB/s) " +
+                "Cache: ${_cacheUsageMB.value} MB"
+        )
+    }
+
+    override fun onStreamStopped() {
+        _streamState.value = TorrentStreamState.Idle
+        currentTorrent = null
+        currentMagnetUrl = null
+        currentMagnetHash = null
+    }
+
+    override fun onStreamError(torrent: Torrent?, e: Exception?) {
+        android.util.Log.e(TAG, "Stream error: ${e?.message}", e)
+        _streamState.value = TorrentStreamState.Error(e?.message ?: "Unknown torrent error")
+        updateNotification("Torrent error: ${e?.message ?: "unknown"}")
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -366,282 +575,31 @@ class TorrentStreamService : Service(), TorrentListener {
                 "Torrent Streaming",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Shows torrent streaming progress"
+                description = "Torrent download and resumable playback status"
                 setShowBadge(false)
             }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
-    
-    private fun createNotification(status: String): Notification {
-        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Movie Streaming")
+
+    private fun createNotification(status: String): Notification =
+        NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("OpenStream+ playback")
             .setContentText(status)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()
-    }
-    
+
     private fun updateNotification(status: String) {
         val now = System.currentTimeMillis()
-        if (now - lastNotificationMs < 10000) return
+        if (now - lastNotificationMs < 5_000L) return
         lastNotificationMs = now
-        val notification = createNotification(status)
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, notification)
-    }
-    
-    private fun initTorrentStream() {
-        val saveLocation = File(applicationContext.cacheDir, "torrent_stream")
-        this.cacheDir = saveLocation
-        if (!saveLocation.exists()) {
-            saveLocation.mkdirs()
-        }
-        
-        // Calculate dynamic cache size based on available free space
-        dynamicMaxCacheSizeMB = calculateDynamicCacheSize(saveLocation)
-        android.util.Log.i("TorrentStreamService", "Torrent cache size set to ${dynamicMaxCacheSizeMB}MB")
-        
-        val options = TorrentOptions.Builder()
-            .saveLocation(saveLocation)
-            .removeFilesAfterStop(false) // Keep files for intelligent cache management
-            .maxConnections(200)
-            .maxDownloadSpeed(0) // Unlimited
-            .maxUploadSpeed(0)   // Unlimited
-            .prepareSize(5L * 1024L * 1024L) // 5MB of start+end pieces needed before playback (default was 15MB)
-            .build()
-        
-        torrentStream = TorrentStream.init(options)
-        torrentStream?.addListener(this)
-    }
-    
-    /**
-     * Start streaming a torrent from a magnet URL.
-     * If switching to a different movie, clears the previous cache first.
-     */
-    fun startStream(magnetUrl: String) {
-        val preparedMagnetUrl = TorrentMagnetUtils.enrichMagnetUrl(magnetUrl)
-        android.util.Log.d("TorrentStreamService", "Starting stream")
-        if (currentMagnetUrl == preparedMagnetUrl && currentTorrent != null) {
-            val resumed = resumeDownloadInternal()
-            if (resumed) return
-        }
-
-        if (currentMagnetUrl != null && currentMagnetUrl != preparedMagnetUrl) {
-            // Switching to a different movie - clear cache from previous movie
-            android.util.Log.d("TorrentStreamService", "Switching movies - clearing previous cache")
-            stopStream()
-            clearCacheDirectory()
-        }
-
-        currentMagnetUrl = preparedMagnetUrl
-        _streamState.value = TorrentStreamState.Connecting
-        _downloadProgress.value = 0f
-
-        torrentStream?.startStream(preparedMagnetUrl)
-    }
-    
-    /**
-     * Stop the current stream.
-     */
-    fun stopStream() {
-        currentTorrent = null
-        currentMagnetUrl = null
-        torrentStream?.stopStream()
-        _streamState.value = TorrentStreamState.Idle
-        _downloadProgress.value = 0f
-        _downloadSpeed.value = 0
-        _seeds.value = 0
-        speedSamples.clear()
-    }
-    
-    /**
-     * Get the video file path for playback (if ready).
-     */
-    fun getVideoFilePath(): String? {
-        return currentTorrent?.videoFile?.absolutePath
-    }
-    
-    // TorrentListener callbacks
-    
-    override fun onStreamPrepared(torrent: Torrent?) {
-        android.util.Log.d("TorrentStreamService", "Stream prepared")
-        currentTorrent = torrent
-        torrent?.startDownload()
-    }
-    
-    override fun onStreamStarted(torrent: Torrent?) {
-        android.util.Log.d("TorrentStreamService", "Stream started")
-        _streamState.value = TorrentStreamState.Buffering(0f)
-        updateNotification("Buffering...")
-    }
-    
-    override fun onStreamReady(torrent: Torrent?) {
-        android.util.Log.d("TorrentStreamService", "Stream ready for playback")
-        val videoPath = torrent?.videoFile?.absolutePath ?: return
-        val fileSize = torrent.videoFile?.length() ?: 0L
-
-        serviceScope.launch {
-            runAdaptivePreBuffer(videoPath, fileSize)
-        }
-    }
-
-    /**
-     * Dynamic pre-buffer controller.
-     *
-     * Math (no-stall condition, per-segment):
-     *   Video is VBR — instantaneous bitrate B(t) can spike to 1.5–3× the average.
-     *   To survive a peak-bitrate segment of duration t_peak without stalling we need
-     *   pre-buffered bytes >= (B_peak - S) * t_peak while S < B_peak.
-     *
-     *   With B_peak = PEAK_FACTOR * B_avg we compute:
-     *     ratio = S / B_peak
-     *     T_req = D * max(0, 1 - ratio)       (mathematical minimum for whole movie)
-     *     T     = T_req * safety + headroom   (buffer for speed jitter)
-     *
-     *   When S >= B_peak we only need a startup cushion sized for the longest
-     *   realistic peak-scene duration; when S < B_peak we must pre-buffer the
-     *   rolling deficit or playback will stall during action scenes.
-     *
-     * The loop re-evaluates every 500 ms using a rolling speed average, so the
-     * target adapts as the swarm warms up. A hard wall-clock cap prevents
-     * waiting forever on very slow swarms.
-     */
-    private suspend fun runAdaptivePreBuffer(videoPath: String, fileSize: Long) {
-        _streamState.value = TorrentStreamState.PreBuffering(videoPath, 0f)
-        updateNotification("Pre-buffering for smooth playback...")
-
-        // Duration is unknown until the player reads the container header. Assume
-        // 90 min rather than 2 h — shorter assumption => higher bitrate estimate
-        // => larger pre-buffer => safer if the movie is actually longer.
-        val assumedDurationSec = 5400L
-
-        // VBR peak-to-average multiplier. Typical 1080p encodes spike 1.8–2.5× the
-        // file-average bitrate during action scenes. Sizing for ~2× peak prevents
-        // mid-movie stalls when the player hits a high-motion segment.
-        val peakFactor = 2.0
-
-        val maxWaitMs = 180_000L // Hard ceiling: never wait more than 3 min
-        val startMs = System.currentTimeMillis()
-
-        while (true) {
-            val elapsed = System.currentTimeMillis() - startMs
-            val progressFraction = _downloadProgress.value / 100f
-            val downloadedBytes = (fileSize * progressFraction).toLong()
-
-            // Full file already on disk → nothing to wait for.
-            if (progressFraction >= 1f) break
-
-            val durationSec = if (currentPlaybackDuration > 0L) {
-                currentPlaybackDuration / 1000L
-            } else {
-                assumedDurationSec
-            }
-            val avgBitrateBps = if (fileSize > 0 && durationSec > 0) fileSize / durationSec else 500_000L
-            val peakBitrateBps = (avgBitrateBps * peakFactor).toLong()
-            val speedBps = avgDownloadSpeed().toLong()
-            val ratio = if (peakBitrateBps > 0) speedBps.toDouble() / peakBitrateBps else 0.0
-
-            val preBufferSec: Double = when {
-                speedBps <= 0L -> 60.0           // No data yet → conservative startup
-                ratio >= 1.5   -> 30.0           // Peak-headroom → short startup cushion
-                ratio >= 1.2   -> 60.0
-                ratio >= 1.0   -> 120.0          // Matched peak, need cushion for variance
-                else           -> {
-                    // S < B_peak: pre-buffer the deficit over the whole movie plus
-                    // a 50% safety margin for speed dips and swarm fluctuation.
-                    // Capped at half the movie so absurdly slow swarms still start.
-                    val deficit = durationSec.toDouble() * (1.0 - ratio) * 1.5
-                    deficit.coerceAtMost(durationSec * 0.5)
-                }
-            }
-
-            // Target bytes uses peak bitrate: a cushion measured in "seconds of
-            // playback" must survive peak-bitrate draws, not average ones.
-            val targetBufferBytes = (peakBitrateBps * preBufferSec).toLong()
-                .coerceIn(
-                    30L * 1024 * 1024,                                 // Min 30 MB floor
-                    minOf(500L * 1024 * 1024, (fileSize / 2).coerceAtLeast(30L * 1024 * 1024))
-                )
-
-            val bufferProgress = (downloadedBytes.toFloat() / targetBufferBytes).coerceIn(0f, 1f)
-            _streamState.value = TorrentStreamState.PreBuffering(videoPath, bufferProgress)
-
-            android.util.Log.d(
-                "TorrentStreamService",
-                "PreBuffer: speed=${speedBps / 1024}KB/s " +
-                "avg=${avgBitrateBps / 1024}KB/s peak=${peakBitrateBps / 1024}KB/s " +
-                "ratio=${"%.2f".format(ratio)} T=${preBufferSec.toInt()}s " +
-                "target=${targetBufferBytes / 1024 / 1024}MB " +
-                "got=${downloadedBytes / 1024 / 1024}MB (${(bufferProgress * 100).toInt()}%)"
-            )
-
-            if (downloadedBytes >= targetBufferBytes) break
-            if (elapsed > maxWaitMs) {
-                android.util.Log.w(
-                    "TorrentStreamService",
-                    "Pre-buffer wait cap hit after ${elapsed / 1000}s, starting playback anyway"
-                )
-                break
-            }
-
-            delay(500)
-        }
-
-        _streamState.value = TorrentStreamState.Ready(videoPath)
-        updateNotification("Playing...")
-    }
-
-    private fun avgDownloadSpeed(): Int {
-        if (speedSamples.isEmpty()) return _downloadSpeed.value
-        return (speedSamples.sum() / speedSamples.size)
-    }
-    
-    override fun onStreamProgress(torrent: Torrent?, status: StreamStatus?) {
-        status?.let {
-            val progress = it.progress
-            _downloadProgress.value = progress
-            _downloadSpeed.value = it.downloadSpeed
-            _seeds.value = it.seeds
-
-            // Maintain rolling speed window for adaptive pre-buffer calculations.
-            speedSamples.addLast(it.downloadSpeed)
-            while (speedSamples.size > SPEED_SAMPLE_WINDOW) speedSamples.removeFirst()
-
-            val currentState = _streamState.value
-            if (currentState is TorrentStreamState.Buffering || currentState is TorrentStreamState.Streaming) {
-                if (progress < 5f) {
-                    _streamState.value = TorrentStreamState.Buffering(progress)
-                } else {
-                    _streamState.value = TorrentStreamState.Streaming(progress)
-                }
-            }
-            
-            val speedMbps = it.downloadSpeed / 1024 / 1024
-            val cacheMB = _cacheUsageMB.value
-            updateNotification("Streaming: ${progress.toInt()}% (${speedMbps}MB/s) Cache: ${cacheMB}MB")
-        }
-    }
-    
-    override fun onStreamStopped() {
-        android.util.Log.d("TorrentStreamService", "Stream stopped")
-        _streamState.value = TorrentStreamState.Idle
-        currentTorrent = null
-        currentMagnetUrl = null
-    }
-    
-    override fun onStreamError(torrent: Torrent?, e: Exception?) {
-        android.util.Log.e("TorrentStreamService", "Stream error: ${e?.message}")
-        _streamState.value = TorrentStreamState.Error(e?.message ?: "Unknown error")
-        updateNotification("Error: ${e?.message}")
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, createNotification(status))
     }
 }
 
-/**
- * Represents the current state of torrent streaming.
- */
 sealed class TorrentStreamState {
     object Idle : TorrentStreamState()
     object Connecting : TorrentStreamState()

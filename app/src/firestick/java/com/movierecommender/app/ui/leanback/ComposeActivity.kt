@@ -17,7 +17,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.movierecommender.app.MovieRecommenderApplication
 import com.movierecommender.app.data.model.ContentMode
-import com.movierecommender.app.torrent.TorrentStreamService
 import com.movierecommender.app.ui.screens.firestick.FavoritesScreen
 import com.movierecommender.app.ui.screens.firestick.MovieSelectionScreen
 import com.movierecommender.app.ui.screens.firestick.RecommendationsScreen
@@ -112,10 +111,6 @@ class ComposeActivity : ComponentActivity() {
         }
     }
 
-    override fun onDestroy() {
-        startService(TorrentStreamService.getClearCacheIntent(this))
-        super.onDestroy()
-    }
 }
 
 @Composable

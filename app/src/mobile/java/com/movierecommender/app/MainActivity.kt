@@ -43,8 +43,11 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        // Clear torrent cache when app exits
-        startService(TorrentStreamService.getClearCacheIntent(this))
+        // A root activity finish means the user exited the app. Configuration changes and
+        // backgrounding do not delete the resumable torrent session.
+        if (isFinishing && !isChangingConfigurations) {
+            TorrentStreamService.requestImmediateCacheClear(this)
+        }
         super.onDestroy()
     }
 }

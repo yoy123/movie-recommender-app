@@ -19,8 +19,11 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onDestroy() {
-        // Clear torrent cache when app exits
-        startService(TorrentStreamService.getClearCacheIntent(this))
+        // Clear only when the root Fire TV task is deliberately finished. Leaving the player
+        // must keep its cache available for the 60-minute resume window.
+        if (isFinishing && !isChangingConfigurations) {
+            TorrentStreamService.requestImmediateCacheClear(this)
+        }
         super.onDestroy()
     }
 }
