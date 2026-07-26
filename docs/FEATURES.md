@@ -5,7 +5,7 @@
 ## Feature Matrix
 
 | Feature | Mobile | Firestick | Notes |
-|---|---:|---:|---|
+| --- | ---: | ---: | --- |
 | Movie genres and search | Yes | Yes | TMDB |
 | TV genres and search | Yes | Yes | TMDB |
 | Select 1–5 titles | Yes | Yes | Recommendation input |
