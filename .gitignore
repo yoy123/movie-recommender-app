@@ -40,3 +40,7 @@ apikey.properties
 
 # Android Profiling
 *.hprof
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
