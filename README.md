@@ -5,7 +5,7 @@ OpenStream+ is a Kotlin Android and Fire TV application for discovering movies a
 ## Platforms
 
 | Flavor | Interface | Application ID |
-|---|---|---|
+| --- | --- | --- |
 | `mobile` | Touch-oriented Jetpack Compose | `com.movierecommender.app` |
 | `firestick` | Leanback browse shell plus DPAD-oriented Compose screens | `com.movierecommender.app.firestick` |
 

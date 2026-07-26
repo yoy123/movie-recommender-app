@@ -14,7 +14,7 @@ OPENAI_API_KEY=...
 Both values are read by `app/build.gradle.kts` and compiled into `BuildConfig`.
 
 | BuildConfig field | Value source |
-|---|---|
+| --- | --- |
 | `TMDB_API_KEY` | `local.properties` |
 | `TMDB_BASE_URL` | hardcoded `https://api.themoviedb.org/3/` |
 | `OPENAI_API_KEY` | `local.properties` |
@@ -24,7 +24,7 @@ Both values are read by `app/build.gradle.kts` and compiled into `BuildConfig`.
 ## Android Configuration
 
 | Setting | Value |
-|---|---|
+| --- | --- |
 | namespace | `com.movierecommender.app` |
 | compile SDK | 34 |
 | target SDK | 34 |
@@ -37,7 +37,7 @@ Both values are read by `app/build.gradle.kts` and compiled into `BuildConfig`.
 ### Product flavors
 
 | Flavor | Application ID behavior | Version behavior |
-|---|---|---|
+| --- | --- | --- |
 | `mobile` | base ID | default version |
 | `firestick` | suffix `.firestick` | version code 4, `-firestick` name suffix |
 
@@ -57,7 +57,7 @@ Default keystore path: `app/signing/release.jks`.
 ### General and consent
 
 | Key | Type | Default |
-|---|---|---|
+| --- | --- | --- |
 | `user_name` | String | empty |
 | `is_first_run` | Boolean | `true` |
 | `dark_mode` | Boolean | `true` |
@@ -68,7 +68,7 @@ Default keystore path: `app/signing/release.jks`.
 ### Recommendation controls
 
 | Key | Type | Default |
-|---|---|---|
+| --- | --- | --- |
 | `indie_preference` | Float | `0.5` |
 | `use_indie` | Boolean | `true` |
 | `popularity_preference` | Float | `0.5` |
@@ -86,7 +86,7 @@ Default keystore path: `app/signing/release.jks`.
 ### Plex settings
 
 | Key | Type | Default |
-|---|---|---|
+| --- | --- | --- |
 | `plex_server_url` | String | empty |
 | `plex_token` | String | empty |
 | `plex_movie_library_path` | String | empty |
