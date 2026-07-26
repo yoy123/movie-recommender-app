@@ -65,7 +65,7 @@ class LlmRecommendationService {
             // Two attempts: first is creative, second is more strict/compliant.
             val attempts = listOf(
                 OpenAiAttempt(
-                    // gpt-4o-mini tends to comply better with moderate temperature and penalties.
+                    // The current recommendation model tends to comply better with moderate temperature and penalties.
                     // Very high penalties can cause strange phrasing and format drift.
                     temperature = 0.6,
                     frequencyPenalty = 1.0,
