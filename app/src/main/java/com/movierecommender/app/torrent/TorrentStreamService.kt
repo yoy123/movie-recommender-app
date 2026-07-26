@@ -11,8 +11,9 @@ import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.os.StatFs
-import androidx.core.app.ContextCompat
+import android.system.Os
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.github.se_bastiaan.torrentstream.StreamStatus
 import com.github.se_bastiaan.torrentstream.Torrent
 import com.github.se_bastiaan.torrentstream.TorrentOptions
@@ -182,7 +183,8 @@ class TorrentStreamService : Service(), TorrentListener {
         knownDurationMs: Long = 0L
     ) {
         val preparedMagnetUrl = TorrentMagnetUtils.enrichMagnetUrl(magnetUrl)
-        val magnetHash = preparedMagnetUrl.hashCode()
+        // Playback preferences are keyed by the original URL supplied by the player.
+        val magnetHash = magnetUrl.hashCode()
         retentionJob?.cancel()
         TorrentCachePolicy.markActive(applicationContext, magnetHash)
         requestedPlaybackPosition = resumePositionMs.coerceAtLeast(0L)
@@ -192,8 +194,12 @@ class TorrentStreamService : Service(), TorrentListener {
         if (currentMagnetUrl == preparedMagnetUrl && currentTorrent != null) {
             resumeDownloadInternal()
             prioritizeFirstMissingPiece(requestedPlaybackPosition, PRIORITY_LOOKAHEAD_MS)
-            currentTorrent?.videoFile?.absolutePath?.let {
-                _streamState.value = TorrentStreamState.Ready(it)
+            if (_streamState.value is TorrentStreamState.Ready ||
+                _streamState.value is TorrentStreamState.Streaming
+            ) {
+                currentTorrent?.videoFile?.absolutePath?.let {
+                    _streamState.value = TorrentStreamState.Ready(it)
+                }
             }
             updateNotification("Resuming cached playback...")
             return

@@ -52,6 +52,7 @@ fun StreamingPlayerScreen(
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var isPlayerReady by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
+    var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     
     // Rebuffering state: when player outruns the torrent download
@@ -76,7 +77,7 @@ fun StreamingPlayerScreen(
     val seeds = torrentService?.seeds?.collectAsState()?.value ?: 0
 
     val retainPlaybackSession: () -> Unit = {
-        val positionToSave = exoPlayer?.currentPosition ?: savedPosition
+        val positionToSave = exoPlayer?.currentPosition ?: currentPosition
         val durationToSave = (exoPlayer?.duration ?: duration).coerceAtLeast(0L)
         context.getSharedPreferences("movie_playback", MODE_PRIVATE)
             .edit()
@@ -220,6 +221,7 @@ fun StreamingPlayerScreen(
     LaunchedEffect(isPlayerReady) {
         while (isPlayerReady) {
             exoPlayer?.let { player ->
+                currentPosition = player.currentPosition
                 duration = player.duration.coerceAtLeast(0L)
                 // Continuously track last good position during active playback
                 if (player.isPlaying && player.currentPosition > 0L) {
@@ -258,7 +260,10 @@ fun StreamingPlayerScreen(
         val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
         val posKey = "position_${magnetUrl.hashCode()}"
         if (resumePos > 0L) {
-            prefs.edit().putLong(posKey, resumePos).apply()
+            prefs.edit()
+                .putLong(posKey, resumePos)
+                .putLong("duration_${magnetUrl.hashCode()}", duration)
+                .apply()
         }
         
         // Tell the torrent to prioritize data around our resume position
@@ -330,9 +335,7 @@ fun StreamingPlayerScreen(
                 title = { Text(movieTitle, maxLines = 1) },
                 navigationIcon = {
                     IconButton(onClick = {
-                        shouldStopStream = false
-                        torrentService?.pauseDownloadIfPossiblePublic()
-                        exoPlayer?.release()
+                        retainPlaybackSession()
                         onBackClick()
                     }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -479,8 +482,11 @@ fun StreamingPlayerScreen(
                 is TorrentStreamState.Error -> {
                     ErrorOverlay(
                         message = streamState.message,
-                        onRetry = { torrentService?.startStream(magnetUrl) },
-                        onBack = onBackClick
+                        onRetry = { torrentService?.startStream(magnetUrl, savedPosition, savedDuration) },
+                        onBack = {
+                            retainPlaybackSession()
+                            onBackClick()
+                        }
                     )
                 }
             }

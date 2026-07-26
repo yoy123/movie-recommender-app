@@ -21,6 +21,7 @@ import com.movierecommender.app.data.remote.PirateBayApiService
 import com.movierecommender.app.data.remote.TorrentGalaxyService
 import com.movierecommender.app.data.remote.LeetxService
 import com.movierecommender.app.data.remote.TorznabService
+import com.movierecommender.app.data.remote.InternetArchiveService
 import com.movierecommender.app.data.remote.TorrentInfo
 import com.movierecommender.app.data.remote.EpisodeTorrentInfo
 import com.movierecommender.app.data.remote.StreamingAppRegistry
@@ -63,7 +64,8 @@ class MovieRepository(
     private val pirateBayApi: PirateBayApiService = PirateBayApiService(),
     private val torrentGalaxyApi: TorrentGalaxyService = TorrentGalaxyService(),
     private val leetxApi: LeetxService = LeetxService(),
-    private val torznabApi: TorznabService = TorznabService(BuildConfig.TORZNAB_SOURCES)
+    private val torznabApi: TorznabService = TorznabService(BuildConfig.TORZNAB_SOURCES),
+    private val internetArchiveApi: InternetArchiveService = InternetArchiveService()
 ) {
     
     // OpenAI API key from BuildConfig
@@ -2290,6 +2292,21 @@ class MovieRepository(
             } catch (e: Exception) {
                 android.util.Log.w("MovieRepository", "Torznab search failed: ${e.message}")
             }
+        }
+
+        // Internet Archive torrents include HTTP web seeds but do not expose swarm counts.
+        try {
+            val archiveTorrent = internetArchiveApi.searchMovie(title, year)
+            if (archiveTorrent != null) {
+                android.util.Log.d(
+                    "MovieRepository",
+                    "Found Internet Archive torrent: ${archiveTorrent.quality} (${archiveTorrent.size})"
+                )
+                return@withContext archiveTorrent
+            }
+            android.util.Log.d("MovieRepository", "No Internet Archive torrent found")
+        } catch (e: Exception) {
+            android.util.Log.w("MovieRepository", "Internet Archive search failed: ${e.message}")
         }
 
         // Fallback to PirateBay
