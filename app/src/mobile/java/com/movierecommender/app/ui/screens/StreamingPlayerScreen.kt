@@ -30,6 +30,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.ui.PlayerView
 import com.movierecommender.app.torrent.TorrentStreamService
 import com.movierecommender.app.torrent.TorrentStreamState
@@ -52,10 +53,6 @@ fun StreamingPlayerScreen(
     var isPlayerReady by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
     var duration by remember { mutableLongStateOf(0L) }
-    var shouldStopStream by remember { mutableStateOf(true) }
-    var lastProgress by remember { mutableStateOf(0f) }
-    var lastProgressTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var stallRetries by remember { mutableIntStateOf(0) }
     
     // Rebuffering state: when player outruns the torrent download
     var isWaitingForData by remember { mutableStateOf(false) }
@@ -63,33 +60,31 @@ fun StreamingPlayerScreen(
     var pendingResumePosition by remember { mutableLongStateOf(0L) }
     var lastSaveTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     
-    // Load saved playback position
+    // Load saved playback state for accidental-backout recovery.
     val savedPosition = remember(magnetUrl) {
-        val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
-        val key = "position_${magnetUrl.hashCode()}"
-        prefs.getLong(key, 0L)
+        context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+            .getLong("position_${magnetUrl.hashCode()}", 0L)
+    }
+    val savedDuration = remember(magnetUrl) {
+        context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+            .getLong("duration_${magnetUrl.hashCode()}", 0L)
     }
     
     val streamState = torrentService?.streamState?.collectAsState()?.value ?: TorrentStreamState.Idle
     val downloadProgress = torrentService?.downloadProgress?.collectAsState()?.value ?: 0f
-        // Restart stream if buffering stalls with no progress for too long
-        LaunchedEffect(streamState, downloadProgress) {
-            if (streamState is TorrentStreamState.Buffering || streamState is TorrentStreamState.Connecting) {
-                val now = System.currentTimeMillis()
-                if (downloadProgress > lastProgress + 0.1f) {
-                    lastProgress = downloadProgress
-                    lastProgressTime = now
-                    stallRetries = 0
-                } else if (now - lastProgressTime > 20000 && stallRetries < 2) {
-                    stallRetries += 1
-                    lastProgressTime = now
-                    torrentService?.stopStream()
-                    torrentService?.startStream(magnetUrl)
-                }
-            }
-        }
     val downloadSpeed = torrentService?.downloadSpeed?.collectAsState()?.value ?: 0
     val seeds = torrentService?.seeds?.collectAsState()?.value ?: 0
+
+    val retainPlaybackSession: () -> Unit = {
+        val positionToSave = exoPlayer?.currentPosition ?: savedPosition
+        val durationToSave = (exoPlayer?.duration ?: duration).coerceAtLeast(0L)
+        context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+            .edit()
+            .putLong("position_${magnetUrl.hashCode()}", positionToSave)
+            .putLong("duration_${magnetUrl.hashCode()}", durationToSave)
+            .apply()
+        torrentService?.retainCurrentStreamForResume(positionToSave, durationToSave)
+    }
     
     // Service connection
     val serviceConnection = remember {
@@ -100,7 +95,7 @@ fun StreamingPlayerScreen(
                 isBound = true
                 
                 // Start streaming when service is connected
-                torrentService?.startStream(magnetUrl)
+                torrentService?.startStream(magnetUrl, savedPosition, savedDuration)
             }
             
             override fun onServiceDisconnected(name: ComponentName?) {
@@ -117,19 +112,13 @@ fun StreamingPlayerScreen(
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         
         onDispose {
-            // Save current playback position
-            exoPlayer?.let { player ->
-                val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
-                val key = "position_${magnetUrl.hashCode()}"
-                prefs.edit().putLong(key, player.currentPosition).apply()
-            }
-            if (shouldStopStream) {
-                torrentService?.stopStream()
-            }
+            retainPlaybackSession()
             if (isBound) {
                 context.unbindService(serviceConnection)
+                isBound = false
             }
             exoPlayer?.release()
+            exoPlayer = null
         }
     }
     
@@ -140,7 +129,15 @@ fun StreamingPlayerScreen(
     LaunchedEffect(streamState) {
         if (streamState is TorrentStreamState.Ready && exoPlayer == null) {
             val videoPath = streamState.videoPath
-            exoPlayer = ExoPlayer.Builder(context).build().apply {
+            val loadControl = DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    60_000,
+                    300_000,
+                    5_000,
+                    30_000
+                )
+                .build()
+            exoPlayer = ExoPlayer.Builder(context).setLoadControl(loadControl).build().apply {
                 val mediaItem = MediaItem.fromUri("file://$videoPath")
                 // Resume from saved position if available
                 if (savedPosition > 0L) {
@@ -230,9 +227,11 @@ fun StreamingPlayerScreen(
                     // Periodically save position to SharedPreferences for crash recovery
                     val now = System.currentTimeMillis()
                     if (now - lastSaveTime > 10000L) {
-                        val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
-                        val posKey = "position_${magnetUrl.hashCode()}"
-                        prefs.edit().putLong(posKey, player.currentPosition).apply()
+                        context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+                            .edit()
+                            .putLong("position_${magnetUrl.hashCode()}", player.currentPosition)
+                            .putLong("duration_${magnetUrl.hashCode()}", duration)
+                            .apply()
                         lastSaveTime = now
                     }
                 }

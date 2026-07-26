@@ -94,25 +94,19 @@ fun StreamingPlayerScreen(
     
     val streamState = torrentService?.streamState?.collectAsState()?.value ?: TorrentStreamState.Idle
     val downloadProgress = torrentService?.downloadProgress?.collectAsState()?.value ?: 0f
-        // Restart stream if buffering stalls with no progress for too long
-        LaunchedEffect(streamState, downloadProgress) {
-            if (streamState is TorrentStreamState.Buffering || streamState is TorrentStreamState.Connecting
-                || streamState is TorrentStreamState.PreBuffering) {
-                val now = System.currentTimeMillis()
-                if (downloadProgress > lastProgress + 0.1f) {
-                    lastProgress = downloadProgress
-                    lastProgressTime = now
-                    stallRetries = 0
-                } else if (now - lastProgressTime > 20000 && stallRetries < 2) {
-                    stallRetries += 1
-                    lastProgressTime = now
-                    torrentService?.stopStream()
-                    torrentService?.startStream(magnetUrl)
-                }
-            }
-        }
     val downloadSpeed = torrentService?.downloadSpeed?.collectAsState()?.value ?: 0
     val seeds = torrentService?.seeds?.collectAsState()?.value ?: 0
+
+    val retainPlaybackSession: () -> Unit = {
+        val positionToSave = exoPlayer?.currentPosition ?: currentPosition
+        val durationToSave = (exoPlayer?.duration ?: duration).coerceAtLeast(0L)
+        context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+            .edit()
+            .putLong("position_${magnetUrl.hashCode()}", positionToSave)
+            .putLong("duration_${magnetUrl.hashCode()}", durationToSave)
+            .apply()
+        torrentService?.retainCurrentStreamForResume(positionToSave, durationToSave)
+    }
     
     // Service connection
     val serviceConnection = remember {
@@ -121,7 +115,7 @@ fun StreamingPlayerScreen(
                 val serviceBinder = binder as TorrentStreamService.TorrentBinder
                 torrentService = serviceBinder.getService()
                 isBound = true
-                torrentService?.startStream(magnetUrl)
+                torrentService?.startStream(magnetUrl, savedPosition, savedDuration)
             }
             
             override fun onServiceDisconnected(name: ComponentName?) {
@@ -138,24 +132,10 @@ fun StreamingPlayerScreen(
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         
         onDispose {
-            // Save current playback position before releasing player
-            exoPlayer?.let { player ->
-                val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
-                val key = "position_${magnetUrl.hashCode()}"
-                prefs.edit().putLong(key, player.currentPosition).apply()
-                player.release()
-            }
+            retainPlaybackSession()
+            exoPlayer?.release()
             exoPlayer = null
-
-            if (shouldStopStream) {
-                torrentService?.stopStream()
-            }
-            // Only unbind if we're stopping the stream; keep service alive for resume
-            if (isBound && shouldStopStream) {
-                context.unbindService(serviceConnection)
-                isBound = false
-            } else if (isBound) {
-                // Just unbind without stopping - service continues in background
+            if (isBound) {
                 context.unbindService(serviceConnection)
                 isBound = false
             }
@@ -169,15 +149,14 @@ fun StreamingPlayerScreen(
     LaunchedEffect(streamState) {
         if (streamState is TorrentStreamState.Ready && exoPlayer == null) {
             val videoPath = streamState.videoPath
-            // Buffer aggressively ahead to prevent mid-movie stalls.
-            // maxBufferMs = 3 min: ExoPlayer reads ahead as far as pieces are available.
-            // bufferForPlaybackAfterRebufferMs = 10 s: don't resume too early after a stutter.
+            // Media3 maintains a deep local read-ahead buffer after the torrent service has
+            // already passed its contiguous no-stall startup gate.
             val loadControl = DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
-                    15_000,   // minBufferMs: keep at least 15 s buffered
-                    180_000,  // maxBufferMs: read up to 3 min ahead
-                    2_000,    // bufferForPlaybackMs: 2 s to start (torrent already pre-buffered)
-                    10_000    // bufferForPlaybackAfterRebufferMs: 10 s needed after a stutter
+                    60_000,   // Keep at least one minute buffered in Media3.
+                    300_000,  // Read up to five minutes ahead from the local torrent file.
+                    5_000,    // Require five seconds before initial playback.
+                    30_000    // Require thirty seconds after any exceptional rebuffer.
                 )
                 .build()
             exoPlayer = ExoPlayer.Builder(context).setLoadControl(loadControl).build().apply {
@@ -274,9 +253,11 @@ fun StreamingPlayerScreen(
                     // Periodically save position to SharedPreferences for crash recovery
                     val now = System.currentTimeMillis()
                     if (now - lastSaveTime > 10000L) {
-                        val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
-                        val posKey = "position_${magnetUrl.hashCode()}"
-                        prefs.edit().putLong(posKey, player.currentPosition).apply()
+                        context.getSharedPreferences("movie_playback", MODE_PRIVATE)
+                            .edit()
+                            .putLong("position_${magnetUrl.hashCode()}", player.currentPosition)
+                            .putLong("duration_${magnetUrl.hashCode()}", duration)
+                            .apply()
                         lastSaveTime = now
                     }
                 }
@@ -303,7 +284,10 @@ fun StreamingPlayerScreen(
         val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
         val posKey = "position_${magnetUrl.hashCode()}"
         if (resumePos > 0L) {
-            prefs.edit().putLong(posKey, resumePos).apply()
+            prefs.edit()
+                .putLong(posKey, resumePos)
+                .putLong("duration_${magnetUrl.hashCode()}", duration)
+                .apply()
         }
         
         // Tell the torrent to prioritize data around our resume position
@@ -432,14 +416,7 @@ fun StreamingPlayerScreen(
                             true
                         }
                         KeyEvent.KEYCODE_BACK -> {
-                            // Save position before backing out
-                            exoPlayer?.let { player ->
-                                val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
-                                val key = "position_${magnetUrl.hashCode()}"
-                                prefs.edit().putLong(key, player.currentPosition).apply()
-                            }
-                            shouldStopStream = false
-                            torrentService?.pauseDownloadIfPossiblePublic()
+                            retainPlaybackSession()
                             onBackClick()
                             true
                         }
@@ -532,14 +509,7 @@ fun StreamingPlayerScreen(
                             onSeekBack = { exoPlayer?.let { it.seekTo((it.currentPosition - 10000).coerceAtLeast(0)) } },
                             onSeekForward = { exoPlayer?.let { it.seekTo(it.currentPosition + 10000) } },
                             onBack = {
-                                // Save position before backing out
-                                exoPlayer?.let { player ->
-                                    val prefs = context.getSharedPreferences("movie_playback", MODE_PRIVATE)
-                                    val key = "position_${magnetUrl.hashCode()}"
-                                    prefs.edit().putLong(key, player.currentPosition).apply()
-                                }
-                                shouldStopStream = false
-                                torrentService?.pauseDownloadIfPossiblePublic()
+                                retainPlaybackSession()
                                 onBackClick()
                             }
                         )
@@ -596,8 +566,11 @@ fun StreamingPlayerScreen(
             is TorrentStreamState.Error -> {
                 TVErrorOverlay(
                     message = streamState.message,
-                    onRetry = { torrentService?.startStream(magnetUrl) },
-                    onBack = onBackClick
+                    onRetry = { torrentService?.startStream(magnetUrl, savedPosition, savedDuration) },
+                    onBack = {
+                        retainPlaybackSession()
+                        onBackClick()
+                    }
                 )
             }
         }
