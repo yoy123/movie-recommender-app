@@ -91,15 +91,13 @@ Impact: fixes can land in one flavor but not the other.
 
 Recommended action: extract shared state/reducer/use-case code while preserving separate UI source sets.
 
-### 6. Torrent cache has no explicit maximum
+### 6. Torrent playback still depends on external swarm and network stability
 
-Current calculation uses 75% of free space after reserving 500 MB, with a 100 MB minimum.
+The service now rejects sources that cannot fit while preserving 500 MB of device storage and waits for a conservative contiguous buffer before playback. It also prioritizes missing pieces ahead of the player and retains interrupted sessions for 60 minutes.
 
-Impact: devices with large free storage can allocate a very large torrent cache allowance.
+Residual risk: no local buffering policy can guarantee uninterrupted playback if every peer disappears, the network fails, the process is killed during active playback, or the media file is malformed.
 
-The code comment also says 50%, which does not match the constant.
-
-Recommended action: add a tested upper cap and correct the comment.
+Recommended action: continue device testing with slow and unstable swarms, record actual rebuffer rates, and tune the safety factors from evidence rather than reducing the startup gate speculatively.
 
 ### 7. Plex infrastructure is unwired
 
