@@ -440,7 +440,25 @@ class TorrentStreamService : Service(), TorrentListener {
 
     override fun onStreamPrepared(torrent: Torrent?) {
         currentTorrent = torrent
-        torrent?.startDownload()
+        if (torrent != null) {
+            val selectedFileIndex = currentMagnetUrl?.let(TorrentMagnetUtils::selectedFileIndex)
+            if (selectedFileIndex != null) {
+                val fileCount = runCatching { torrent.fileNames.size }.getOrDefault(0)
+                if (selectedFileIndex in 0 until fileCount) {
+                    torrent.setSelectedFileIndex(selectedFileIndex)
+                    android.util.Log.d(
+                        TAG,
+                        "Selected torrent file index $selectedFileIndex of $fileCount for playback"
+                    )
+                } else {
+                    android.util.Log.w(
+                        TAG,
+                        "Ignoring invalid torrent file index $selectedFileIndex (files=$fileCount)"
+                    )
+                }
+            }
+            torrent.startDownload()
+        }
         if (currentPlaybackDuration > 0L && requestedPlaybackPosition > 0L) {
             prioritizeFirstMissingPiece(requestedPlaybackPosition, PRIORITY_LOOKAHEAD_MS)
         }

@@ -118,16 +118,7 @@ Resolved values are persisted and preferred over generic search links on future 
 
 ## Movie Torrent Streaming
 
-Movie torrent search tries:
-
-1. YTS
-2. Popcorn movie API
-3. configured Torznab endpoints
-4. Internet Archive
-5. Public Domain Torrents
-6. Pirate Bay adapter
-7. TorrentGalaxy
-8. 1337x adapter
+Movie torrent search queries YTS, Popcorn, Torrentio, and Knaben concurrently, then ranks live results by quality, seeders, and peers. If no primary result is usable, it falls back through configured Torznab endpoints, Internet Archive, Public Domain Torrents, Pirate Bay, TorrentGalaxy, and 1337x.
 
 Swarm API results must report live peers. Public-domain catalog results use verified HTTPS `.torrent` downloads.
 
@@ -141,8 +132,9 @@ The picker:
 - merges seasons from Popcorn TV, EZTV, configured Torznab endpoints, and Pirate Bay TV
 - merges episode lists while preserving Popcorn metadata
 - paginates bounded Torznab and EZTV inventories for long-running shows
-- searches the selected episode in all available sources
-- selects the highest-seed result
+- searches the selected episode through Popcorn TV, EZTV, Torrentio, Knaben, configured Torznab, and Pirate Bay
+- ranks results by preferred quality, seeders, and peers
+- preserves Torrentio file-index metadata so a requested episode inside a season pack is selected before download
 
 ## Playback
 

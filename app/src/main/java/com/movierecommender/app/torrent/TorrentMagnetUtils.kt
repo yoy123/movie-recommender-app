@@ -47,4 +47,25 @@ object TorrentMagnetUtils {
         }
         return magnetUrl + trackerSuffix
     }
+
+    /**
+     * Reads the first BEP-53 selected-file index from a magnet's `so` parameter.
+     * Torrentio supplies this for exact episodes contained inside season packs.
+     */
+    fun selectedFileIndex(magnetUrl: String): Int? {
+        if (!magnetUrl.startsWith("magnet:?", ignoreCase = true)) return null
+        val selection = Regex("(?:[?&])so=([^&]+)", RegexOption.IGNORE_CASE)
+            .find(magnetUrl)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: return null
+
+        return selection.substringBefore(',')
+            .substringBefore('-')
+            .trim()
+            .toIntOrNull()
+            ?.takeIf { it >= 0 }
+    }
 }

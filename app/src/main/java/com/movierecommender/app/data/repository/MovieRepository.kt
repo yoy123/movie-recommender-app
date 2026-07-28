@@ -1582,6 +1582,41 @@ class MovieRepository(
             android.util.Log.e("MovieRepository", "EZTV fallback failed: ${e.message}")
         }
 
+        val publicAggregateResult = coroutineScope {
+            val torrentioJob = async {
+                try {
+                    resolvedImdbId?.let {
+                        torrentioApi.searchEpisode(
+                            imdbId = it,
+                            season = 1,
+                            episode = 1,
+                            preferredQuality = "720p",
+                            showTitle = title
+                        )
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MovieRepository", "Torrentio first-episode fallback failed: ${e.message}")
+                    null
+                }
+            }
+            val knabenJob = async {
+                try {
+                    knabenApi.searchEpisode(
+                        showTitle = title,
+                        season = 1,
+                        episode = 1,
+                        preferredQuality = "720p"
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e("MovieRepository", "Knaben first-episode fallback failed: ${e.message}")
+                    null
+                }
+            }
+            listOfNotNull(torrentioJob.await(), knabenJob.await())
+                .maxByOrNull { episodeTorrentSelectionScore(it, "720p") }
+        }
+        if (publicAggregateResult != null) return@withContext publicAggregateResult
+
         if (torznabApi.isConfigured) {
             android.util.Log.d("MovieRepository", "Trying Torznab fallback for: $title")
             try {
@@ -2098,46 +2133,35 @@ class MovieRepository(
         android.util.Log.d("MovieRepository", "Searching torrent for: $title ($year)")
         val imdbId = resolveImdbIdForMovie(title, year)
         
-        // Try YTS first (generally smaller files, better for streaming)
-        try {
-            val ytsMovie = if (imdbId != null) {
-                ytsApi.searchByImdbId(imdbId) ?: ytsApi.searchMovie(title, year)
-            } else {
-                ytsApi.searchMovie(title, year)
-            }
-            if (ytsMovie != null) {
-                val torrent = ytsApi.getSmallestTorrent(ytsMovie)
-                if (torrent != null && hasLivePeers(torrent)) {
-                    android.util.Log.d("MovieRepository", "Found YTS torrent: ${torrent.quality} (${torrent.size}) with ${torrent.seeds} seeds")
-                    return@withContext torrent
+        // Query the strongest no-configuration providers in parallel, then compare
+        // quality and swarm health instead of accepting the first adequate result.
+        val primaryTorrent = coroutineScope {
+            val ytsJob = async {
+                try {
+                    val movie = if (imdbId != null) {
+                        ytsApi.searchByImdbId(imdbId) ?: ytsApi.searchMovie(title, year)
+                    } else {
+                        ytsApi.searchMovie(title, year)
+                    }
+                    movie?.let(ytsApi::getSmallestTorrent)
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "YTS search failed: ${e.message}")
+                    null
                 }
             }
-            android.util.Log.d("MovieRepository", "No YTS torrent found, trying Popcorn API...")
-        } catch (e: Exception) {
-            android.util.Log.w("MovieRepository", "YTS search failed: ${e.message}")
-        }
-        
-        // Fallback to Popcorn API
-        try {
-            val popcornMovie = if (imdbId != null) {
-                popcornApi.searchByImdbId(imdbId) ?: popcornApi.searchMovie(title, year)
-            } else {
-                popcornApi.searchMovie(title, year)
-            }
-            if (popcornMovie != null) {
-                val torrent = popcornApi.getSmallestTorrent(popcornMovie)
-                if (torrent != null && hasLivePeers(torrent)) {
-                    android.util.Log.d("MovieRepository", "Found Popcorn torrent: ${torrent.quality} (${torrent.size}) with ${torrent.seeds} seeds")
-                    return@withContext torrent
+            val popcornJob = async {
+                try {
+                    val movie = if (imdbId != null) {
+                        popcornApi.searchByImdbId(imdbId) ?: popcornApi.searchMovie(title, year)
+                    } else {
+                        popcornApi.searchMovie(title, year)
+                    }
+                    movie?.let(popcornApi::getSmallestTorrent)
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "Popcorn API search failed: ${e.message}")
+                    null
                 }
             }
-            android.util.Log.d("MovieRepository", "No Popcorn API torrent found")
-        } catch (e: Exception) {
-            android.util.Log.w("MovieRepository", "Popcorn API search failed: ${e.message}")
-        }
-
-        // Public aggregate providers broaden coverage without requiring user configuration.
-        val aggregateTorrent = coroutineScope {
             val torrentioJob = async {
                 try {
                     imdbId?.let { torrentioApi.searchMovie(it, preferredQuality = "1080p") }
@@ -2155,17 +2179,21 @@ class MovieRepository(
                 }
             }
 
-            listOfNotNull(torrentioJob.await(), knabenJob.await())
-                .filter(::hasLivePeers)
+            listOfNotNull(
+                ytsJob.await(),
+                popcornJob.await(),
+                torrentioJob.await(),
+                knabenJob.await()
+            ).filter(::hasLivePeers)
                 .maxByOrNull(::movieTorrentSelectionScore)
         }
-        if (aggregateTorrent != null) {
+        if (primaryTorrent != null) {
             android.util.Log.d(
                 "MovieRepository",
-                "Found aggregate torrent from ${aggregateTorrent.provider}: ${aggregateTorrent.quality} " +
-                    "with ${aggregateTorrent.seeds} seeds"
+                "Best primary torrent from ${primaryTorrent.provider}: ${primaryTorrent.quality} " +
+                    "with ${primaryTorrent.seeds} seeds"
             )
-            return@withContext aggregateTorrent
+            return@withContext primaryTorrent
         }
 
         // Configurable Torznab endpoints can aggregate multiple authorized indexers.
@@ -2330,6 +2358,46 @@ class MovieRepository(
                 }
             }
 
+            val torrentioJob = async {
+                try {
+                    val torrentioImdbId = resolvedImdbId
+                    if (torrentioImdbId != null) {
+                        val torrent = torrentioApi.searchEpisode(
+                            imdbId = torrentioImdbId,
+                            season = season,
+                            episode = episode,
+                            preferredQuality = preferredQuality,
+                            showTitle = showTitle
+                        )
+                        if (torrent != null) {
+                            android.util.Log.d("MovieRepository", "Found ${torrent.provider} episode torrent: ${torrent.quality} with ${torrent.seeds} seeds")
+                        }
+                        torrent
+                    } else null
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "Torrentio episode lookup failed: ${e.message}")
+                    null
+                }
+            }
+
+            val knabenJob = async {
+                try {
+                    val torrent = knabenApi.searchEpisode(
+                        showTitle = showTitle,
+                        season = season,
+                        episode = episode,
+                        preferredQuality = preferredQuality
+                    )
+                    if (torrent != null) {
+                        android.util.Log.d("MovieRepository", "Found ${torrent.provider} episode torrent: ${torrent.quality} with ${torrent.seeds} seeds")
+                    }
+                    torrent
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "Knaben episode lookup failed: ${e.message}")
+                    null
+                }
+            }
+
             val torznabJob = async {
                 if (!torznabApi.isConfigured) return@async null
                 try {
@@ -2371,16 +2439,20 @@ class MovieRepository(
 
             val popcornResult = popcornJob.await()
             val eztvResult = eztvJob.await()
+            val torrentioResult = torrentioJob.await()
+            val knabenResult = knabenJob.await()
             val torznabResult = torznabJob.await()
             val pirateBayResult = pirateBayJob.await()
 
-            // Pick the best torrent (most seeds)
+            // Compare source quality and swarm health instead of choosing by seeds alone.
             val best = listOfNotNull(
                 popcornResult,
                 eztvResult,
+                torrentioResult,
+                knabenResult,
                 torznabResult,
                 pirateBayResult
-            ).maxByOrNull { it.seeds }
+            ).maxByOrNull { episodeTorrentSelectionScore(it, preferredQuality) }
             if (best != null) {
                 android.util.Log.d("MovieRepository", "Best torrent for $showTitle S${season}E${episode}: ${best.provider} ${best.quality} (${best.seeds} seeds)")
             } else {

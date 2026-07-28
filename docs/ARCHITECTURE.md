@@ -169,22 +169,15 @@ For TV shows, `getTvShowWatchOptions()` returns TMDB provider options. Episode t
 
 ### Movies
 
-Fallback order:
+YTS, Popcorn, Torrentio, and Knaben form the primary concurrent search group. `MovieRepository` compares quality and swarm health across the completed results rather than returning the first adequate provider response.
 
-1. YTS
-2. Popcorn movie API
-3. configured Torznab endpoints
-4. Internet Archive
-5. Public Domain Torrents
-6. Pirate Bay API
-7. TorrentGalaxy
-8. 1337x adapter
-
-Swarm API results must report at least one seed or peer. The two public-domain catalogs return verified HTTPS `.torrent` files without swarm-count metadata.
+When no primary result is usable, fallback continues through configured Torznab endpoints, Internet Archive, Public Domain Torrents, Pirate Bay, TorrentGalaxy, and 1337x. Swarm API results must report at least one seed or peer. The two public-domain catalogs return verified HTTPS `.torrent` files without swarm-count metadata.
 
 ### TV episodes
 
-Popcorn TV, EZTV, configured Torznab endpoints, and Pirate Bay TV are queried concurrently when possible. The repository selects the result with the highest seed count. Season and episode lists merge all available inventories while preserving Popcorn metadata.
+Popcorn TV, EZTV, Torrentio, Knaben, configured Torznab endpoints, and Pirate Bay TV are queried concurrently when possible. The repository ranks preferred quality, seeders, and peers. Season and episode lists merge the inventory-capable sources while preserving Popcorn metadata.
+
+Torrentio may identify an exact file within a multi-file torrent. That `so` selection is preserved in the magnet and applied through `Torrent.setSelectedFileIndex()` during `onStreamPrepared`, before the download begins.
 
 ## Playback
 

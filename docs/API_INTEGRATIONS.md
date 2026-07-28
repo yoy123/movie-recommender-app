@@ -1,6 +1,6 @@
 # OpenStream+ API Integrations
 
-**Last verified:** 2026-07-25  
+**Last verified:** 2026-07-28
 **Status:** Current integration reference
 
 ## Integration Summary
@@ -12,6 +12,8 @@
 | IMDb scraper | Trailer fallback from IMDb pages | None | Active fallback |
 | YTS | Movie torrent lookup | None | Active |
 | Popcorn movie API | Movie torrent lookup | None | Active |
+| Torrentio | IMDb-addressed movie and episode torrent aggregation | None | Active |
+| Knaben | Broad title and episode torrent aggregation | None | Active |
 | Torznab | Configurable movie and TV torrent lookup through authorized Jackett/Prowlarr endpoints | API key | Optional |
 | Internet Archive | Curated downloadable feature-film torrents | None | Active fallback |
 | Public Domain Torrents | Public-domain movie torrents | None | Active fallback |
@@ -133,22 +135,29 @@ Because IMDb HTML is not a stable API contract, scraper failure must remain non-
 
 ## 4. Movie Torrent Sources
 
-`MovieRepository.getTorrentInfo()` uses this fallback order:
+`MovieRepository.getTorrentInfo()` first queries these no-configuration providers concurrently:
 
 1. YTS
 2. Popcorn movie API
-3. Configured Torznab endpoints
-4. Internet Archive Feature Films
-5. Public Domain Torrents
-6. Pirate Bay adapter
-7. TorrentGalaxy adapter
-8. 1337x adapter (`LeetxService`)
+3. Torrentio, when an IMDb ID is available
+4. Knaben
+
+The repository compares quality, seeders, and peers instead of accepting the first adequate result. When the primary group has no live result, the fallback chain continues through:
+
+5. Configured Torznab endpoints
+6. Internet Archive Feature Films
+7. Public Domain Torrents
+8. Pirate Bay adapter
+9. TorrentGalaxy adapter
+10. 1337x adapter (`LeetxService`)
 
 IMDb ID is resolved through TMDB where useful. Swarm API results must report at least one seed or peer. Internet Archive and Public Domain Torrents instead return verified HTTPS `.torrent` files; Archive-generated torrents include HTTP web seeds and neither catalog exposes live swarm counts.
 
 ### Selection objective
 
-YTS and Popcorn generally prefer the smallest available file for faster startup. Internet Archive requires a close title match and rejects dark items. Public Domain Torrents requires an exact normalized title, cross-checks IMDb IDs when available, and prefers its largest MP4 variant for player compatibility.
+The primary group ranks requested-quality releases with healthy swarms above merely early responses. YTS and Popcorn still expose their compact encodes, while Torrentio and Knaben broaden index coverage. Internet Archive requires a close title match and rejects dark items. Public Domain Torrents requires an exact normalized title, cross-checks IMDb IDs when available, and prefers its largest MP4 variant for player compatibility.
+
+Torrentio results may include a BEP-53 `so` file index. The app preserves that selection in the magnet so a requested TV episode inside a multi-file torrent is selected before downloading instead of defaulting to the largest file.
 
 ### Reliability
 
@@ -187,15 +196,23 @@ Uses IMDb ID and provides:
 
 The full inventory is paginated up to a 2,000-release safety limit and cached for five minutes.
 
+### Torrentio
+
+Uses IMDb-addressed Stremio stream lookups for movies and exact TV episodes. Results provide torrent info-hashes and may provide a file index for the requested episode inside a season pack.
+
+### Knaben
+
+Uses title-based public JSON search. The adapter validates normalized title words, remake years, exact episode markers, quality, and live swarm metadata before returning a result.
+
 ### Pirate Bay TV
 
 Uses the existing Pirate Bay API adapter's TV and HD TV categories. Strict `SxxEyy` and `NxYY` parsing excludes season packs from the episode picker.
 
 ### Repository behavior
 
-For a specific episode, Popcorn TV, EZTV, configured Torznab endpoints, and Pirate Bay TV are queried concurrently when possible. The result with the highest seed count is selected. All four sources participate in S01E01 quick-play fallback.
+For a specific episode, Popcorn TV, EZTV, Torrentio, Knaben, configured Torznab endpoints, and Pirate Bay TV are queried concurrently when possible. Results are ranked by preferred quality, seeders, and peers. Torrentio and Knaben also participate in S01E01 quick-play fallback.
 
-Season and episode lists merge all available sources, with Popcorn metadata preferred when several sources describe the same episode. Torznab follows advertised result offsets across every configured endpoint, up to a 2,000-release safety limit per endpoint.
+Season and episode lists continue to merge the inventory-capable sources, with Popcorn metadata preferred when several sources describe the same episode. Torznab follows advertised result offsets across every configured endpoint, up to a 2,000-release safety limit per endpoint.
 
 ## 6. Watch Providers and Deep Links
 

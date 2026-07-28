@@ -88,8 +88,8 @@ Retry excludes all titles already returned during the current session in both br
 3. Merge available seasons from Popcorn TV, EZTV, configured Torznab endpoints, and Pirate Bay TV.
 4. Merge episodes for the selected season.
 5. User selects an episode.
-6. Query all available TV torrent sources concurrently.
-7. Select the result with the highest seed count.
+6. Query Popcorn TV, EZTV, Torrentio, Knaben, configured Torznab, and Pirate Bay concurrently.
+7. Rank results by preferred quality, seeders, and peers.
 8. Start torrent playback.
 
 ## 9. Torrent Playback Flow
@@ -97,7 +97,7 @@ Retry excludes all titles already returned during the current session in both br
 1. Pass magnet URL to `StreamingPlayerScreen`.
 2. Bind/start `TorrentStreamService`.
 3. Parse torrent metadata.
-4. Select the video file.
+4. Apply a valid `so` file index when the provider identified an exact file; otherwise keep the library's largest-file selection.
 5. Calculate adaptive prebuffer target.
 6. Begin Media3 playback from the local file.
 7. Reprioritize pieces after seeks.

@@ -92,16 +92,7 @@ Candidate and fallback ranking use Bayesian-adjusted ratings so very small vote 
 
 ### Movie torrent discovery
 
-Fallback order:
-
-1. YTS
-2. Popcorn movie API
-3. configured Torznab endpoints
-4. Internet Archive
-5. Public Domain Torrents
-6. Pirate Bay API
-7. TorrentGalaxy
-8. 1337x adapter
+Primary movie search queries YTS, Popcorn, Torrentio, and Knaben concurrently and ranks the live results by quality and swarm health. When that group has no usable result, fallback continues through configured Torznab endpoints, Internet Archive, Public Domain Torrents, Pirate Bay, TorrentGalaxy, and 1337x.
 
 Swarm API results must report live peers. The public-domain catalogs provide verified HTTPS `.torrent` downloads without peer-count metadata.
 
@@ -109,10 +100,12 @@ Swarm API results must report live peers. The public-domain catalogs provide ver
 
 - Popcorn TV
 - EZTV
+- Torrentio
+- Knaben
 - configured Torznab endpoints
 - Pirate Bay TV categories
 
-Episode lookups query all available sources concurrently and select the result with the highest seed count. Torznab and EZTV inventories paginate up to bounded 2,000-release safety limits and use short-lived caches for season/episode browsing.
+Episode lookups query all available sources concurrently and rank preferred quality, seeders, and peers. Torrentio file-index metadata is retained so the player can select the requested episode from a multi-file torrent. Torznab and EZTV inventories paginate up to bounded 2,000-release safety limits and use short-lived caches for season/episode browsing.
 
 ### Watch-provider handling
 
