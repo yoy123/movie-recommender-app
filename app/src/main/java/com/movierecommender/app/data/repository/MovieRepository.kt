@@ -23,6 +23,8 @@ import com.movierecommender.app.data.remote.EztvApiService
 import com.movierecommender.app.data.remote.PirateBayApiService
 import com.movierecommender.app.data.remote.TorrentGalaxyService
 import com.movierecommender.app.data.remote.LeetxService
+import com.movierecommender.app.data.remote.TorrentioService
+import com.movierecommender.app.data.remote.KnabenApiService
 import com.movierecommender.app.data.remote.TorznabService
 import com.movierecommender.app.data.remote.InternetArchiveService
 import com.movierecommender.app.data.remote.PublicDomainTorrentsService
@@ -69,6 +71,8 @@ class MovieRepository(
     private val pirateBayApi: PirateBayApiService = PirateBayApiService(),
     private val torrentGalaxyApi: TorrentGalaxyService = TorrentGalaxyService(),
     private val leetxApi: LeetxService = LeetxService(),
+    private val torrentioApi: TorrentioService = TorrentioService(),
+    private val knabenApi: KnabenApiService = KnabenApiService(),
     private val torznabApi: TorznabService = TorznabService(BuildConfig.TORZNAB_SOURCES),
     private val internetArchiveApi: InternetArchiveService = InternetArchiveService(),
     private val publicDomainTorrentsApi: PublicDomainTorrentsService = PublicDomainTorrentsService()
@@ -2057,6 +2061,34 @@ class MovieRepository(
         return (torrent.seeds ?: 0) > 0 || (torrent.peers ?: 0) > 0
     }
 
+    private fun movieTorrentSelectionScore(torrent: TorrentInfo): Int {
+        val qualityScore = when (torrent.quality?.lowercase()) {
+            "1080p" -> 1_000
+            "720p" -> 850
+            "2160p", "4k" -> 800
+            "480p" -> 550
+            "cam" -> -1_000
+            else -> 350
+        }
+        return qualityScore + ((torrent.seeds ?: 0).coerceAtMost(500) * 4) +
+            ((torrent.peers ?: 0).coerceAtMost(200) * 2)
+    }
+
+    private fun episodeTorrentSelectionScore(
+        torrent: EpisodeTorrentInfo,
+        preferredQuality: String
+    ): Int {
+        val qualityScore = when {
+            torrent.quality.equals(preferredQuality, ignoreCase = true) -> 1_100
+            torrent.quality.equals("1080p", ignoreCase = true) -> 950
+            torrent.quality.equals("720p", ignoreCase = true) -> 850
+            torrent.quality.equals("2160p", ignoreCase = true) -> 750
+            torrent.quality.equals("480p", ignoreCase = true) -> 550
+            else -> 350
+        }
+        return qualityScore + torrent.seeds.coerceAtMost(500) * 4 + torrent.peers.coerceAtMost(200) * 2
+    }
+
     /**
      * Get torrent information for a movie by title and year.
      * Tries multiple sources (YTS, Popcorn API) with fallback.
@@ -2102,6 +2134,38 @@ class MovieRepository(
             android.util.Log.d("MovieRepository", "No Popcorn API torrent found")
         } catch (e: Exception) {
             android.util.Log.w("MovieRepository", "Popcorn API search failed: ${e.message}")
+        }
+
+        // Public aggregate providers broaden coverage without requiring user configuration.
+        val aggregateTorrent = coroutineScope {
+            val torrentioJob = async {
+                try {
+                    imdbId?.let { torrentioApi.searchMovie(it, preferredQuality = "1080p") }
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "Torrentio movie lookup failed: ${e.message}")
+                    null
+                }
+            }
+            val knabenJob = async {
+                try {
+                    knabenApi.searchMovie(title, year, preferredQuality = "1080p")
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "Knaben movie lookup failed: ${e.message}")
+                    null
+                }
+            }
+
+            listOfNotNull(torrentioJob.await(), knabenJob.await())
+                .filter(::hasLivePeers)
+                .maxByOrNull(::movieTorrentSelectionScore)
+        }
+        if (aggregateTorrent != null) {
+            android.util.Log.d(
+                "MovieRepository",
+                "Found aggregate torrent from ${aggregateTorrent.provider}: ${aggregateTorrent.quality} " +
+                    "with ${aggregateTorrent.seeds} seeds"
+            )
+            return@withContext aggregateTorrent
         }
 
         // Configurable Torznab endpoints can aggregate multiple authorized indexers.
