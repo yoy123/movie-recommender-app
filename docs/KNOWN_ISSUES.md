@@ -11,7 +11,7 @@ There are no known compile-blocking issues in either debug flavor. The largest r
 
 ### 1. Automated coverage is still narrow
 
-Each flavor currently executes 14 deterministic tests successfully and skips the opt-in `LlmSmokeTest`. Coverage is concentrated on torrent buffer policy and torrent-source parsing.
+Each flavor currently executes 32 deterministic tests successfully and skips the opt-in `LlmSmokeTest` by default. Coverage includes recommendation policy/request construction, torrent buffer policy, and torrent-source parsing, but still lacks broad UI and repository integration coverage.
 
 Impact:
 

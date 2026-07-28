@@ -6,135 +6,32 @@ import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 import java.text.Normalizer
+import java.util.concurrent.TimeUnit
 
-class LlmRecommendationService {
-    
+class LlmRecommendationService(
+    private val preferredModel: String = DEFAULT_MODEL
+) {
+
     companion object {
         private const val TAG = "LlmRecommendation"
+        internal const val DEFAULT_MODEL = "gpt-4.1"
+        private val FALLBACK_MODELS = listOf("gpt-4.1", "gpt-4.1-mini", "gpt-4o-mini")
     }
-    
+
+    private object SafeAndroidLog {
+        fun d(tag: String, message: String): Int = runCatching { Log.d(tag, message) }.getOrDefault(0)
+        fun i(tag: String, message: String): Int = runCatching { Log.i(tag, message) }.getOrDefault(0)
+        fun w(tag: String, message: String): Int = runCatching { Log.w(tag, message) }.getOrDefault(0)
+    }
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
-    
-    /**
-     * Get movie recommendations from OpenAI GPT
-     * @param selectedMovies List of 1-5 movies the user selected
-     * @param apiKey OpenAI API key
-     * @param indiePreference Float from 0.0 (blockbusters) to 1.0 (indie films)
-     * @param useIndiePreference Whether to apply indie preference
-     * @param popularityPreference Float from 0.0 (cult) to 1.0 (mainstream)
-     * @param usePopularityPreference Whether to apply popularity preference
-     * @param releaseYearStart Earliest release year to consider
-     * @param releaseYearEnd Latest release year to consider
-     * @param useReleaseYearPreference Whether to apply release year filter
-     * @param tonePreference Float from 0.0 (light) to 1.0 (dark)
-     * @param useTonePreference Whether to apply tone preference
-     * @param internationalPreference Float from 0.0 (domestic) to 1.0 (international)
-     * @param useInternationalPreference Whether to apply international preference
-     * @param experimentalPreference Float from 0.0 (traditional) to 1.0 (experimental)
-     * @param useExperimentalPreference Whether to apply experimental preference
-     * @return Natural text response with recommendations
-     */
-    suspend fun getRecommendationsFromLlm(
-        selectedMovies: List<String>,
-        genre: String,
-        apiKey: String,
-        indiePreference: Float = 0.5f,
-        useIndiePreference: Boolean = true,
-        popularityPreference: Float = 0.5f,
-        usePopularityPreference: Boolean = true,
-        releaseYearStart: Float = 1950f,
-        releaseYearEnd: Float = 2025f,
-        useReleaseYearPreference: Boolean = true,
-        tonePreference: Float = 0.5f,
-        useTonePreference: Boolean = true,
-        internationalPreference: Float = 0.5f,
-        useInternationalPreference: Boolean = true,
-        experimentalPreference: Float = 0.5f,
-        useExperimentalPreference: Boolean = true,
-        /**
-         * Titles the model must NEVER recommend (favorites, currently-selected, and already-recommended).
-         * Use a lightweight format like "Title (Year)"; normalization will remove years for matching.
-         */
-        excludedMovies: List<String> = emptyList()
-    ): Result<String> {
-        return try {
-            // Two attempts: first is creative, second is more strict/compliant.
-            val attempts = listOf(
-                OpenAiAttempt(
-                    reasoningEffort = "minimal",
-                    extraInstructions = ""
-                ),
-                OpenAiAttempt(
-                    reasoningEffort = "low",
-                    extraInstructions = "\n\nSTRICT RETRY (FINAL):\n" +
-                        "The previous response failed validation. Follow the rules exactly:\n" +
-                        "- Start with a concise 3-4 sentence taste analysis that references the selected titles\n" +
-                        "- Then output EXACTLY 15 recommendations, numbered 1..15\n" +
-                        "- Every recommendation MUST be in the specified GENRE - no exceptions\n" +
-                        "- Every title MUST be formatted: Movie Title (YYYY)\n" +
-                        "- Do NOT include any excluded/selected title\n" +
-                        "- If year filtering is enabled, every year MUST be within range\n" +
-                        "- Stop after item 15 (no extra text)"
-                )
-            )
-
-            for ((idx, attempt) in attempts.withIndex()) {
-                val prompt = buildPrompt(
-                    selectedMovies = selectedMovies,
-                    excludedMovies = excludedMovies,
-                    genre = genre,
-                    indiePreference = indiePreference,
-                    useIndiePreference = useIndiePreference,
-                    popularityPreference = popularityPreference,
-                    usePopularityPreference = usePopularityPreference,
-                    releaseYearStart = releaseYearStart,
-                    releaseYearEnd = releaseYearEnd,
-                    useReleaseYearPreference = useReleaseYearPreference,
-                    tonePreference = tonePreference,
-                    useTonePreference = useTonePreference,
-                    internationalPreference = internationalPreference,
-                    useInternationalPreference = useInternationalPreference,
-                    experimentalPreference = experimentalPreference,
-                    useExperimentalPreference = useExperimentalPreference,
-                    extraInstructions = attempt.extraInstructions
-                )
-
-                val processed = callOpenAI(
-                    prompt = prompt,
-                    apiKey = apiKey,
-                    selectedTitles = selectedMovies,
-                    excludedTitles = excludedMovies,
-                    releaseYearStart = releaseYearStart,
-                    releaseYearEnd = releaseYearEnd,
-                    useReleaseYearPreference = useReleaseYearPreference,
-                    reasoningEffort = attempt.reasoningEffort,
-                    allowedCandidateTitles = null
-                )
-
-                if (processed.isNotBlank()) {
-                    if (idx > 0) Log.i(TAG, "LLM needed retry to satisfy strict rules")
-                    return Result.success(processed)
-                }
-            }
-
-            // Signal failure so caller can fall back.
-            Result.success("")
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
 
     /**
-     * Candidate-constrained recommendations.
-     *
-     * Instead of asking the model to invent titles, we provide a bounded candidate list (usually TMDB-derived)
-     * and require it to select exactly 15 items from that list. This greatly reduces hallucinations and
-     * improves relevance.
+     * Candidate-constrained recommendations. The model may select only from the verified candidate list.
      */
     suspend fun getRecommendationsFromLlmCandidates(
         selectedMovies: List<String>,
@@ -160,10 +57,7 @@ class LlmRecommendationService {
 
         return try {
             val attempts = listOf(
-                OpenAiAttempt(
-                    reasoningEffort = "minimal",
-                    extraInstructions = ""
-                ),
+                OpenAiAttempt(reasoningEffort = "minimal", extraInstructions = ""),
                 OpenAiAttempt(
                     reasoningEffort = "low",
                     extraInstructions = "\n\nSTRICT RETRY (FINAL):\n" +
@@ -177,7 +71,7 @@ class LlmRecommendationService {
                 )
             )
 
-            for ((idx, attempt) in attempts.withIndex()) {
+            for ((index, attempt) in attempts.withIndex()) {
                 val prompt = buildCandidateRerankPrompt(
                     selectedMovies = selectedMovies,
                     excludedMovies = excludedMovies,
@@ -212,214 +106,19 @@ class LlmRecommendationService {
                 )
 
                 if (processed.isNotBlank()) {
-                    if (idx > 0) Log.i(TAG, "LLM candidate rerank needed retry to satisfy strict rules")
+                    if (index > 0) {
+                        SafeAndroidLog.i(TAG, "LLM candidate rerank needed retry to satisfy strict rules")
+                    }
                     return Result.success(processed)
                 }
             }
 
             Result.success("")
-        } catch (e: Exception) {
-            Result.failure(e)
+        } catch (error: Exception) {
+            Result.failure(error)
         }
     }
-    
-    private fun buildPrompt(
-        selectedMovies: List<String>,
-        excludedMovies: List<String>,
-        genre: String,
-        indiePreference: Float,
-        useIndiePreference: Boolean,
-        popularityPreference: Float,
-        usePopularityPreference: Boolean,
-        releaseYearStart: Float,
-        releaseYearEnd: Float,
-        useReleaseYearPreference: Boolean,
-        tonePreference: Float,
-        useTonePreference: Boolean,
-        internationalPreference: Float,
-        useInternationalPreference: Boolean,
-        experimentalPreference: Float,
-        useExperimentalPreference: Boolean,
-        extraInstructions: String
-    ): String {
-        val analysisMustReferenceCount = if (selectedMovies.size >= 2) 2 else 1
 
-        Log.d(TAG, "buildPrompt: genre='$genre' selectedCount=${selectedMovies.size} excludedCount=${excludedMovies.size}")
-
-        // Build active preferences list
-        val activePreferences = mutableListOf<String>()
-        
-        // 1. Production Style (Indie vs Blockbuster)
-        if (useIndiePreference) {
-            val styleGuidance = when {
-                indiePreference <= 0.3f -> "Strongly prefer mainstream blockbusters, big-budget studio films, and widely distributed theatrical releases. Use indie films only when they are unusually strong matches for the selected titles."
-                indiePreference <= 0.45f -> "Lean heavily towards blockbusters and popular studio films. Minimize indie films."
-                indiePreference in 0.46f..0.54f -> "Balance between mainstream hits and indie films equally."
-                indiePreference <= 0.7f -> "Favor indie films, art house cinema, and smaller productions. Include some mainstream films."
-                else -> "Strongly prefer indie films, art house cinema, and lesser-known titles. Use mainstream blockbusters only when they are unusually strong matches."
-            }
-            activePreferences.add("**Production Style**: $styleGuidance")
-        }
-        
-        // 2. Popularity Level (Cult vs Mainstream)
-        if (usePopularityPreference) {
-            val popularityGuidance = when {
-                popularityPreference <= 0.3f -> "Strongly prefer cult classics, obscure gems, and lesser-known films with niche followings. Include a widely popular title only when it is an exceptional taste match."
-                popularityPreference <= 0.45f -> "Favor cult classics and hidden gems over mainstream hits. Minimize popular films."
-                popularityPreference in 0.46f..0.54f -> "Mix popular mainstream films with lesser-known quality titles equally."
-                popularityPreference <= 0.7f -> "Favor well-known, widely recognized films. Include some cult classics."
-                else -> "Strongly prefer blockbuster hits, universally known films, and mainstream favorites. Include an obscure title only when it is an exceptional taste match."
-            }
-            activePreferences.add("**Popularity Level**: $popularityGuidance")
-        }
-        
-        // 3. Release Year Range
-        if (useReleaseYearPreference) {
-            val startYear = releaseYearStart.toInt()
-            val endYear = releaseYearEnd.toInt()
-            activePreferences.add("**Release Year**: MANDATORY - Every single recommendation MUST be released between $startYear and $endYear inclusive. Do NOT recommend films outside this range.")
-        }
-        
-        // 4. Tone/Mood
-        if (useTonePreference) {
-            val toneGuidance = when {
-                tonePreference <= 0.3f -> "Strongly prefer uplifting, feel-good films with lighter themes, comedy, and positive outcomes. Allow darker material only when it closely matches the selected titles."
-                tonePreference <= 0.45f -> "Lean towards lighter, more uplifting films. Minimize dark themes."
-                tonePreference in 0.46f..0.54f -> "Balance between light-hearted entertainment and serious dramatic fare equally."
-                tonePreference <= 0.7f -> "Favor more serious, dramatic films. Include some lighter content."
-                else -> "Strongly prefer dark, intense, thought-provoking films with serious themes and complex subject matter. Allow lighter material only when it closely matches the selected titles."
-            }
-            activePreferences.add("**Tone/Mood**: $toneGuidance")
-        }
-        
-        // 5. International vs Domestic
-        if (useInternationalPreference) {
-            val internationalGuidance = when {
-                internationalPreference <= 0.3f -> "Strongly prefer American and English-language films. Include an international title only when it is an exceptional taste match."
-                internationalPreference <= 0.45f -> "Primarily American/English films with occasional international exceptions."
-                internationalPreference in 0.46f..0.54f -> "Include both Hollywood productions and international films equally."
-                internationalPreference <= 0.7f -> "Favor international cinema with some Hollywood films."
-                else -> "STRONGLY prioritize international cinema, foreign language films, and world cinema. Minimize Hollywood/English-language films."
-            }
-            activePreferences.add("**Geographic Focus**: $internationalGuidance")
-        }
-        
-        // 6. Experimental vs Traditional
-        if (useExperimentalPreference) {
-            val experimentalGuidance = when {
-                experimentalPreference <= 0.3f -> "Strongly prefer traditional narrative structures and conventional filmmaking. Include experimental work only when it is an exceptional taste match."
-                experimentalPreference <= 0.45f -> "Strongly favor traditional storytelling and conventional approaches. Minimize experimental content."
-                experimentalPreference in 0.46f..0.54f -> "Mix traditional storytelling with innovative creative filmmaking equally."
-                experimentalPreference <= 0.7f -> "Favor creative, innovative films with unique approaches. Include some traditional films."
-                else -> "Strongly prefer avant-garde, unconventional films with experimental techniques. Include conventional narratives only when they are exceptional taste matches."
-            }
-            activePreferences.add("**Storytelling Style**: $experimentalGuidance")
-        }
-
-        // Help the model self-check: include the raw slider values and which toggles are enabled.
-        // This improves adherence without changing the UI-visible output.
-        val settingsSnapshot = "\nSETTINGS (for compliance):\n" + listOf(
-            "- indie=${String.format("%.2f", indiePreference)} enabled=$useIndiePreference",
-            "- popularity=${String.format("%.2f", popularityPreference)} enabled=$usePopularityPreference",
-            "- year_range=${releaseYearStart.toInt()}-${releaseYearEnd.toInt()} enabled=$useReleaseYearPreference",
-            "- tone=${String.format("%.2f", tonePreference)} enabled=$useTonePreference",
-            "- international=${String.format("%.2f", internationalPreference)} enabled=$useInternationalPreference",
-            "- experimental=${String.format("%.2f", experimentalPreference)} enabled=$useExperimentalPreference"
-        ).joinToString("\n")
-        
-        val preferencesSection = if (activePreferences.isNotEmpty()) {
-            "\n\nPREFERENCES (mandatory):\n" +
-                activePreferences.joinToString("\n\n") { "- $it" } +
-                "\n\nHard rules:\n" +
-                "- Treat enabled preferences as ranking priorities, not mutually exclusive hard filters\n" +
-                "- When preferences conflict, prioritize selected-title similarity, candidate validity, genre, exclusions, and year range"
-        } else {
-            ""
-        }
-
-        val excludedSection = excludedMovies
-            .mapNotNull { it.trim().takeIf { t -> t.isNotBlank() } }
-            .distinct()
-            .take(60)
-            .takeIf { it.isNotEmpty() }
-            ?.let { list ->
-                "\n\nEXCLUDE TITLES (forbidden):\n" +
-                    list.joinToString("\n") { "- $it" } +
-                    "\n\nHard rule: Do NOT recommend any excluded title."
-            }
-            ?: ""
-
-        // Detect if this is favorites mode (genre name contains "Favorites")
-        val isFavoritesMode = genre.contains("Favorites", ignoreCase = true)
-        Log.d(TAG, "buildPrompt: isFavoritesMode=$isFavoritesMode")
-        
-        val genreSection = if (isFavoritesMode) {
-            // In favorites mode, infer genres from selected movies rather than enforcing one genre
-            """
-MODE: User's Favorites (mixed genres)
-Infer the genres and themes from the selected titles below. Match the dominant genres/themes of those selections.
-            """.trimIndent()
-        } else {
-            // Normal genre mode - enforce the genre strictly
-            """
-GENRE (MANDATORY): $genre
-ALL recommendations MUST be $genre films. Do NOT recommend movies from other genres.
-            """.trimIndent()
-        }
-
-        val genreConstraintRule = if (isFavoritesMode) {
-            "- GENRE: Match the genres/themes of the selected titles. If they selected Horror, recommend Horror. If mixed, recommend similar mixes."
-        } else {
-            "- GENRE CONSTRAINT: Every recommendation MUST belong to the $genre genre. Do NOT recommend movies from other genres, even if they share thematic elements."
-        }
-
-        Log.d(TAG, "buildPrompt: genreConstraintRule='${genreConstraintRule.take(140)}'")
-        
-    return """
-You are a film curator. Generate personalized recommendations in plain text.
-
-$genreSection
-
-SELECTED TITLES (user taste signals):
-${selectedMovies.mapIndexed { index, title -> "${index + 1}. $title" }.joinToString("\n")}
-$settingsSnapshot$preferencesSection$excludedSection$extraInstructions
-
-TASK:
-1) Write a comprehensive analysis of the user's overall taste based on their selections — what patterns, themes, and filmmaking qualities connect their choices.
-2) Recommend exactly 15 movies that match the same underlying qualities.
-
-ANALYSIS RULES (validation-critical):
-- Write 3-4 sentences providing a concise, personal analysis of the user's overall taste.
-- Must explicitly mention at least $analysisMustReferenceCount of the selected titles by name in the analysis.
-- Identify patterns across their selections: what themes, moods, eras, directorial styles, or narrative structures connect them.
-- Be specific: reference concrete filmmaking elements (e.g., pacing, structure, cinematography approach, tone balance, editing rhythm, sound design, performance style, narrative devices).
-- Explain what these choices reveal about what the user values in cinema.
-- FORBIDDEN (will cause rejection): Do NOT write generic intros like "Based on your selections...", "Here are 15 movies...", "Based off of your selected films...", or any variation. The analysis must be a genuine critical essay about their taste, not an introduction to the list.
-- Avoid generic filler like "compelling storytelling" or "complex characters".
-
-RECOMMENDATION RULES (validation-critical):
-- Output EXACTLY 15 unique movies.
-$genreConstraintRule
-- Do NOT include any selected title.
-- Do NOT include any excluded title.
-- If year range is enabled, every recommendation MUST be within range.
-- Prefer strong matches over obvious genre staples.
-- Avoid sequels/spin-offs/franchise entries unless they are truly essential AND still satisfy preferences.
-
-OUTPUT FORMAT:
-Begin with one 3-4 sentence analysis paragraph. Do not add an analysis heading.
-Then write RECOMMENDATIONS: on its own line and output exactly 15 items:
-
-1. Movie Title (YYYY)
-Summary: one-sentence plot summary.
-
-2. Movie Title (YYYY)
-Summary: one-sentence plot summary.
-
-Continue through item 15 and stop immediately after its summary.
-        """.trimIndent()
-    }
-    
     private data class OpenAiAttempt(
         val reasoningEffort: String,
         val extraInstructions: String
@@ -447,10 +146,9 @@ Continue through item 15 and stop immediately after its summary.
     ): String {
         val analysisMustReferenceCount = if (selectedMovies.size >= 2) 2 else 1
 
-        Log.d(TAG, "buildCandidateRerankPrompt: genre='$genre' selectedCount=${selectedMovies.size} excludedCount=${excludedMovies.size} candidates=${candidates.size}")
+        SafeAndroidLog.d(TAG, "buildCandidateRerankPrompt: genre='$genre' selectedCount=${selectedMovies.size} excludedCount=${excludedMovies.size} candidates=${candidates.size}")
 
-        // Reuse the existing preference wording by calling buildPrompt and then overriding the task section.
-        // However, to avoid prompt bloat and accidental conflicts, we rebuild a slim prompt here.
+        // Keep the candidate-rerank prompt compact to reduce latency and avoid conflicting instructions.
 
         val activePreferences = mutableListOf<String>()
 
@@ -605,71 +303,128 @@ Continue through item 15 and stop immediately after its summary.
         reasoningEffort: String,
         allowedCandidateTitles: List<String>?
     ): String {
-        Log.d(TAG, "Starting OpenAI API call")
-        
-        val json = OpenAiRequestFactory.create(prompt, reasoningEffort)
-        
-        Log.d(TAG, "Request JSON length: ${json.toString().length}")
-        
-        val request = okhttp3.Request.Builder()
-            .url("https://api.openai.com/v1/chat/completions")
-            .addHeader("Authorization", "Bearer $apiKey")
-            .addHeader("Content-Type", "application/json")
-            .post(json.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-        
-        Log.d(TAG, "Executing HTTP request to OpenAI...")
-        
-        client.newCall(request).execute().use { response ->
-            Log.d(TAG, "Received response - Code: ${response.code}, Success: ${response.isSuccessful}")
-            
-            if (!response.isSuccessful) {
-                response.body?.string()
-                Log.e(TAG, "OpenAI API error: ${response.code} - ${response.message}")
-                throw Exception("OpenAI API error: ${response.code} - ${response.message}")
-            }
-            
-            val responseBody = response.body?.string() ?: throw Exception("Empty response")
-            Log.d(TAG, "Response body length: ${responseBody.length}")
-            
-            val jsonResponse = JSONObject(responseBody)
-            val choices = jsonResponse.getJSONArray("choices")
-            Log.d(TAG, "Number of choices: ${choices.length()}")
-            
-            val message = choices.getJSONObject(0).getJSONObject("message")
-            val raw = message.getString("content")
-            Log.d(TAG, "Raw LLM content length: ${raw.length}")
-            
-            val processed = postProcess(
-                content = raw,
-                selectedTitles = selectedTitles,
-                excludedTitles = excludedTitles,
-                releaseYearStart = releaseYearStart,
-                releaseYearEnd = releaseYearEnd,
-                useReleaseYearPreference = useReleaseYearPreference,
-                allowedCandidateTitles = allowedCandidateTitles
+        val models = buildList {
+            preferredModel.trim().takeIf { it.isNotBlank() }?.let(::add)
+            addAll(FALLBACK_MODELS)
+        }.distinct()
+
+        var lastFailure: OpenAiApiException? = null
+        for ((modelIndex, model) in models.withIndex()) {
+            SafeAndroidLog.d(TAG, "Starting OpenAI API call with model=$model")
+            val json = OpenAiRequestFactory.create(
+                prompt = prompt,
+                reasoningEffort = reasoningEffort,
+                model = model
             )
-            Log.d(TAG, "Post-processed content length: ${processed.length}")
-            if (processed.isEmpty()) {
-                Log.w(TAG, "Post-processing returned empty string - validation will fail")
-                Log.w(TAG, "Checking why post-processing failed...")
-                val lines = raw.lines()
-                val numbered = Regex("^\\s*(\\d{1,2})\\s*\\.\\s*")
-                val matchingLines = lines.filter { numbered.containsMatchIn(it) }
-                Log.w(TAG, "Found ${matchingLines.size} lines matching numbered format")
-                if (matchingLines.size < 15) {
-                    Log.e(TAG, "Only found ${matchingLines.size} valid items, need 15!")
-                    Log.e(TAG, "All numbered lines:")
-                    lines.filter { it.trim().matches(Regex("^\\d.*")) }.forEach { 
-                        Log.e(TAG, "  '$it'") 
+            SafeAndroidLog.d(TAG, "Request JSON length: ${json.toString().length}")
+
+            val request = okhttp3.Request.Builder()
+                .url("https://api.openai.com/v1/chat/completions")
+                .addHeader("Authorization", "Bearer $apiKey")
+                .addHeader("Content-Type", "application/json")
+                .post(json.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+
+            try {
+                client.newCall(request).execute().use { response ->
+                    val responseBody = response.body?.string().orEmpty()
+                    SafeAndroidLog.d(
+                        TAG,
+                        "OpenAI response model=$model code=${response.code} success=${response.isSuccessful}"
+                    )
+
+                    if (!response.isSuccessful) {
+                        throw parseOpenAiError(
+                            statusCode = response.code,
+                            responseMessage = response.message,
+                            responseBody = responseBody,
+                            model = model
+                        )
                     }
+
+                    if (responseBody.isBlank()) throw Exception("OpenAI returned an empty response body")
+                    val jsonResponse = JSONObject(responseBody)
+                    val choices = jsonResponse.optJSONArray("choices")
+                        ?: throw Exception("OpenAI response did not contain choices")
+                    if (choices.length() == 0) throw Exception("OpenAI response contained no choices")
+
+                    val choice = choices.getJSONObject(0)
+                    val finishReason = choice.optString("finish_reason")
+                    val message = choice.optJSONObject("message")
+                        ?: throw Exception("OpenAI response did not contain a message")
+                    val raw = message.optString("content")
+                    SafeAndroidLog.d(
+                        TAG,
+                        "OpenAI model=$model finishReason=$finishReason contentLength=${raw.length}"
+                    )
+                    if (raw.isBlank()) {
+                        throw Exception("OpenAI returned blank content (finish_reason=$finishReason)")
+                    }
+
+                    val processed = postProcess(
+                        content = raw,
+                        selectedTitles = selectedTitles,
+                        excludedTitles = excludedTitles,
+                        releaseYearStart = releaseYearStart,
+                        releaseYearEnd = releaseYearEnd,
+                        useReleaseYearPreference = useReleaseYearPreference,
+                        allowedCandidateTitles = allowedCandidateTitles
+                    )
+                    SafeAndroidLog.d(TAG, "Post-processed content length: ${processed.length}")
+                    if (processed.isEmpty()) {
+                        val lines = raw.lines()
+                        val numbered = Regex("^\\s*(\\d{1,2})\\s*\\.\\s*")
+                        val matchingLines = lines.count { numbered.containsMatchIn(it) }
+                        SafeAndroidLog.w(
+                            TAG,
+                            "Post-processing rejected model=$model response; numberedLines=$matchingLines"
+                        )
+                    }
+                    return processed
                 }
+            } catch (error: OpenAiApiException) {
+                lastFailure = error
+                val hasAnotherModel = modelIndex < models.lastIndex
+                if (hasAnotherModel && error.canRetryWithFallbackModel) {
+                    SafeAndroidLog.w(
+                        TAG,
+                        "OpenAI model=$model unavailable (${error.errorCode ?: error.statusCode}); trying fallback"
+                    )
+                    continue
+                }
+                throw error
             }
-            
-            return processed
         }
+
+        throw lastFailure ?: Exception("No OpenAI model was available")
     }
-    
+
+    private fun parseOpenAiError(
+        statusCode: Int,
+        responseMessage: String,
+        responseBody: String,
+        model: String
+    ): OpenAiApiException {
+        val errorObject = runCatching { JSONObject(responseBody).optJSONObject("error") }.getOrNull()
+        val type = errorObject?.optString("type")?.takeIf { it.isNotBlank() }
+        val code = errorObject?.optString("code")?.takeIf { it.isNotBlank() }
+        val parameter = errorObject?.optString("param")?.takeIf { it.isNotBlank() && it != "null" }
+        val detail = errorObject?.optString("message")
+            ?.takeIf { it.isNotBlank() }
+            ?.replace(Regex("(?i)bearer\\s+[^\\s]+"), "Bearer [redacted]")
+            ?.replace(Regex("sk-[A-Za-z0-9_-]+"), "[redacted-key]")
+            ?.take(500)
+            ?: responseMessage
+        return OpenAiApiException(
+            statusCode = statusCode,
+            errorCode = code,
+            errorType = type,
+            parameter = parameter,
+            model = model,
+            message = "OpenAI API error $statusCode for $model: $detail"
+        )
+    }
+
     private fun postProcess(
         content: String,
         selectedTitles: List<String>,
@@ -706,7 +461,7 @@ Continue through item 15 and stop immediately after its summary.
         }
         // Reject if the LLM copied the example analysis verbatim
         if (analysis.contains("Mulholland Drive") && analysis.contains("Eternal Sunshine")) {
-            Log.w(TAG, "Analysis rejected: LLM copied the example verbatim")
+            SafeAndroidLog.w(TAG, "Analysis rejected: LLM copied the example verbatim")
             return ""
         }
         // Reject generic filler analysis that doesn't actually analyze taste
@@ -716,13 +471,13 @@ Continue through item 15 and stop immediately after its summary.
             "here's a list", "heres a list", "i've selected", "i have selected", "below are"
         )
         if (genericOpenings.any { analysisLower.trimStart().startsWith(it) }) {
-            Log.w(TAG, "Analysis rejected as generic filler")
+            SafeAndroidLog.w(TAG, "Analysis rejected as generic filler")
             return ""
         }
         // Require minimum substance (at least 3 sentences)
         val sentenceCount = Regex("[.!?]").findAll(analysis).count()
         if (sentenceCount < 3) {
-            Log.w(TAG, "Analysis too short ($sentenceCount sentences): ${analysis.take(100)}")
+            SafeAndroidLog.w(TAG, "Analysis too short ($sentenceCount sentences): ${analysis.take(100)}")
             return ""
         }
         val normalizedAnalysis = normalizeTitle(analysis)
@@ -737,7 +492,7 @@ Continue through item 15 and stop immediately after its summary.
         }
         val referencedSelections = referenceableSelections.count { normalizedAnalysis.contains(it) }
         if (referencedSelections < requiredReferences) {
-            Log.w(TAG, "Analysis rejected: referenced $referencedSelections of $requiredReferences required selections")
+            SafeAndroidLog.w(TAG, "Analysis rejected: referenced $referencedSelections of $requiredReferences required selections")
             return ""
         }
         val items = mutableListOf<Pair<String, String>>()
@@ -867,11 +622,37 @@ Continue through item 15 and stop immediately after its summary.
 
 }
 
-internal object OpenAiRequestFactory {
-    const val MODEL = "gpt-5"
+internal class OpenAiApiException(
+    val statusCode: Int,
+    val errorCode: String?,
+    val errorType: String?,
+    val parameter: String?,
+    val model: String,
+    message: String
+) : Exception(message) {
+    val canRetryWithFallbackModel: Boolean
+        get() {
+            if (errorCode == "model_not_found") return true
+            if (message.orEmpty().contains("does not have access to model", ignoreCase = true)) return true
+            return errorCode in setOf("unsupported_parameter", "unsupported_value") &&
+                parameter in setOf(
+                    "reasoning_effort",
+                    "verbosity",
+                    "temperature",
+                    "max_completion_tokens"
+                )
+        }
+}
 
-    fun create(prompt: String, reasoningEffort: String): JSONObject {
-        val spec = OpenAiRequestSpec.create(prompt, reasoningEffort)
+internal object OpenAiRequestFactory {
+    const val DEFAULT_MODEL = "gpt-4.1"
+
+    fun create(
+        prompt: String,
+        reasoningEffort: String,
+        model: String = DEFAULT_MODEL
+    ): JSONObject {
+        val spec = OpenAiRequestSpec.create(prompt, reasoningEffort, model)
         return JSONObject().apply {
             put("model", spec.model)
             put("messages", JSONArray().apply {
@@ -884,8 +665,9 @@ internal object OpenAiRequestFactory {
                     put("content", spec.userPrompt)
                 })
             })
-            put("reasoning_effort", spec.reasoningEffort)
-            put("verbosity", spec.verbosity)
+            spec.reasoningEffort?.let { put("reasoning_effort", it) }
+            spec.verbosity?.let { put("verbosity", it) }
+            spec.temperature?.let { put("temperature", it) }
             put("max_completion_tokens", spec.maxCompletionTokens)
         }
     }
@@ -895,18 +677,30 @@ internal data class OpenAiRequestSpec(
     val model: String,
     val systemPrompt: String,
     val userPrompt: String,
-    val reasoningEffort: String,
-    val verbosity: String,
+    val reasoningEffort: String?,
+    val verbosity: String?,
+    val temperature: Double?,
     val maxCompletionTokens: Int
 ) {
     companion object {
-        fun create(prompt: String, reasoningEffort: String): OpenAiRequestSpec {
+        fun create(
+            prompt: String,
+            reasoningEffort: String,
+            model: String = OpenAiRequestFactory.DEFAULT_MODEL
+        ): OpenAiRequestSpec {
+            val normalizedModel = model.trim().ifBlank { OpenAiRequestFactory.DEFAULT_MODEL }
+            val isReasoningModel = normalizedModel.startsWith("gpt-5", ignoreCase = true) ||
+                normalizedModel.startsWith("o", ignoreCase = true)
+            val supportsVerbosity = normalizedModel.startsWith("gpt-5", ignoreCase = true)
+            val strictRetry = reasoningEffort.equals("low", ignoreCase = true)
+
             return OpenAiRequestSpec(
-                model = OpenAiRequestFactory.MODEL,
+                model = normalizedModel,
                 systemPrompt = "You are an expert film curator and critic with deep knowledge of cinema history, genres, directors, and thematic elements. You excel at understanding WHY someone loves specific films and finding other films that share those same qualities. Your analysis paragraphs must be deeply personal and insightful - dissect the user's taste by naming their selected films and explaining the specific cinematic threads that connect them. NEVER write a generic intro like 'Based on your selections, here are some movies' - that will be rejected. Provide thoughtful, personalized recommendations - never generic suggestions. Write naturally in plain text, no markdown or formatting symbols.",
                 userPrompt = prompt,
-                reasoningEffort = reasoningEffort,
-                verbosity = "medium",
+                reasoningEffort = reasoningEffort.takeIf { isReasoningModel },
+                verbosity = "medium".takeIf { supportsVerbosity },
+                temperature = if (isReasoningModel) null else if (strictRetry) 0.2 else 0.4,
                 maxCompletionTokens = 4_000
             )
         }

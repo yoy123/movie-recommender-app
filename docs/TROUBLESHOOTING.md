@@ -79,11 +79,13 @@ Rebuild the app. The key is compiled into `BuildConfig`.
 
 The service performs a stricter second attempt. If validation still fails, the repository falls back to TMDB.
 
-Current model:
+Default model:
 
 ```text
-gpt-5
+gpt-4.1
 ```
+
+Optional `OPENAI_MODEL` overrides are compiled into `BuildConfig`. If the configured model is unavailable, the app automatically tries `gpt-4.1`, `gpt-4.1-mini`, and `gpt-4o-mini`. Do not configure `gpt-4.5-preview`; OpenAI retired it on 2025-07-14. Model/API errors appear only as sanitized fallback diagnostics.
 
 ## Database Problems
 

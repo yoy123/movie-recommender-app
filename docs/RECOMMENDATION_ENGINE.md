@@ -77,7 +77,7 @@ International and experimental preferences are used by AI as ranking priorities.
 
 Production recommendations call only `getRecommendationsFromLlmCandidates()`.
 
-The older open-ended service method remains only for an opt-in smoke test and has no production caller. AI is never permitted to invent titles for the user-facing recommendation flow.
+The older open-ended service method has been removed. Production and the opt-in live smoke test both use the same candidate-bounded method, so AI is never permitted to invent titles for the recommendation flow.
 
 AI is attempted only when:
 
@@ -85,7 +85,7 @@ AI is attempted only when:
 - an OpenAI API key is configured
 - at least 15 safe TMDB candidates remain
 
-The current OpenAI request uses `gpt-5` through the Chat Completions endpoint.
+The OpenAI request uses the Chat Completions endpoint with a configurable model. `gpt-4.1` is the default; model-access failures retry through `gpt-4.1`, `gpt-4.1-mini`, and `gpt-4o-mini` without requiring user configuration.
 
 ## Prompt Rules
 

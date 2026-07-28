@@ -76,7 +76,7 @@ flavor-specific MovieViewModel
 
 AI is the default primary recommendation engine. The first recommendation request asks only for permission to send selected titles, enabled preferences, and a bounded TMDB candidate list to OpenAI. It does not ask the user to choose an AI or TMDB recommendation style.
 
-Production AI recommendations are bounded to verified TMDB candidates. The repository requires at least 15 safe candidates, calls `gpt-5`, validates exactly 15 canonical titles, and rejects generic, duplicated, excluded, malformed, or out-of-candidate output.
+Production AI recommendations are bounded to verified TMDB candidates. The repository requires at least 15 safe candidates, calls the configured OpenAI model (`gpt-4.1` by default), validates exactly 15 canonical titles, and rejects generic, duplicated, excluded, malformed, or out-of-candidate output. Model-access failures automatically retry with compatible fallback models before TMDB fallback is used.
 
 TMDB fallback is used when permission is declined, the OpenAI key is unavailable, the candidate pool is too small, the request fails, or validation rejects the response. The recommendation screen displays a **TMDB Fallback (Debug)** dialog with a sanitized reason. AI data permission can later be changed under Settings.
 
@@ -190,7 +190,7 @@ Verified on 2026-07-25:
 
 Result: `BUILD SUCCESSFUL`.
 
-Each flavor currently reports 23 tests: 22 executed successfully and one skipped `LlmSmokeTest`. The shared deterministic suite covers recommendation fallback/result policy, Bayesian recommendation ranking, OpenAI request construction, torrent buffer policy, Torznab parsing/caching, Internet Archive results, and Public Domain Torrents parsing. UI, Room migration, repository orchestration, and real-device lifecycle behavior still lack automated coverage.
+Each flavor currently reports 33 tests: 32 executed successfully and one skipped `LlmSmokeTest`. The shared deterministic suite covers recommendation fallback/result policy, Bayesian recommendation ranking, model-specific OpenAI request construction, torrent buffer policy, Torznab parsing/caching, Torrentio/Knaben adapters, magnet file selection, Internet Archive results, and Public Domain Torrents parsing. The opt-in live OpenAI smoke test succeeds with the configured project when enabled. UI, Room migration, repository orchestration, and real-device lifecycle behavior still lack automated coverage.
 
 ## Current Engineering Risks
 

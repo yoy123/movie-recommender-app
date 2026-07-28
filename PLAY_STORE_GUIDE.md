@@ -62,7 +62,7 @@ PRIVACY
 Your favorites and settings are stored locally on your device. AI is the primary recommendation engine, but selected titles and preference settings are sent to OpenAI only after data-sharing permission. Without permission, automatic TMDB fallback remains available.
 ```
 
-Do not name a specific OpenAI model in store copy unless the listing will be updated whenever the implementation changes. The current code uses `gpt-5`, but model branding is not necessary for users.
+Do not name a specific OpenAI model in store copy unless the listing will be updated whenever the implementation changes. The current code defaults to `gpt-4.1` with automatic compatible-model fallback, but model branding is not necessary for users.
 
 ## Screenshots
 

@@ -11,6 +11,8 @@ sdk.dir=/path/to/your/Android/Sdk
 
 TMDB_API_KEY=your_tmdb_api_key_here
 OPENAI_API_KEY=your_openai_api_key_here
+# Optional. Defaults to gpt-4.1; unavailable models automatically use compatible fallbacks.
+OPENAI_MODEL=gpt-4.1
 
 # Semicolon-separated entries: Name|HTTPS endpoint|API key
 # Example: Jackett|https://indexer.example/api/v2.0/indexers/all/results/torznab/|your_api_key

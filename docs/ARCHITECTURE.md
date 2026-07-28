@@ -150,7 +150,7 @@ typed RecommendationResult -> flavor ViewModel -> result/fallback dialog
 
 Production code has no open-generation branch and no recommendation-engine selector. The consent state controls whether recommendation data may be sent externally; it is not a product-mode choice.
 
-The current OpenAI model is `gpt-5` through `/v1/chat/completions`, using bounded reasoning effort and `max_completion_tokens`.
+The OpenAI client uses `/v1/chat/completions` with a configurable primary model. The default is `gpt-4.1`; unavailable models fall back to `gpt-4.1`, `gpt-4.1-mini`, then `gpt-4o-mini`. Request fields are selected per model family.
 
 AI failure falls back to TMDB-based recommendation text.
 

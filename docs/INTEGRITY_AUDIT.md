@@ -44,9 +44,10 @@ Both use shared code from `app/src/main` and separate UI/ViewModel source sets.
 ### Recommendation service
 
 - endpoint: OpenAI Chat Completions
-- model: `gpt-5`
-- retry reasoning efforts: `minimal`, then `low`
-- verbosity: `medium`
+- model: configurable; default `gpt-4.1`
+- automatic model fallbacks: `gpt-4.1`, `gpt-4.1-mini`, `gpt-4o-mini`
+- non-reasoning retry temperatures: `0.4`, then `0.2`
+- reasoning-model efforts when applicable: `minimal`, then `low`
 - maximum completion tokens: 4,000
 - TMDB fallback: active
 - explicit AI consent: active
@@ -71,7 +72,7 @@ The cache is a single active resumable session with a tested storage and buffer 
 
 ### Testing
 
-Both debug flavors build. Deterministic coverage includes torrent buffer policy, torrent-source parsers, Torznab pagination metadata, Pirate Bay episode parsing, and the GPT-5 request contract. The opt-in `LlmSmokeTest` remains skipped by default; UI, Room migration, repository orchestration, and Android lifecycle behavior remain partially uncovered.
+Both debug flavors build. Deterministic coverage includes torrent buffer policy, torrent-source parsers, Torznab pagination metadata, Pirate Bay episode parsing, and model-specific OpenAI request construction. The opt-in `LlmSmokeTest` remains skipped by default but now performs a real candidate-bounded request and fails on API or validation errors when enabled. UI, Room migration, repository orchestration, and Android lifecycle behavior remain partially uncovered.
 
 ## Documentation Corrections Made
 
@@ -80,12 +81,12 @@ The July 2026 refresh corrected these stale claims:
 - Room v2 -> Room v3
 - one `Movie` entity -> two Room entities
 - 16/17 preferences -> 26 DataStore keys
-- GPT-4o-mini / GPT-4.1-mini -> `gpt-5`
+- inaccessible hard-coded `gpt-5` -> configurable `gpt-4.1` primary with compatible automatic fallbacks
 - fixed/percentage torrent cache -> tested 500 MB reserve, source-fit admission, and 60-minute resumable session
 - six integrations -> expanded movie/TV/provider integration set
 - Plex described as complete -> implemented but unwired
 - Live TV described as active -> removed
-- test tasks mistaken for coverage -> current suites execute 14 deterministic tests per flavor, with substantial application gaps remaining
+- test tasks mistaken for coverage -> current suites execute 32 deterministic tests per flavor, with substantial application gaps remaining
 - old unresolved security/migration issues -> resolved history
 
 ## Remaining Documentation Caveats

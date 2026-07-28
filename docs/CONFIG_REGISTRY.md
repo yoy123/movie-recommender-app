@@ -130,16 +130,18 @@ Configured through KSP argument `room.schemaLocation`.
 - TMDB HTTP cache: 10 MB
 - TMDB rate-limit retries: up to 3
 - OpenAI endpoint: `https://api.openai.com/v1/chat/completions`
-- OpenAI model: `gpt-5`
+- OpenAI model: `OPENAI_MODEL`, default `gpt-4.1`
 
 ## Recommendation Constants
 
 - Selection range: 1–5 titles
 - Output target: 15 recommendations
 - Minimum safe candidate count for AI reranking: 15
-- GPT-5 retry reasoning efforts: `minimal`, then `low`
-- GPT-5 verbosity: `medium`
-- GPT-5 maximum completion tokens: 4,000
+- Automatic fallback models: `gpt-4.1`, `gpt-4.1-mini`, `gpt-4o-mini`
+- Non-reasoning retry temperatures: `0.4`, then `0.2`
+- Optional reasoning-model efforts: `minimal`, then `low`
+- Optional GPT-5-family verbosity: `medium`
+- Maximum completion tokens: 4,000
 - Favorites routing ID: `-1`
 
 ## Database Cleanup Constants

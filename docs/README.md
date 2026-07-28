@@ -35,11 +35,11 @@ When documents disagree, use this order:
 
 - Product flavors: `mobile` and `firestick`
 - Room database: version 3
-- OpenAI model: `gpt-5`
+- OpenAI model: configurable; `gpt-4.1` default with `gpt-4.1-mini` and `gpt-4o-mini` fallbacks
 - Recommendations: AI-first after data-sharing permission; automatic TMDB fallback with debug reason
 - Torrent cache: one active source, 500 MB device reserve, contiguous no-stall gate, and 60-minute resume retention
 - Embedded Live TV: removed on 2026-07-25
-- Automated tests: 22 executed successfully per flavor; `LlmSmokeTest` remains skipped
+- Automated tests: 32 executed successfully per flavor; `LlmSmokeTest` remains skipped by default
 
 ## Maintenance Rule
 

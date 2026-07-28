@@ -37,6 +37,10 @@ android {
         buildConfigField("String", "TMDB_API_KEY", "\"${localProperties.getProperty("TMDB_API_KEY", "")}\"")
         buildConfigField("String", "TMDB_BASE_URL", "\"https://api.themoviedb.org/3/\"")
         buildConfigField("String", "OPENAI_API_KEY", "\"${localProperties.getProperty("OPENAI_API_KEY", "")}\"")
+        val openAiModel = localProperties.getProperty("OPENAI_MODEL", "gpt-4.1")
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+        buildConfigField("String", "OPENAI_MODEL", "\"$openAiModel\"")
         val torznabSources = localProperties.getProperty("TORZNAB_SOURCES", "")
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
@@ -176,6 +180,8 @@ dependencies {
 
     // Testing
     testImplementation("junit:junit:4.13.2")
+    // Android's local-unit-test org.json stubs throw at runtime; use the real JVM implementation.
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")

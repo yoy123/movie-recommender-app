@@ -62,7 +62,7 @@ class MovieRepository(
     private val movieDao: MovieDao,
     private val providerContentCrosswalkDao: ProviderContentCrosswalkDao,
     private val apiService: TmdbApiService,
-    private val llmService: LlmRecommendationService = LlmRecommendationService(),
+    private val llmService: LlmRecommendationService = LlmRecommendationService(BuildConfig.OPENAI_MODEL),
     private val imdbScraper: ImdbScraperService = ImdbScraperService(),
     private val popcornApi: PopcornApiService = PopcornApiService(),
     private val popcornTvApi: PopcornTvApiService = PopcornTvApiService(),

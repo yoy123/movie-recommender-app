@@ -87,16 +87,18 @@ The client uses Android network security configuration. It does not install a tr
 
 ```properties
 OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-4.1 # optional; this is the default
 ```
 
 ### Endpoint and model
 
 ```text
 POST https://api.openai.com/v1/chat/completions
-model: gpt-5
+primary model: gpt-4.1
+fallback models: gpt-4.1, gpt-4.1-mini, gpt-4o-mini
 ```
 
-The request uses `max_completion_tokens`, medium verbosity, and GPT-5 reasoning effort instead of legacy sampling penalties.
+The request body is adapted to the configured model family. GPT-4.1-family requests use `max_completion_tokens` plus bounded temperature; optional reasoning models use supported reasoning-effort and verbosity fields. A model-access failure automatically advances to a compatible fallback model before the repository falls back to TMDB.
 
 ### Consent
 
@@ -108,10 +110,10 @@ When permission is declined, the repository uses deterministic TMDB fallback and
 
 The bounded AI request uses two attempts:
 
-1. `minimal` reasoning effort
-2. `low` reasoning effort plus strict retry instructions
+1. normal candidate-rerank prompt (`temperature=0.4` for GPT-4.1-family models)
+2. strict compliance retry (`temperature=0.2` for GPT-4.1-family models)
 
-The second attempt uses stricter instructions. Invalid or incomplete output returns control to the repository fallback path.
+Optional reasoning models use `minimal`, then `low`, reasoning effort instead of temperature. The second attempt always adds stricter formatting and candidate-copying instructions. Invalid or incomplete output returns control to the repository fallback path.
 
 ### Validation
 

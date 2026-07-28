@@ -34,7 +34,7 @@ The embedded Firestick Live TV guide was removed on 2026-07-25 because it depend
 - Room database version 3
 - Preferences DataStore
 - Retrofit and OkHttp
-- OpenAI Chat Completions (`gpt-5`)
+- OpenAI Chat Completions (`gpt-4.1` primary with automatic compatible-model fallback)
 - TMDB
 - Media3 ExoPlayer
 - TorrentStream-Android

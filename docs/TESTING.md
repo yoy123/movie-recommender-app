@@ -1,6 +1,6 @@
 # OpenStream+ Testing
 
-**Last verified:** 2026-07-25
+**Last verified:** 2026-07-28
 
 ## Verified Commands
 
@@ -22,35 +22,37 @@ The shared JVM test suite runs once for each flavor.
 | Test class | Tests per flavor | Result |
 |---|---:|---|
 | `InternetArchiveServiceTest` | 3 | pass |
+| `KnabenApiServiceTest` | 2 | pass |
 | `LlmSmokeTest` | 1 | skipped unless explicitly enabled |
-| `OpenAiRequestFactoryTest` | 1 | pass |
+| `OpenAiRequestFactoryTest` | 5 | pass |
 | `PirateBayEpisodeParserTest` | 1 | pass |
 | `PublicDomainTorrentsServiceTest` | 3 | pass |
 | `RecommendationRankingPolicyTest` | 2 | pass |
 | `RecommendationResultTest` | 3 | pass |
 | `TorrentBufferPolicyTest` | 5 | pass |
+| `TorrentMagnetUtilsTest` | 2 | pass |
+| `TorrentioServiceTest` | 2 | pass |
 | `TorznabServiceTest` | 4 | pass |
 
 Per flavor:
 
-- total discovered: 23
-- executed: 22
+- total discovered: 33
+- executed: 32
 - skipped: 1
 - failures: 0
 - errors: 0
 
-Across both variants, Gradle records 44 successful deterministic test executions and two skipped smoke-test executions. Recommendation tests currently cover typed fallback notices and Bayesian quality ranking; repository orchestration, prompt post-processing, consent UI, and fallback dialogs still require broader integration/UI coverage.
+Across both variants, Gradle records 64 successful deterministic test executions and two skipped smoke-test executions. Recommendation tests cover typed fallback notices, Bayesian quality ranking, and model-specific OpenAI request construction. The opt-in smoke test now performs a real bounded candidate-rerank request and fails on API or output-validation errors. Repository orchestration, consent UI, and fallback dialogs still require broader integration/UI coverage.
 
 ## Torrent Buffer Policy Coverage
 
 `TorrentBufferPolicyTest` verifies:
 
-1. The cache budget preserves the 500 MB device-storage reserve.
-2. Existing allocated cache is counted in the total session allowance.
-3. A sufficiently slow torrent requires the full remaining movie before playback.
-4. Resume buffering does not require bytes behind the saved position.
-5. A fast torrent uses substantial peak-rate headroom without requiring the whole movie.
-6. Partial-megabyte source sizes round upward for storage admission.
+1. The cache budget preserves the 500 MB device-storage reserve while counting existing allocated cache.
+2. A sufficiently slow torrent requires the full remaining movie before playback.
+3. Resume buffering does not require bytes behind the saved position.
+4. A fast torrent uses substantial peak-rate headroom without requiring the whole movie.
+5. Partial-megabyte source sizes round upward for storage admission.
 
 The Android-specific alarm, boot receiver, foreground-service lifecycle, task-removal behavior, and real torrent-piece availability still require instrumentation or device testing.
 
