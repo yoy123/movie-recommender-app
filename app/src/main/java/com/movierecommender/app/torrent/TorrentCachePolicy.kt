@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.StatFs
 import android.os.SystemClock
 import android.provider.Settings
 import android.system.Os
@@ -39,7 +40,18 @@ object TorrentCachePolicy {
     private var initializedThisProcess = false
 
     fun cacheDirectory(context: Context): File =
-        File(context.applicationContext.cacheDir, CACHE_DIRECTORY_NAME)
+        cacheDirectories(context)
+            .maxByOrNull(::safeCacheLimitMb)
+            ?: File(context.applicationContext.cacheDir, CACHE_DIRECTORY_NAME)
+
+    fun cacheDirectories(context: Context): List<File> {
+        val appContext = context.applicationContext
+        val external = appContext.getExternalFilesDirs(null)
+            .filterNotNull()
+            .map { File(it, CACHE_DIRECTORY_NAME) }
+        return (external + File(appContext.cacheDir, CACHE_DIRECTORY_NAME))
+            .distinctBy { it.absolutePath }
+    }
 
     /**
      * Clears cache left by a reboot, an expired retention window, or a previous process that ended
@@ -111,9 +123,10 @@ object TorrentCachePolicy {
         val sessionPrefs = appContext.getSharedPreferences(SESSION_PREFS, Context.MODE_PRIVATE)
         val activeHash = sessionPrefs.getInt(KEY_ACTIVE_MAGNET_HASH, Int.MIN_VALUE)
 
-        val cacheDir = cacheDirectory(appContext)
-        if (cacheDir.exists() && !cacheDir.deleteRecursively()) {
-            Log.w(TAG, "Some torrent cache files could not be deleted: $reason")
+        cacheDirectories(appContext).forEach { cacheDir ->
+            if (cacheDir.exists() && !cacheDir.deleteRecursively()) {
+                Log.w(TAG, "Some torrent cache files could not be deleted: $reason")
+            }
         }
 
         if (activeHash != Int.MIN_VALUE) {
@@ -133,9 +146,35 @@ object TorrentCachePolicy {
     }
 
     fun cacheSizeBytes(context: Context): Long {
-        val cacheDir = cacheDirectory(context)
-        if (!cacheDir.exists()) return 0L
-        return cacheDir.walkTopDown()
+        return cacheDirectories(context).sumOf { cacheDir ->
+            if (!cacheDir.exists()) {
+                0L
+            } else {
+                cacheDir.walkTopDown()
+                    .filter { it.isFile }
+                    .sumOf { file ->
+                        runCatching { Os.stat(file.absolutePath).st_blocks * 512L }
+                            .getOrElse { file.length() }
+                    }
+            }
+            }
+    }
+
+
+    private fun safeCacheLimitMb(directory: File): Int {
+        return runCatching {
+            if (!directory.exists()) directory.mkdirs()
+            if (!directory.canWrite()) return@runCatching -1
+            val statFs = StatFs(directory.absolutePath)
+            val freeSpaceMb = statFs.availableBytes / BYTES_PER_MB
+            val existingCacheMb = allocatedBytes(directory) / BYTES_PER_MB
+            TorrentBufferPolicy.calculateCacheLimitMb(freeSpaceMb, existingCacheMb)
+        }.getOrDefault(-1)
+    }
+
+    private fun allocatedBytes(directory: File): Long {
+        if (!directory.exists()) return 0L
+        return directory.walkTopDown()
             .filter { it.isFile }
             .sumOf { file ->
                 runCatching { Os.stat(file.absolutePath).st_blocks * 512L }
@@ -143,6 +182,7 @@ object TorrentCachePolicy {
             }
     }
 
+    private const val BYTES_PER_MB = 1024L * 1024L
     private fun scheduleExpiry(context: Context) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
         val triggerAt = SystemClock.elapsedRealtime() + RETENTION_MS

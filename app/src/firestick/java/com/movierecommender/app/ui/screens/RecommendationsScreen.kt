@@ -753,16 +753,27 @@ private fun RecommendationCard(
                                         id
                                     }
                                     if (tmdbId != null) {
-                                        val options = if (isTvMode) {
-                                            viewModel.getTvShowWatchOptions(tmdbId, item.title, item.year)
+                                        if (isTvMode) {
+                                            watchOptions = viewModel.getTvShowWatchOptions(
+                                                tmdbId,
+                                                item.title,
+                                                item.year
+                                            )
                                         } else {
-                                            viewModel.getMovieWatchOptions(tmdbId, item.title, item.year)
+                                            viewModel.getMovieWatchOptionsUpdates(
+                                                tmdbId,
+                                                item.title,
+                                                item.year,
+                                                viewModel.safeCacheBudgetMb(context)
+                                            ).collect { state ->
+                                                watchOptions = state.options
+                                                isLoadingWatchOptions = state.isLoading
+                                            }
                                         }
-                                        watchOptions = options
                                     } else {
                                         // Fallback: just try torrent
                                         if (!isTvMode) {
-                                            val torrentResult = viewModel.getTorrentMagnetUrlForContent(item.title, item.year, false)
+                                            val torrentResult = viewModel.getTorrentMagnetUrlForContent(item.title, item.year, false, viewModel.safeCacheBudgetMb(context))
                                             watchOptions = if (torrentResult != null) {
                                                 listOf(
                                                     com.movierecommender.app.data.model.WatchOption(

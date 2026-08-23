@@ -1,5 +1,6 @@
 package com.movierecommender.app.ui.viewmodel.firestick
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -9,13 +10,18 @@ import com.movierecommender.app.data.model.TvShow
 import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.data.model.RecommendationSource
 import com.movierecommender.app.data.model.WatchOption
+import com.movierecommender.app.data.model.WatchOptionsLoadState
 import com.movierecommender.app.data.repository.MovieRepository
 import com.movierecommender.app.data.settings.SettingsRepository
 import com.movierecommender.app.data.repository.Resource
+import com.movierecommender.app.torrent.TorrentStreamService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class MovieUiState(
     val genres: List<Genre> = emptyList(),
@@ -924,6 +930,21 @@ class MovieViewModel(
         return repository.getMovieWatchOptions(tmdbId, title, year)
     }
 
+    fun getMovieWatchOptionsUpdates(
+        tmdbId: Int,
+        title: String,
+        year: String?,
+        safeCacheBudgetMb: Int? = null
+    ): Flow<WatchOptionsLoadState> {
+        return repository.getMovieWatchOptionsUpdates(tmdbId, title, year, safeCacheBudgetMb = safeCacheBudgetMb)
+    }
+
+    /** Safe torrent-cache budget (MB) for this device: free space minus the reserve. */
+    suspend fun safeCacheBudgetMb(context: Context): Int =
+        withContext(Dispatchers.IO) {
+            TorrentStreamService.safeCacheBudgetMb(context.applicationContext)
+        }
+
     /**
      * Get all watch options (streaming providers) for a TV show.
      * Torrent is handled per-episode via the episode picker.
@@ -983,8 +1004,8 @@ class MovieViewModel(
     /**
      * Get torrent magnet URL for a movie to enable streaming playback.
      */
-    suspend fun getTorrentMagnetUrl(title: String, year: String?): String? {
-        return repository.getTorrentInfo(title, year)?.magnetUrl
+    suspend fun getTorrentMagnetUrl(title: String, year: String?, safeCacheBudgetMb: Int? = null): String? {
+        return repository.getTorrentInfo(title, year, safeCacheBudgetMb)?.magnetUrl
     }
 
     /**
@@ -1002,11 +1023,11 @@ class MovieViewModel(
      * For movies: returns magnet URL directly.
      * For TV shows: finds first available episode and returns (magnetUrl, displayLabel).
      */
-    suspend fun getTorrentMagnetUrlForContent(title: String, year: String?, isTvMode: Boolean): Pair<String, String>? {
+    suspend fun getTorrentMagnetUrlForContent(title: String, year: String?, isTvMode: Boolean, safeCacheBudgetMb: Int? = null): Pair<String, String>? {
         return if (isTvMode) {
             getTvShowTorrentMagnetUrl(title, year)
         } else {
-            val magnet = getTorrentMagnetUrl(title, year) ?: return null
+            val magnet = getTorrentMagnetUrl(title, year, safeCacheBudgetMb) ?: return null
             Pair(magnet, title)
         }
     }

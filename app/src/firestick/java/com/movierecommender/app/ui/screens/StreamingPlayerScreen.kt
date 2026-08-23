@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import android.content.Context.MODE_PRIVATE
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem
@@ -128,7 +129,7 @@ fun StreamingPlayerScreen(
     // Bind to service
     DisposableEffect(Unit) {
         val intent = TorrentStreamService.getIntent(context)
-        context.startService(intent)
+        ContextCompat.startForegroundService(context, intent)
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         
         onDispose {

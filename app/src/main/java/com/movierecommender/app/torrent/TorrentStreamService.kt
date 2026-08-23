@@ -81,6 +81,10 @@ class TorrentStreamService : Service(), TorrentListener {
 
         fun getIntent(context: Context): Intent = Intent(context, TorrentStreamService::class.java)
 
+        /** Cache budget (MB) this device can safely use right now for torrent streaming. */
+        fun safeCacheBudgetMb(context: Context): Int =
+            calculateDynamicCacheSize(TorrentCachePolicy.cacheDirectory(context))
+
         fun getClearCacheIntent(context: Context): Intent =
             Intent(context, TorrentStreamService::class.java).apply { action = ACTION_CLEAR_CACHE }
 
@@ -267,6 +271,28 @@ class TorrentStreamService : Service(), TorrentListener {
         speedSamples.clear()
     }
 
+    /** Stops the torrent, deletes the unusable partial cache, and surfaces the failure. */
+    private fun failPlaybackAndClearCache(message: String) {
+        retentionJob?.cancel()
+        val stream = torrentStream
+        // Null the active session synchronously so a racing RETRY is treated as a fresh start.
+        currentTorrent = null
+        currentMagnetUrl = null
+        currentMagnetHash = null
+        isDownloadPaused = false
+        speedSamples.clear()
+        _downloadProgress.value = 0f
+        _downloadSpeed.value = 0
+        _seeds.value = 0
+        _streamState.value = TorrentStreamState.Error(message)
+        serviceScope.launch {
+            runCatching { stream?.stopStream() }
+            TorrentCachePolicy.clearCacheAndPlayback(applicationContext, "failed playback: $message")
+            ensureCacheDirectory()
+            dynamicMaxCacheSizeMB = calculateDynamicCacheSize(requireNotNull(cacheDir))
+        }
+    }
+
     fun getVideoFilePath(): String? = currentTorrent?.videoFile?.absolutePath
 
     fun updatePlaybackDuration(durationMs: Long) {
@@ -363,8 +389,7 @@ class TorrentStreamService : Service(), TorrentListener {
         val cacheSizeMb = getCacheSizeInMb(directory)
         _cacheUsageMB.value = cacheSizeMb
         if (dynamicMaxCacheSizeMB > 0 && cacheSizeMb > dynamicMaxCacheSizeMB && !isDownloadPaused) {
-            pauseDownloadInternal()
-            _streamState.value = TorrentStreamState.Error(
+            failPlaybackAndClearCache(
                 "The Fire TV storage reserve was reached. Free storage or choose a smaller source."
             )
         }
@@ -475,8 +500,7 @@ class TorrentStreamService : Service(), TorrentListener {
         val videoPath = videoFile.absolutePath
         val fileSize = videoFile.length()
         if (fileSize <= 0L) {
-            pauseDownloadInternal()
-            _streamState.value = TorrentStreamState.Error("The torrent video file has no readable size.")
+            failPlaybackAndClearCache("The torrent video file has no readable size.")
             return
         }
         if (currentPlaybackDuration <= 0L) {
@@ -486,8 +510,7 @@ class TorrentStreamService : Service(), TorrentListener {
         dynamicMaxCacheSizeMB = calculateDynamicCacheSize(requireNotNull(cacheDir))
         val requiredStorageMb = TorrentBufferPolicy.requiredStorageMb(fileSize)
         if (dynamicMaxCacheSizeMB <= 0 || requiredStorageMb > dynamicMaxCacheSizeMB) {
-            pauseDownloadInternal()
-            _streamState.value = TorrentStreamState.Error(
+            failPlaybackAndClearCache(
                 "This source needs ${requiredStorageMb} MB of cache, but only " +
                     "${dynamicMaxCacheSizeMB.coerceAtLeast(0)} MB is safely available. " +
                     "Free storage or choose a smaller source."
@@ -563,8 +586,7 @@ class TorrentStreamService : Service(), TorrentListener {
 
             if (positiveSampleCount >= MIN_SPEED_SAMPLES && contiguousBytes >= lockedTargetBytes) break
             if (System.currentTimeMillis() - lastAdvanceAt >= NO_PROGRESS_TIMEOUT_MS) {
-                pauseDownloadInternal()
-                _streamState.value = TorrentStreamState.Error(
+                failPlaybackAndClearCache(
                     "The torrent stopped making progress for three minutes. Try another source."
                 )
                 return
@@ -593,16 +615,19 @@ class TorrentStreamService : Service(), TorrentListener {
     }
 
     override fun onStreamStopped() {
-        _streamState.value = TorrentStreamState.Idle
         currentTorrent = null
         currentMagnetUrl = null
         currentMagnetHash = null
+        // A failed playback owns its Error state; don't overwrite it with Idle here.
+        if (_streamState.value !is TorrentStreamState.Error) {
+            _streamState.value = TorrentStreamState.Idle
+        }
     }
 
     override fun onStreamError(torrent: Torrent?, e: Exception?) {
         android.util.Log.e(TAG, "Stream error: ${e?.message}", e)
-        _streamState.value = TorrentStreamState.Error(e?.message ?: "Unknown torrent error")
         updateNotification("Torrent error: ${e?.message ?: "unknown"}")
+        failPlaybackAndClearCache(e?.message ?: "Unknown torrent error")
     }
 
     private fun createNotificationChannel() {

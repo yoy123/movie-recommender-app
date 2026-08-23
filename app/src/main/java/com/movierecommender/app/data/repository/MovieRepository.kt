@@ -34,6 +34,8 @@ import com.movierecommender.app.data.remote.StreamingAppRegistry
 import com.movierecommender.app.data.remote.ProviderContentResolverRegistry
 import com.movierecommender.app.data.model.WatchOption
 import com.movierecommender.app.data.model.WatchOptionType
+import com.movierecommender.app.data.model.WatchOptionsLoadState
+import com.movierecommender.app.data.model.CountryWatchProviders
 import com.movierecommender.app.data.model.WatchProviderEntry
 import com.movierecommender.app.data.model.TvShowExternalIds
 import com.movierecommender.app.data.remote.PopcornTvShowDetails
@@ -42,11 +44,18 @@ import com.movierecommender.app.data.remote.PopcornEpisodeTorrent
 import com.movierecommender.app.data.model.Video
 import com.movierecommender.app.data.remote.LlmRecommendationService
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 import kotlin.math.abs
@@ -1770,112 +1779,105 @@ class MovieRepository(
         tmdbId: Int,
         title: String,
         year: String?,
-        country: String = "US"
-    ): List<WatchOption> = withContext(Dispatchers.IO) {
-        val options = mutableListOf<WatchOption>()
+        country: String = "US",
+        safeCacheBudgetMb: Int? = null
+    ): List<WatchOption> = getMovieWatchOptionsUpdates(tmdbId, title, year, country, safeCacheBudgetMb)
+        .last()
+        .options
+
+    /**
+     * Emits provider and torrent options as their sources complete. No source is subject to a
+     * feature-level deadline; the final emission is produced only after the existing lookup tier
+     * has completed and preserves the same ranking as [getMovieWatchOptions].
+     */
+    fun getMovieWatchOptionsUpdates(
+        tmdbId: Int,
+        title: String,
+        year: String?,
+        country: String = "US",
+        safeCacheBudgetMb: Int? = null
+    ): Flow<WatchOptionsLoadState> = channelFlow {
         val crosswalksByProviderId = getStoredProviderCrosswalks(tmdbId, isMovie = true)
+        val stateMutex = Mutex()
+        var providerOptions = emptyList<WatchOption>()
+        var bestTorrent: TorrentInfo? = null
+        var providersComplete = false
+        var torrentComplete = false
 
-        // Fetch streaming providers and torrent in parallel
-        coroutineScope {
-            val providersDeferred = async {
-                try {
-                    val response = apiService.getMovieWatchProviders(tmdbId)
-                    response.results?.get(country)
-                } catch (e: Exception) {
-                    android.util.Log.e("MovieRepository", "Failed to fetch watch providers for movie $tmdbId", e)
-                    null
-                }
-            }
-
-            val torrentDeferred = async {
-                try {
-                    getTorrentInfo(title, year)
-                } catch (e: Exception) {
-                    android.util.Log.e("MovieRepository", "Failed to fetch torrent for $title", e)
-                    null
-                }
-            }
-
-            val countryProviders = providersDeferred.await()
-            val torrentInfo = torrentDeferred.await()
-
-            // Convert streaming providers to WatchOptions
-            if (countryProviders != null) {
-                fun addProviders(entries: List<WatchProviderEntry>?, type: WatchOptionType) {
-                    entries?.forEach { entry ->
-                        val pkg = StreamingAppRegistry.getPackageName(entry.providerId)
-                        if (pkg == null) {
-                            android.util.Log.w("WatchOptions", "UNMAPPED provider: id=${entry.providerId} name='${entry.providerName}'")
-                        }
-                        val deepLink = buildWatchOptionDeepLink(
-                            providerId = entry.providerId,
-                            title = title,
-                            tmdbId = tmdbId,
-                            isMovie = true,
-                            crosswalk = crosswalksByProviderId[entry.providerId]
-                        )
-                        options.add(
-                            WatchOption(
-                                name = entry.providerName,
-                                providerId = entry.providerId,
-                                hasExactProviderLink = crosswalksByProviderId[entry.providerId] != null,
-                                type = type,
-                                logoPath = entry.logoPath,
-                                packageName = StreamingAppRegistry.getPackageName(entry.providerId),
-                                deepLinkUrl = deepLink,
-                                justWatchLink = countryProviders.link,
-                                magnetUrl = null,
-                                quality = null,
-                                seeds = null,
-                                provider = null,
-                                displayPriority = entry.displayPriority
-                            )
-                        )
-                    }
-                }
-
-                addProviders(countryProviders.free, WatchOptionType.FREE)
-                addProviders(countryProviders.flatrate, WatchOptionType.SUBSCRIPTION)
-                addProviders(countryProviders.ads, WatchOptionType.ADS)
-                addProviders(countryProviders.rent, WatchOptionType.RENT)
-                addProviders(countryProviders.buy, WatchOptionType.BUY)
-            }
-
-            // Add torrent option
-            if (torrentInfo != null) {
-                options.add(
-                    WatchOption(
-                        name = "Torrent${torrentInfo.quality?.let { " ($it)" } ?: ""}",
-                        type = WatchOptionType.TORRENT,
-                        logoPath = null,
-                        packageName = null,
-                        deepLinkUrl = null,
-                        justWatchLink = null,
-                        magnetUrl = torrentInfo.magnetUrl,
-                        quality = torrentInfo.quality,
-                        seeds = torrentInfo.seeds,
-                        provider = torrentInfo.provider,
-                        displayPriority = 999
-                    )
+        suspend fun publish() {
+            val snapshot = stateMutex.withLock {
+                WatchOptionsLoadState(
+                    options = sortWatchOptions(
+                        providerOptions + listOfNotNull(bestTorrent?.let(::torrentWatchOption))
+                    ),
+                    isLoading = !providersComplete || !torrentComplete
                 )
             }
+            send(snapshot)
         }
 
-        // Sort: FREE first, then SUBSCRIPTION, ADS, RENT, BUY, TORRENT last
-        // Within each type, sort by display priority
-        options.sortedWith(
-            compareBy<WatchOption> { option ->
-                when (option.type) {
-                    WatchOptionType.FREE -> 0
-                    WatchOptionType.SUBSCRIPTION -> 1
-                    WatchOptionType.ADS -> 2
-                    WatchOptionType.RENT -> 3
-                    WatchOptionType.BUY -> 4
-                    WatchOptionType.TORRENT -> 5
+        send(WatchOptionsLoadState(options = emptyList(), isLoading = true))
+
+        val providersJob = launch(Dispatchers.IO) {
+            val countryProviders = try {
+                apiService.getMovieWatchProviders(tmdbId).results?.get(country)
+            } catch (error: Exception) {
+                android.util.Log.e(
+                    "MovieRepository",
+                    "Failed to fetch watch providers for movie $tmdbId",
+                    error
+                )
+                null
+            }
+            stateMutex.withLock {
+                providerOptions = countryProviders?.let {
+                    providerWatchOptions(
+                        countryProviders = it,
+                        title = title,
+                        tmdbId = tmdbId,
+                        isMovie = true,
+                        crosswalksByProviderId = crosswalksByProviderId
+                    )
+                }.orEmpty()
+                providersComplete = true
+            }
+            publish()
+        }
+
+        val torrentJob = launch(Dispatchers.IO) {
+            val finalTorrent = try {
+                getTorrentInfo(title, year, safeCacheBudgetMb) { candidate ->
+                    val changed = stateMutex.withLock {
+                        val current = bestTorrent
+                        val chosen = MovieTorrentSelectionPolicy.preferred(
+                            current, candidate, safeCacheBudgetMb, ::movieTorrentSelectionScore
+                        )
+                        if (chosen !== current) {
+                            bestTorrent = chosen
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    if (changed) publish()
                 }
-            }.thenBy { it.displayPriority }
-        )
-    }
+            } catch (error: Exception) {
+                android.util.Log.e("MovieRepository", "Failed to fetch torrent for $title", error)
+                null
+            }
+            stateMutex.withLock {
+                if (finalTorrent != null) {
+                    bestTorrent = MovieTorrentSelectionPolicy.preferred(
+                        bestTorrent, finalTorrent, safeCacheBudgetMb, ::movieTorrentSelectionScore
+                    )
+                }
+                torrentComplete = true
+            }
+            publish()
+        }
+
+        joinAll(providersJob, torrentJob)
+    }.distinctUntilChanged()
 
     /**
      * Get all watch options for a TV show.
@@ -1899,50 +1901,85 @@ class MovieRepository(
             val countryProviders = response.results?.get(country)
 
             if (countryProviders != null) {
-                fun addProviders(entries: List<WatchProviderEntry>?, type: WatchOptionType) {
-                    entries?.forEach { entry ->
-                        val pkg = StreamingAppRegistry.getPackageName(entry.providerId)
-                        if (pkg == null) {
-                            android.util.Log.w("WatchOptions", "UNMAPPED provider: id=${entry.providerId} name='${entry.providerName}'")
-                        }
-                        val deepLink = buildWatchOptionDeepLink(
-                            providerId = entry.providerId,
-                            title = title,
-                            tmdbId = tmdbId,
-                            isMovie = false,
-                            crosswalk = crosswalksByProviderId[entry.providerId]
-                        )
-                        options.add(
-                            WatchOption(
-                                name = entry.providerName,
-                                providerId = entry.providerId,
-                                hasExactProviderLink = crosswalksByProviderId[entry.providerId] != null,
-                                type = type,
-                                logoPath = entry.logoPath,
-                                packageName = StreamingAppRegistry.getPackageName(entry.providerId),
-                                deepLinkUrl = deepLink,
-                                justWatchLink = countryProviders.link,
-                                magnetUrl = null,
-                                quality = null,
-                                seeds = null,
-                                provider = null,
-                                displayPriority = entry.displayPriority
-                            )
-                        )
-                    }
-                }
-
-                addProviders(countryProviders.free, WatchOptionType.FREE)
-                addProviders(countryProviders.flatrate, WatchOptionType.SUBSCRIPTION)
-                addProviders(countryProviders.ads, WatchOptionType.ADS)
-                addProviders(countryProviders.rent, WatchOptionType.RENT)
-                addProviders(countryProviders.buy, WatchOptionType.BUY)
+                options += providerWatchOptions(
+                    countryProviders = countryProviders,
+                    title = title,
+                    tmdbId = tmdbId,
+                    isMovie = false,
+                    crosswalksByProviderId = crosswalksByProviderId
+                )
             }
         } catch (e: Exception) {
             android.util.Log.e("MovieRepository", "Failed to fetch watch providers for TV show $tmdbId", e)
         }
 
-        // Sort same as movies
+        sortWatchOptions(options)
+    }
+
+    private fun providerWatchOptions(
+        countryProviders: CountryWatchProviders,
+        title: String,
+        tmdbId: Int,
+        isMovie: Boolean,
+        crosswalksByProviderId: Map<Int, ProviderContentCrosswalk>
+    ): List<WatchOption> = buildList {
+        fun addProviders(entries: List<WatchProviderEntry>?, type: WatchOptionType) {
+            entries?.forEach { entry ->
+                val packageName = StreamingAppRegistry.getPackageName(entry.providerId)
+                if (packageName == null) {
+                    android.util.Log.w(
+                        "WatchOptions",
+                        "UNMAPPED provider: id=${entry.providerId} name='${entry.providerName}'"
+                    )
+                }
+                add(
+                    WatchOption(
+                        name = entry.providerName,
+                        providerId = entry.providerId,
+                        hasExactProviderLink = crosswalksByProviderId[entry.providerId] != null,
+                        type = type,
+                        logoPath = entry.logoPath,
+                        packageName = packageName,
+                        deepLinkUrl = buildWatchOptionDeepLink(
+                            providerId = entry.providerId,
+                            title = title,
+                            tmdbId = tmdbId,
+                            isMovie = isMovie,
+                            crosswalk = crosswalksByProviderId[entry.providerId]
+                        ),
+                        justWatchLink = countryProviders.link,
+                        magnetUrl = null,
+                        quality = null,
+                        seeds = null,
+                        provider = null,
+                        displayPriority = entry.displayPriority
+                    )
+                )
+            }
+        }
+
+        addProviders(countryProviders.free, WatchOptionType.FREE)
+        addProviders(countryProviders.flatrate, WatchOptionType.SUBSCRIPTION)
+        addProviders(countryProviders.ads, WatchOptionType.ADS)
+        addProviders(countryProviders.rent, WatchOptionType.RENT)
+        addProviders(countryProviders.buy, WatchOptionType.BUY)
+    }
+
+    private fun torrentWatchOption(torrentInfo: TorrentInfo): WatchOption = WatchOption(
+        name = "Torrent${torrentInfo.quality?.let { " ($it)" } ?: ""}",
+        type = WatchOptionType.TORRENT,
+        logoPath = null,
+        packageName = null,
+        deepLinkUrl = null,
+        justWatchLink = null,
+        magnetUrl = torrentInfo.magnetUrl,
+        quality = torrentInfo.quality,
+        seeds = torrentInfo.seeds,
+        provider = torrentInfo.provider,
+        displayPriority = 999
+    )
+
+    private fun sortWatchOptions(options: List<WatchOption>): List<WatchOption> =
         options.sortedWith(
             compareBy<WatchOption> { option ->
                 when (option.type) {
@@ -1955,7 +1992,6 @@ class MovieRepository(
                 }
             }.thenBy { it.displayPriority }
         )
-    }
 
 
     suspend fun getMovieExternalIds(tmdbId: Int): MovieExternalIds? = withContext(Dispatchers.IO) {
@@ -2129,14 +2165,19 @@ class MovieRepository(
      * Tries multiple sources (YTS, Popcorn API) with fallback.
      * Prefers smallest file size for faster streaming.
      */
-    suspend fun getTorrentInfo(title: String, year: String?): TorrentInfo? = withContext(Dispatchers.IO) {
+    suspend fun getTorrentInfo(
+        title: String,
+        year: String?,
+        safeCacheBudgetMb: Int? = null,
+        onLiveCandidate: suspend (TorrentInfo) -> Unit = {}
+    ): TorrentInfo? = withContext(Dispatchers.IO) {
         android.util.Log.d("MovieRepository", "Searching torrent for: $title ($year)")
         val imdbId = resolveImdbIdForMovie(title, year)
         
-        // Query the strongest no-configuration providers in parallel, then compare
-        // quality and swarm health instead of accepting the first adequate result.
-        val primaryTorrent = coroutineScope {
-            val ytsJob = async {
+        // Start every no-configuration source together. Each live result is published as soon as
+        // that source finishes, while slower sources continue and remain part of final ranking.
+        val primarySources: List<suspend () -> TorrentInfo?> = listOf(
+            {
                 try {
                     val movie = if (imdbId != null) {
                         ytsApi.searchByImdbId(imdbId) ?: ytsApi.searchMovie(title, year)
@@ -2148,8 +2189,8 @@ class MovieRepository(
                     android.util.Log.w("MovieRepository", "YTS search failed: ${e.message}")
                     null
                 }
-            }
-            val popcornJob = async {
+            },
+            {
                 try {
                     val movie = if (imdbId != null) {
                         popcornApi.searchByImdbId(imdbId) ?: popcornApi.searchMovie(title, year)
@@ -2161,16 +2202,16 @@ class MovieRepository(
                     android.util.Log.w("MovieRepository", "Popcorn API search failed: ${e.message}")
                     null
                 }
-            }
-            val torrentioJob = async {
+            },
+            {
                 try {
                     imdbId?.let { torrentioApi.searchMovie(it, preferredQuality = "1080p") }
                 } catch (e: Exception) {
                     android.util.Log.w("MovieRepository", "Torrentio movie lookup failed: ${e.message}")
                     null
                 }
-            }
-            val knabenJob = async {
+            },
+            {
                 try {
                     knabenApi.searchMovie(title, year, preferredQuality = "1080p")
                 } catch (e: Exception) {
@@ -2178,15 +2219,17 @@ class MovieRepository(
                     null
                 }
             }
-
-            listOfNotNull(
-                ytsJob.await(),
-                popcornJob.await(),
-                torrentioJob.await(),
-                knabenJob.await()
-            ).filter(::hasLivePeers)
-                .maxByOrNull(::movieTorrentSelectionScore)
-        }
+        )
+        val primaryTorrent = MovieTorrentSelectionPolicy.selectBest(
+            MovieTorrentSourceCollector.collectAll(
+                sources = primarySources,
+                onResult = { candidate ->
+                    if (hasLivePeers(candidate)) onLiveCandidate(candidate)
+                }
+            ).filter(::hasLivePeers),
+            safeCacheBudgetMb,
+            ::movieTorrentSelectionScore
+        )
         if (primaryTorrent != null) {
             android.util.Log.d(
                 "MovieRepository",
@@ -2202,6 +2245,7 @@ class MovieRepository(
                 val torznabTorrent = torznabApi.searchMovie(title, year, imdbId)
                 if (torznabTorrent != null && hasLivePeers(torznabTorrent)) {
                     android.util.Log.d("MovieRepository", "Found ${torznabTorrent.provider} torrent: ${torznabTorrent.quality} with ${torznabTorrent.seeds} seeds")
+                    onLiveCandidate(torznabTorrent)
                     return@withContext torznabTorrent
                 }
                 android.util.Log.d("MovieRepository", "No Torznab torrent found")
@@ -2218,6 +2262,7 @@ class MovieRepository(
                     "MovieRepository",
                     "Found Internet Archive torrent: ${archiveTorrent.quality} (${archiveTorrent.size})"
                 )
+                onLiveCandidate(archiveTorrent)
                 return@withContext archiveTorrent
             }
             android.util.Log.d("MovieRepository", "No Internet Archive torrent found")
@@ -2233,6 +2278,7 @@ class MovieRepository(
                     "MovieRepository",
                     "Found Public Domain Torrents download: ${publicDomainTorrent.quality} (${publicDomainTorrent.size})"
                 )
+                onLiveCandidate(publicDomainTorrent)
                 return@withContext publicDomainTorrent
             }
             android.util.Log.d("MovieRepository", "No Public Domain Torrents download found")
@@ -2250,6 +2296,7 @@ class MovieRepository(
             if (pirateBayTorrent != null) {
                 if (hasLivePeers(pirateBayTorrent)) {
                     android.util.Log.d("MovieRepository", "Found PirateBay torrent: ${pirateBayTorrent.quality} (${pirateBayTorrent.size}) with ${pirateBayTorrent.seeds} seeds")
+                    onLiveCandidate(pirateBayTorrent)
                     return@withContext pirateBayTorrent
                 }
             }
@@ -2263,6 +2310,7 @@ class MovieRepository(
             val tgxTorrent = torrentGalaxyApi.searchMovie(title, year)
             if (tgxTorrent != null && hasLivePeers(tgxTorrent)) {
                 android.util.Log.d("MovieRepository", "Found TorrentGalaxy torrent: ${tgxTorrent.quality} (${tgxTorrent.size}) with ${tgxTorrent.seeds} seeds")
+                onLiveCandidate(tgxTorrent)
                 return@withContext tgxTorrent
             }
             android.util.Log.d("MovieRepository", "No TorrentGalaxy torrent found, trying 1337x...")
@@ -2275,6 +2323,7 @@ class MovieRepository(
             val leetxTorrent = leetxApi.searchMovie(title, year)
             if (leetxTorrent != null && hasLivePeers(leetxTorrent)) {
                 android.util.Log.d("MovieRepository", "Found 1337x torrent: ${leetxTorrent.quality} (${leetxTorrent.size}) with ${leetxTorrent.seeds} seeds")
+                onLiveCandidate(leetxTorrent)
                 return@withContext leetxTorrent
             }
             android.util.Log.d("MovieRepository", "No 1337x torrent found")

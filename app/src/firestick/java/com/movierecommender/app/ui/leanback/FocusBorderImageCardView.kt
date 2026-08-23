@@ -4,9 +4,12 @@ import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
+import androidx.leanback.widget.BaseCardView
 import androidx.leanback.widget.ImageCardView
 
 class FocusBorderImageCardView(context: Context) : ImageCardView(context) {
@@ -39,12 +42,32 @@ class FocusBorderImageCardView(context: Context) : ImageCardView(context) {
         }
     }
 
+    init {
+        setCardType(BaseCardView.CARD_TYPE_INFO_UNDER)
+        setInfoVisibility(BaseCardView.CARD_REGION_VISIBLE_ALWAYS)
+    }
+
     private val infoField: View?
         get() = findViewById(androidx.leanback.R.id.info_field)
 
+    private var originalInfoForeground: Drawable? = null
+    private var infoForegroundCaptured = false
+
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: android.graphics.Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
-        infoField?.foreground = borderDrawable
+        infoField?.let { field ->
+            if (!infoForegroundCaptured) {
+                originalInfoForeground = field.foreground
+                infoForegroundCaptured = true
+            }
+            field.foreground = if (gainFocus) {
+                LayerDrawable(
+                    listOfNotNull(originalInfoForeground, borderDrawable).toTypedArray()
+                )
+            } else {
+                originalInfoForeground
+            }
+        }
         if (gainFocus) {
             borderAnimator.start()
         } else {

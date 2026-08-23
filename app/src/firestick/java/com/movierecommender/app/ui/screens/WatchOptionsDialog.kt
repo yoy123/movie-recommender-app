@@ -94,9 +94,9 @@ fun WatchOptionsDialog(
         }
     }
 
-    // Auto-focus first option when loaded (also re-trigger when trailer arrives)
-    LaunchedEffect(displayedOptions, isLoading, onWatchTrailer) {
-        if (!isLoading && displayedOptions.isNotEmpty()) {
+    // Focus the first usable action as soon as any source produces one. Other sources may still run.
+    LaunchedEffect(displayedOptions, hasAnyActionRows, onWatchTrailer, onBrowseEpisodes) {
+        if (hasAnyActionRows) {
             try { firstOptionFocusRequester.requestFocus() } catch (_: Exception) {}
         }
     }
@@ -191,8 +191,8 @@ fun WatchOptionsDialog(
                 Divider(color = MaterialTheme.colorScheme.outlineVariant)
                 Spacer(modifier = Modifier.height(8.dp))
 
-                if (isLoading) {
-                    // Loading state
+                if (isLoading && !hasAnyActionRows) {
+                    // Full loading state only while no usable action has arrived yet.
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -333,6 +333,29 @@ fun WatchOptionsDialog(
                                     focusRequester = focusReq,
                                     onClick = onBrowseEpisodes
                                 )
+                            }
+                        }
+
+                        if (isLoading) {
+                            item(key = "remaining_sources_loading") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(22.dp),
+                                        strokeWidth = 3.dp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "Checking remaining watch sources…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }

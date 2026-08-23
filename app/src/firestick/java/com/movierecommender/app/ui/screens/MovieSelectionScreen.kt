@@ -635,8 +635,18 @@ fun MovieCard(
                             coroutineScope.launch {
                                 try {
                                     val year = movie.releaseDate?.take(4)
-                                    val options = viewModel?.getMovieWatchOptions(movie.id, movie.title, year).orEmpty()
-                                    watchOptions = options
+                                    val model = viewModel
+                                    if (model == null) {
+                                        watchOptions = emptyList()
+                                        isLoadingWatchOptions = false
+                                    } else {
+                                        val budgetMb = model.safeCacheBudgetMb(context)
+                                        model.getMovieWatchOptionsUpdates(movie.id, movie.title, year, budgetMb)
+                                            .collect { state ->
+                                                watchOptions = state.options
+                                                isLoadingWatchOptions = state.isLoading
+                                            }
+                                    }
                                 } catch (e: Exception) {
                                     watchOptions = emptyList()
                                     Toast.makeText(context, "Error finding options", Toast.LENGTH_SHORT).show()

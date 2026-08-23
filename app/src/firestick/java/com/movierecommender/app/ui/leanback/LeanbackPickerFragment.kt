@@ -560,18 +560,24 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
                                 vm.getTrailerUrlByTitle(mediaTitle, mediaYear, isTvMode)
                             } catch (_: Exception) { null }
                         }
-                        options = try {
+                        try {
                             if (movieId != null) {
-                                vm.getMovieWatchOptions(movieId!!, mediaTitle, mediaYear)
+                                vm.getMovieWatchOptionsUpdates(movieId!!, mediaTitle, mediaYear, vm.safeCacheBudgetMb(requireContext()))
+                                    .collect { state ->
+                                        options = state.options
+                                        isLoading = state.isLoading
+                                    }
                             } else if (tvShowId != null) {
-                                vm.getTvShowWatchOptions(tvShowId!!, mediaTitle, mediaYear)
+                                options = vm.getTvShowWatchOptions(tvShowId!!, mediaTitle, mediaYear)
+                                isLoading = false
                             } else {
-                                emptyList()
+                                options = emptyList()
+                                isLoading = false
                             }
                         } catch (_: Exception) {
-                            emptyList()
+                            options = emptyList()
+                            isLoading = false
                         }
-                        isLoading = false
                     }
 
                     MovieRecommenderTheme(darkTheme = true) {
