@@ -15,8 +15,8 @@ class LlmRecommendationService(
 
     companion object {
         private const val TAG = "LlmRecommendation"
-        internal const val DEFAULT_MODEL = "gpt-4.1"
-        private val FALLBACK_MODELS = listOf("gpt-4.1", "gpt-4.1-mini", "gpt-4o-mini")
+        internal const val DEFAULT_MODEL = "gpt-6-astra"
+        private val FALLBACK_MODELS = listOf("gpt-6.1-sol", "gpt-6-luna", "gpt-4.1", "gpt-4.1-mini")
     }
 
     private object SafeAndroidLog {
@@ -645,7 +645,7 @@ internal class OpenAiApiException(
 }
 
 internal object OpenAiRequestFactory {
-    const val DEFAULT_MODEL = "gpt-4.1"
+    const val DEFAULT_MODEL = "gpt-6-astra"
 
     fun create(
         prompt: String,
@@ -690,6 +690,7 @@ internal data class OpenAiRequestSpec(
         ): OpenAiRequestSpec {
             val normalizedModel = model.trim().ifBlank { OpenAiRequestFactory.DEFAULT_MODEL }
             val isReasoningModel = normalizedModel.startsWith("gpt-5", ignoreCase = true) ||
+                normalizedModel.startsWith("gpt-6", ignoreCase = true) ||
                 normalizedModel.startsWith("o", ignoreCase = true)
             val supportsVerbosity = normalizedModel.startsWith("gpt-5", ignoreCase = true)
             val strictRetry = reasoningEffort.equals("low", ignoreCase = true)
@@ -698,10 +699,11 @@ internal data class OpenAiRequestSpec(
                 model = normalizedModel,
                 systemPrompt = "You are an expert film curator and critic with deep knowledge of cinema history, genres, directors, and thematic elements. You excel at understanding WHY someone loves specific films and finding other films that share those same qualities. Your analysis paragraphs must be deeply personal and insightful - dissect the user's taste by naming their selected films and explaining the specific cinematic threads that connect them. NEVER write a generic intro like 'Based on your selections, here are some movies' - that will be rejected. Provide thoughtful, personalized recommendations - never generic suggestions. Write naturally in plain text, no markdown or formatting symbols.",
                 userPrompt = prompt,
-                reasoningEffort = reasoningEffort.takeIf { isReasoningModel },
+                reasoningEffort = reasoningEffort.takeIf { isReasoningModel }
+                    ?.let { if (normalizedModel.startsWith("gpt-6", ignoreCase = true) && it == "minimal") "low" else it },
                 verbosity = "medium".takeIf { supportsVerbosity },
                 temperature = if (isReasoningModel) null else if (strictRetry) 0.2 else 0.4,
-                maxCompletionTokens = 4_000
+                maxCompletionTokens = if (normalizedModel.startsWith("gpt-6", ignoreCase = true)) 8_000 else 4_000
             )
         }
     }

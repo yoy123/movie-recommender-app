@@ -1,6 +1,9 @@
 package com.movierecommender.app.data.settings
 
 import android.content.Context
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import com.movierecommender.app.data.model.TvShow
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
@@ -29,6 +32,7 @@ class SettingsRepository(private val context: Context) {
         
         // Database cleanup - last time orphaned movies were cleaned
         val LAST_DB_CLEANUP = longPreferencesKey("last_db_cleanup")
+        val FAVORITE_TV_SHOWS = stringPreferencesKey("favorite_tv_shows_v1")
         
         // Plex Server Settings
         // Server URL (e.g., "http://192.168.1.x:32400")
@@ -58,6 +62,40 @@ class SettingsRepository(private val context: Context) {
         val USE_INTERNATIONAL = booleanPreferencesKey("use_international")
         val EXPERIMENTAL_PREFERENCE = floatPreferencesKey("experimental_preference")
         val USE_EXPERIMENTAL = booleanPreferencesKey("use_experimental")
+    }
+
+    // TV metadata is persisted separately from movie Room rows to avoid confusing shared TMDB IDs.
+    private val tvShowGson = Gson()
+    private val tvShowListType = object : TypeToken<List<TvShow>>() {}.type
+
+    private fun parseFavoriteTvShows(serialized: String?): List<TvShow> {
+        if (serialized.isNullOrBlank()) return emptyList()
+        return runCatching {
+            (tvShowGson.fromJson<List<TvShow>>(serialized, tvShowListType) ?: emptyList())
+                .filter { it.id > 0 && it.name.isNotBlank() }
+                .distinctBy { it.id }
+        }.getOrElse { emptyList() }
+    }
+
+    val favoriteTvShows: Flow<List<TvShow>> = context.dataStore.data.map {
+        parseFavoriteTvShows(it[Keys.FAVORITE_TV_SHOWS])
+    }
+
+    suspend fun addFavoriteTvShow(show: TvShow) {
+        context.dataStore.edit { prefs ->
+            val favorites = parseFavoriteTvShows(prefs[Keys.FAVORITE_TV_SHOWS])
+            prefs[Keys.FAVORITE_TV_SHOWS] = tvShowGson.toJson(
+                listOf(show) + favorites.filterNot { it.id == show.id }
+            )
+        }
+    }
+
+    suspend fun removeFavoriteTvShow(id: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.FAVORITE_TV_SHOWS] = tvShowGson.toJson(
+                parseFavoriteTvShows(prefs[Keys.FAVORITE_TV_SHOWS]).filterNot { it.id == id }
+            )
+        }
     }
 
     val userName: Flow<String> = context.dataStore.data.map { it[Keys.USER_NAME] ?: "" }

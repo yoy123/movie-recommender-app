@@ -261,6 +261,11 @@ fun MovieSelectionScreen(
                                 TvShowCard(
                                     tvShow = tvShow,
                                     isSelected = uiState.selectedTvShows.any { it.id == tvShow.id },
+                                    isFavorite = uiState.favoriteTvShows.any { it.id == tvShow.id },
+                                    onToggleFavorite = {
+                                        if (uiState.favoriteTvShows.any { it.id == tvShow.id }) viewModel.removeTvShowFromFavorites(tvShow.id)
+                                        else viewModel.addTvShowToFavorites(tvShow)
+                                    },
                                     onToggleSelection = { viewModel.toggleTvShowSelection(tvShow) },
                                     viewModel = viewModel,
                                     onWatchNow = onWatchNow
@@ -272,9 +277,9 @@ fun MovieSelectionScreen(
                                 MovieCard(
                                     movie = movie,
                                     isSelected = uiState.selectedMovies.any { it.id == movie.id },
-                                    isFavorite = movie.isFavorite,
+                                    isFavorite = uiState.favoriteMovies.any { it.id == movie.id },
                                     onToggleFavorite = {
-                                        if (movie.isFavorite) viewModel.removeFromFavorites(movie.id)
+                                        if (uiState.favoriteMovies.any { it.id == movie.id }) viewModel.removeFromFavorites(movie.id)
                                         else viewModel.addToFavorites(movie)
                                     },
                                     onToggleSelection = { viewModel.toggleMovieSelection(movie) },
@@ -700,6 +705,8 @@ fun MovieCard(
 fun TvShowCard(
     tvShow: TvShow,
     isSelected: Boolean,
+    isFavorite: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
     onToggleSelection: () -> Unit,
     viewModel: MovieViewModel? = null,
     onWatchNow: (title: String, magnetUrl: String) -> Unit = { _, _ -> }
@@ -726,6 +733,7 @@ fun TvShowCard(
     val cardFocusRequester = remember { FocusRequester() }
     val checkFocusRequester = remember { FocusRequester() }
     val watchFocusRequester = remember { FocusRequester() }
+    val favoriteFocusRequester = remember { FocusRequester() }
     
     // Focus tracking
     val cardInteraction = remember { MutableInteractionSource() }
@@ -734,8 +742,10 @@ fun TvShowCard(
     val checkFocused by checkInteraction.collectIsFocusedAsState()
     val watchInteraction = remember { MutableInteractionSource() }
     val watchFocused by watchInteraction.collectIsFocusedAsState()
+    val favoriteInteraction = remember { MutableInteractionSource() }
+    val favoriteFocused by favoriteInteraction.collectIsFocusedAsState()
     
-    val anyIconFocused = checkFocused || watchFocused
+    val anyIconFocused = checkFocused || watchFocused || favoriteFocused
     
     // When isCardActive becomes true, focus the watch button AFTER recomposition
     LaunchedEffect(isCardActive) {
@@ -754,7 +764,7 @@ fun TvShowCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(246.dp)
+            .height(302.dp)
             .focusRequester(cardFocusRequester)
             .onPreviewKeyEvent { keyEvent ->
                 when (keyEvent.key) {
@@ -918,6 +928,20 @@ fun TvShowCard(
                     canFocus = isCardActive,
                     onClick = onToggleSelection,
                     trailingLabel = if (isSelected) "Ready" else null
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                PickerActionButton(
+                    label = if (isFavorite) "Remove Favorite" else "Add Favorite",
+                    icon = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    accentColor = MaterialTheme.colorScheme.error,
+                    focused = favoriteFocused,
+                    interactionSource = favoriteInteraction,
+                    focusRequester = favoriteFocusRequester,
+                    canFocus = isCardActive,
+                    onClick = onToggleFavorite,
+                    trailingLabel = if (isFavorite) "Saved" else null
                 )
             }
         }

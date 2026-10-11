@@ -1,6 +1,6 @@
 # OpenStream+ Features
 
-**Last verified:** 2026-07-25
+**Last verified:** 2026-10-11
 
 ## Feature Matrix
 
@@ -9,7 +9,7 @@
 | Movie genres and search | Yes | Yes | TMDB |
 | TV genres and search | Yes | Yes | TMDB |
 | Select 1–5 titles | Yes | Yes | Recommendation input |
-| Favorites | Yes | Yes | Movies persisted in Room |
+| Favorites | Yes | Yes | Movies in Room, TV shows in DataStore; card action menus |
 | AI recommendations | Yes | Yes | Opt-in OpenAI path |
 | TMDB-only recommendations | Yes | Yes | No OpenAI data transfer |
 | Preference controls | Yes | Yes | Six preference groups |
@@ -86,7 +86,7 @@ Movie favorites are persisted in Room through the `isFavorite` flag.
 
 Favorites can be selected as recommendation inputs. The favorites route uses pseudo-genre ID `-1`.
 
-TV-show favorites are not represented by a dedicated persisted TV entity in the current schema.
+TV-show favorites are persisted as TMDB metadata in Preferences DataStore, separately from movie IDs. Both types appear in Favorites with Watch Options and Delete actions; saved titles are excluded from matching recommendations. TV-show episode torrent selection remains on the TV selection screen, not in the Favorites watch dialog.
 
 ## Trailers
 

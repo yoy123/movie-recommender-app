@@ -12,19 +12,29 @@ import org.junit.Test
 class OpenAiRequestFactoryTest {
 
     @Test
-    fun create_buildsDefaultGpt41CompatibleBody() {
+    fun create_buildsDefaultGpt6CompatibleBody() {
         val request = OpenAiRequestSpec.create("Recommend films", "minimal")
         val json = OpenAiRequestFactory.create("Recommend films", "minimal")
 
-        assertEquals("gpt-4.1", request.model)
-        assertNull(request.reasoningEffort)
+        assertEquals("gpt-6-astra", request.model)
+        assertEquals("low", request.reasoningEffort)
         assertNull(request.verbosity)
-        assertEquals(0.4, request.temperature!!, 0.0)
-        assertEquals(4_000, request.maxCompletionTokens)
+        assertNull(request.temperature)
+        assertEquals(8_000, request.maxCompletionTokens)
         assertEquals("Recommend films", request.userPrompt)
-        assertFalse(json.has("reasoning_effort"))
+        assertTrue(json.has("reasoning_effort"))
         assertFalse(json.has("verbosity"))
-        assertTrue(json.has("temperature"))
+        assertFalse(json.has("temperature"))
+    }
+
+    @Test
+    fun create_mapsMinimalToSupportedLowReasoningForGpt6Family() {
+        listOf("gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna").forEach { model ->
+            val request = OpenAiRequestSpec.create("Recommend films", "minimal", model)
+            assertEquals("low", request.reasoningEffort)
+            assertNull(request.temperature)
+            assertEquals(8_000, request.maxCompletionTokens)
+        }
     }
 
     @Test

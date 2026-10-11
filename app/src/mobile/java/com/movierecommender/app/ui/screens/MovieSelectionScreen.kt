@@ -226,6 +226,11 @@ fun MovieSelectionScreen(
                                 TvShowCard(
                                     tvShow = tvShow,
                                     isSelected = uiState.selectedTvShows.any { it.id == tvShow.id },
+                                    isFavorite = uiState.favoriteTvShows.any { it.id == tvShow.id },
+                                    onToggleFavorite = {
+                                        if (uiState.favoriteTvShows.any { it.id == tvShow.id }) viewModel.removeTvShowFromFavorites(tvShow.id)
+                                        else viewModel.addTvShowToFavorites(tvShow)
+                                    },
                                     onClick = { viewModel.toggleTvShowSelection(tvShow) },
                                     viewModel = viewModel,
                                     onWatchNow = onWatchNow
@@ -237,9 +242,9 @@ fun MovieSelectionScreen(
                                 MovieCard(
                                     movie = movie,
                                     isSelected = uiState.selectedMovies.any { it.id == movie.id },
-                                    isFavorite = movie.isFavorite,
+                                    isFavorite = uiState.favoriteMovies.any { it.id == movie.id },
                                     onToggleFavorite = {
-                                        if (movie.isFavorite) viewModel.removeFromFavorites(movie.id)
+                                        if (uiState.favoriteMovies.any { it.id == movie.id }) viewModel.removeFromFavorites(movie.id)
                                         else viewModel.addToFavorites(movie)
                                     },
                                     onClick = { viewModel.toggleMovieSelection(movie) },
@@ -498,6 +503,8 @@ fun MovieCard(
 fun TvShowCard(
     tvShow: TvShow,
     isSelected: Boolean,
+    isFavorite: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
     onClick: () -> Unit,
     viewModel: MovieViewModel? = null,
     onWatchNow: (title: String, magnetUrl: String) -> Unit = { _, _ -> }
@@ -538,6 +545,17 @@ fun TvShowCard(
                     .height(180.dp)
             )
             
+            IconButton(
+                onClick = onToggleFavorite,
+                modifier = Modifier.align(Alignment.TopStart).padding(8.dp).size(48.dp)
+            ) {
+                Icon(
+                    imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    contentDescription = if (isFavorite) "Remove TV favorite" else "Add TV favorite",
+                    tint = if (isFavorite) androidx.compose.ui.graphics.Color(0xFFE53935) else androidx.compose.ui.graphics.Color.White
+                )
+            }
+
             // Watch Now button - top center
             if (viewModel != null) {
                 IconButton(

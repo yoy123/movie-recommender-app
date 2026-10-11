@@ -17,7 +17,7 @@ The embedded Firestick Live TV guide was removed on 2026-07-25 because it depend
 - Select 1–5 titles to seed recommendations.
 - Use AI-first recommendations with verified TMDB candidates and automatic TMDB fallback.
 - Tune recommendation preferences for popularity, indie content, year range, tone, international content, and experimental content.
-- Maintain a local favorites collection.
+- Maintain movie favorites in Room and TV-show favorites in DataStore. Favorites support Watch Options and Delete actions.
 - View trailers and TMDB watch-provider availability.
 - Launch supported streaming applications through mapped package names and deep links.
 - Store exact provider-content links in a Room-backed crosswalk.
@@ -34,7 +34,7 @@ The embedded Firestick Live TV guide was removed on 2026-07-25 because it depend
 - Room database version 3
 - Preferences DataStore
 - Retrofit and OkHttp
-- OpenAI Chat Completions (`gpt-4.1` primary with automatic compatible-model fallback)
+- OpenAI Chat Completions (`gpt-6-astra` default with automatic GPT-6 and GPT-4.1 model fallback; configurable with `OPENAI_MODEL`)
 - TMDB
 - Media3 ExoPlayer
 - TorrentStream-Android
@@ -92,4 +92,4 @@ Current code is authoritative whenever an older document or Git history conflict
 
 ## Current Verification
 
-On 2026-10-11, both debug flavors compiled and both flavor unit-test tasks passed. Playback was reported working on-device; no new automated ADB playback test was performed.
+On 2026-10-11, both debug flavors compiled and both flavor unit-test tasks passed after the Design Features 2 updates. Playback was reported working on-device; no new automated ADB playback test was performed.

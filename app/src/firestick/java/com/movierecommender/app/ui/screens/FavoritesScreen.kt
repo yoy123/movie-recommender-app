@@ -30,6 +30,9 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import com.movierecommender.app.data.model.WatchOption
+import kotlinx.coroutines.CancellationException
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -44,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.movierecommender.app.data.model.Movie
+import com.movierecommender.app.data.model.TvShow
+import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.ui.leanback.LeanbackActionButton
 import com.movierecommender.app.ui.leanback.LeanbackTopBar
 import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
@@ -54,33 +59,76 @@ import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
 fun FavoritesScreen(
     viewModel: MovieViewModel,
     onBackClick: () -> Unit,
-    onGenerateRecommendations: () -> Unit = {}
+    onGenerateRecommendations: () -> Unit = {},
+    onWatchNow: (String, String) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val keyboardController = LocalSoftwareKeyboardController.current
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var activeFavorite by remember { mutableStateOf<Movie?>(null) }
+    var activeTvFavorite by remember { mutableStateOf<TvShow?>(null) }
+    var watchTvFavorite by remember { mutableStateOf<TvShow?>(null) }
+    var tvWatchOptions by remember { mutableStateOf<List<WatchOption>>(emptyList()) }
+    var isLoadingTvOptions by remember { mutableStateOf(false) }
+    var watchFavorite by remember { mutableStateOf<Movie?>(null) }
+    var watchOptions by remember { mutableStateOf<List<WatchOption>>(emptyList()) }
+    var isLoadingWatchOptions by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
-    val hasSelections = uiState.selectedMovies.isNotEmpty()
+    LaunchedEffect(watchFavorite) {
+        val movie = watchFavorite ?: return@LaunchedEffect
+        watchOptions = emptyList()
+        isLoadingWatchOptions = true
+        try {
+            val budget = viewModel.safeCacheBudgetMb(context)
+            viewModel.getMovieWatchOptionsUpdates(movie.id, movie.title, movie.releaseDate?.take(4), budget)
+                .collect { state ->
+                    watchOptions = state.options
+                    isLoadingWatchOptions = state.isLoading
+                }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            android.util.Log.w("FavoritesScreen", "Watch options lookup failed", error)
+        } finally {
+            isLoadingWatchOptions = false
+        }
+    }
+
+    val hasSelections = uiState.selectedMovies.isNotEmpty() || uiState.selectedTvShows.isNotEmpty()
     
     Scaffold(
         topBar = {
             LeanbackTopBar(
                 title = "${uiState.userName}'s Favorites",
                 subtitle = if (hasSelections) {
-                    "${uiState.selectedMovies.size} picks ready for recommendations"
+                    "${uiState.selectedMovies.size + uiState.selectedTvShows.size} picks ready for recommendations"
                 } else {
                     "Save titles here before starting analysis"
                 },
                 onBackClick = onBackClick,
                 actions = {
-                    if (hasSelections) {
+                    if (uiState.selectedMovies.isNotEmpty()) {
                         LeanbackActionButton(
                             icon = Icons.Default.Check,
-                            label = "Analyze",
+                            label = "Recommend Movies",
                             onClick = {
+                                viewModel.setContentMode(ContentMode.MOVIES)
                                 viewModel.generateRecommendations()
+                                onGenerateRecommendations()
+                            },
+                            emphasized = true
+                        )
+                    }
+                    if (uiState.selectedTvShows.isNotEmpty()) {
+                        LeanbackActionButton(
+                            icon = Icons.Default.Check,
+                            label = "Recommend TV",
+                            onClick = {
+                                viewModel.setContentMode(ContentMode.TV_SHOWS)
+                                viewModel.generateTvRecommendations()
                                 onGenerateRecommendations()
                             },
                             emphasized = true
@@ -195,7 +243,7 @@ fun FavoritesScreen(
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text(
-                                text = "${uiState.selectedMovies.size} selected for recommendations",
+                                text = "${uiState.selectedMovies.size + uiState.selectedTvShows.size} selected for recommendations",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -203,9 +251,9 @@ fun FavoritesScreen(
                 }
                 
                 // Favorites Section
-                if (uiState.favoriteMovies.size > 0) {
+                if (uiState.favoriteMovies.isNotEmpty() || uiState.favoriteTvShows.isNotEmpty()) {
                     Text(
-                        text = "Your Favorites (${uiState.favoriteMovies.size})",
+                        text = "Your Favorites (${uiState.favoriteMovies.size + uiState.favoriteTvShows.size})",
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(horizontal = 48.dp, vertical = 8.dp)
                     )
@@ -226,14 +274,46 @@ fun FavoritesScreen(
                             FavoriteMovieCard(
                                 movie = movie,
                                 isSelected = uiState.selectedMovies.any { selected: Movie -> selected.id == movie.id },
-                                onRemove = { viewModel.removeFromFavorites(movie.id) },
+                                onOpenActions = { activeFavorite = movie },
                                 onToggleSelection = { viewModel.toggleMovieSelection(movie) }
                             )
+                        }
+                        items(uiState.favoriteTvShows, key = { "tv_" + it.id }) { show ->
+                            Card(
+                                onClick = { activeTvFavorite = show },
+                                modifier = Modifier.fillMaxWidth().height(280.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                            ) {
+                                Box(Modifier.fillMaxSize()) {
+                                    AsyncImage(
+                                        model = show.posterPath?.let { "https://image.tmdb.org/t/p/w500" + it },
+                                        contentDescription = show.name,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    IconButton(
+                                        onClick = { viewModel.toggleTvShowSelection(show) },
+                                        modifier = Modifier.align(Alignment.TopEnd)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = "Select TV show for recommendations",
+                                            tint = androidx.compose.ui.graphics.Color.White
+                                        )
+                                    }
+                                    Surface(
+                                        color = androidx.compose.ui.graphics.Color(0xD0000000),
+                                        modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth()
+                                    ) {
+                                        Text(show.name, modifier = Modifier.padding(8.dp), color = androidx.compose.ui.graphics.Color.White)
+                                    }
+                                }
+                            }
                         }
                     }
                 } else {
                     Text(
-                        text = "No favorites yet. Search and add movies!",
+                        text = "No favorites yet. Search and add movies and TV shows!",
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
@@ -299,6 +379,91 @@ fun FavoritesScreen(
         }
     }
     
+    activeFavorite?.let { movie ->
+        AlertDialog(
+            onDismissRequest = { activeFavorite = null },
+            title = { Text(movie.title) },
+            text = {
+                Column {
+                    TextButton(onClick = {
+                        activeFavorite = null
+                        watchFavorite = movie
+                    }) { Text("Watch Options") }
+                    TextButton(onClick = {
+                        viewModel.removeFromFavorites(movie.id)
+                        activeFavorite = null
+                    }) { Text("Delete from Favorites") }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { activeFavorite = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    watchFavorite?.let { movie ->
+        WatchOptionsDialog(
+            title = movie.title,
+            options = watchOptions,
+            isLoading = isLoadingWatchOptions,
+            onDismiss = { watchFavorite = null },
+            onTorrentSelected = { magnet ->
+                watchFavorite = null
+                onWatchNow(movie.title, magnet)
+            }
+        )
+    }
+
+    activeTvFavorite?.let { show ->
+        AlertDialog(
+            onDismissRequest = { activeTvFavorite = null },
+            title = { Text(show.name) },
+            text = {
+                Column {
+                    TextButton(onClick = {
+                        activeTvFavorite = null
+                        watchTvFavorite = show
+                    }) { Text("Watch Options") }
+                    TextButton(onClick = {
+                        viewModel.removeTvShowFromFavorites(show.id)
+                        activeTvFavorite = null
+                    }) { Text("Delete from Favorites") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { activeTvFavorite = null }) { Text("Cancel") } }
+        )
+    }
+
+    LaunchedEffect(watchTvFavorite) {
+        val show = watchTvFavorite ?: return@LaunchedEffect
+        tvWatchOptions = emptyList()
+        isLoadingTvOptions = true
+        try {
+            tvWatchOptions = viewModel.getTvShowWatchOptions(
+                show.id, show.name, show.firstAirDate?.take(4)
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            android.util.Log.w("FavoritesScreen", "TV watch options lookup failed", error)
+        } finally {
+            isLoadingTvOptions = false
+        }
+    }
+
+    watchTvFavorite?.let { show ->
+        WatchOptionsDialog(
+            title = show.name,
+            options = tvWatchOptions,
+            isLoading = isLoadingTvOptions,
+            onDismiss = { watchTvFavorite = null },
+            onTorrentSelected = { magnet ->
+                watchTvFavorite = null
+                onWatchNow(show.name, magnet)
+            }
+        )
+    }
+
     // Settings Dialog
     if (showSettingsDialog) {
         PreferenceSettingsDialog(
@@ -347,11 +512,11 @@ fun FavoritesScreen(
 fun FavoriteMovieCard(
     movie: Movie,
     isSelected: Boolean,
-    onRemove: () -> Unit,
+    onOpenActions: () -> Unit,
     onToggleSelection: () -> Unit
 ) {
     Card(
-        onClick = onToggleSelection,
+        onClick = onOpenActions,
         modifier = Modifier
             .fillMaxWidth()
             .height(280.dp),
@@ -375,7 +540,7 @@ fun FavoriteMovieCard(
 
             // Heart icon (favorites) - top left - ALWAYS VISIBLE
             IconButton(
-                onClick = onRemove,
+                onClick = onOpenActions,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(8.dp)
@@ -383,7 +548,7 @@ fun FavoriteMovieCard(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Favorite,
-                    contentDescription = "Remove from favorites",
+                    contentDescription = "Favorite actions",
                     tint = androidx.compose.ui.graphics.Color(0xFFE53935),
                     modifier = Modifier.size(32.dp)
                 )

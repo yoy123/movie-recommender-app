@@ -31,6 +31,7 @@ data class MovieUiState(
     val recommendedMovies: List<Movie> = emptyList(),
     val recommendedTvShows: List<TvShow> = emptyList(), // Recommended TV shows
     val favoriteMovies: List<Movie> = emptyList(),
+    val favoriteTvShows: List<TvShow> = emptyList(),
     val recommendationText: String? = null,
     val recommendationSource: RecommendationSource? = null,
     val recommendationFallbackNotice: String? = null,
@@ -90,6 +91,11 @@ class MovieViewModel(
     }
 
     private fun observeSettings() {
+        viewModelScope.launch {
+            settings.favoriteTvShows.collect { shows ->
+                _uiState.value = _uiState.value.copy(favoriteTvShows = shows)
+            }
+        }
         viewModelScope.launch {
             settings.userName.collect { _uiState.value = _uiState.value.copy(userName = it) }
         }
@@ -508,6 +514,14 @@ class MovieViewModel(
         }
     }
     
+    fun addTvShowToFavorites(show: TvShow) {
+        viewModelScope.launch { settings.addFavoriteTvShow(show) }
+    }
+
+    fun removeTvShowFromFavorites(showId: Int) {
+        viewModelScope.launch { settings.removeFavoriteTvShow(showId) }
+    }
+
     fun clearTvShowSelections() {
         _uiState.value = _uiState.value.copy(selectedTvShows = emptyList())
     }
@@ -549,7 +563,7 @@ class MovieViewModel(
                 useInternationalPreference = state.useInternationalPreference,
                 experimentalPreference = state.experimentalPreference,
                 useExperimentalPreference = state.useExperimentalPreference,
-                additionalExcludedTitles = (additionalExcludedTitles + sessionRecommendedTitles.toList()).distinct(),
+                additionalExcludedTitles = (additionalExcludedTitles + state.favoriteTvShows.map { it.name } + sessionRecommendedTitles.toList()).distinct(),
                 useLlm = state.llmConsentGiven
             ).collect { resource ->
                 when (resource) {

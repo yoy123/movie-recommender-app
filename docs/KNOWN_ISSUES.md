@@ -100,7 +100,15 @@ Residual risk: no local buffering policy can guarantee uninterrupted playback if
 
 Recommended action: continue device testing with slow and unstable swarms, record startup time and rebuffer rates, and tune the bounded safety factors from evidence.
 
-### 7. Plex infrastructure is unwired
+### 7. Chunk-only torrent playback is not implemented
+
+The current torrent engine requires that the selected video can fit on local storage while retaining 500 MB of free space. Provider selection favors fitting sources before comparing quality and swarm health. If no full file fits, the player declines to start rather than exhaust storage.
+
+Recycling downloaded torrent pieces during playback requires explicit support from the native torrent engine and validation that old pieces are not re-requested, resume remains valid, and seeking still works. That guarantee has not been established, so rolling chunk-only playback is deferred rather than introduced unsafely.
+
+Recommended action: verify a disk-bounded rolling-cache engine on a real low-storage Fire TV, including rewind and resume, before enabling this fallback.
+
+### 8. Plex infrastructure is unwired
 
 `PlexApiService` and seven DataStore settings exist, but no UI/ViewModel/repository path calls the service.
 
@@ -114,11 +122,11 @@ Recommended action: either complete the flow or remove the dormant settings/serv
 
 ### 8. TV state is not persisted consistently
 
-Movies use Room flags; TV selections are held in ViewModel state and sometimes transferred through JSON intent extras.
+Movies use Room flags and saved TV favorites persist in Preferences DataStore, but TV recommendation selections remain in ViewModel state and sometimes travel through JSON extras.
 
-Impact: TV state is more vulnerable to process death and activity recreation.
+Impact: saved TV favorites survive app restarts, but in-progress TV selections remain vulnerable to process death or activity recreation.
 
-Recommended action: add a TV entity/session store or a shared saved-state strategy.
+Recommended action: persist in-progress TV selections using SavedStateHandle or a dedicated session store and add TV favorites persistence tests.
 
 ### 9. Provider crosswalks are never revalidated automatically
 

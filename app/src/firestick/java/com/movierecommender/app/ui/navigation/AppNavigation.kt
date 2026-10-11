@@ -144,6 +144,14 @@ fun AppNavigation(
                 },
                 onGenerateRecommendations = {
                     navController.navigate(Screen.Recommendations.route)
+                },
+                onWatchNow = { title, magnetUrl ->
+                    val encodedTitle = Uri.encode(title)
+                    val encodedMagnet = android.util.Base64.encodeToString(
+                        magnetUrl.toByteArray(),
+                        android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP
+                    )
+                    navController.navigate("streaming/$encodedTitle/$encodedMagnet")
                 }
             )
         }

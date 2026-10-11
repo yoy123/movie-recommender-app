@@ -31,6 +31,9 @@ interface MovieDao {
     @Delete
     suspend fun deleteMovie(movie: Movie)
     
+    @Query("UPDATE movies SET isSelected = 0 WHERE id = :movieId")
+    suspend fun clearMovieSelection(movieId: Int)
+
     @Query("UPDATE movies SET isSelected = 0 WHERE isSelected = 1")
     suspend fun clearSelectedMovies()
     

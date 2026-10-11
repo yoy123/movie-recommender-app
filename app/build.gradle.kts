@@ -37,7 +37,7 @@ android {
         buildConfigField("String", "TMDB_API_KEY", "\"${localProperties.getProperty("TMDB_API_KEY", "")}\"")
         buildConfigField("String", "TMDB_BASE_URL", "\"https://api.themoviedb.org/3/\"")
         buildConfigField("String", "OPENAI_API_KEY", "\"${localProperties.getProperty("OPENAI_API_KEY", "")}\"")
-        val openAiModel = localProperties.getProperty("OPENAI_MODEL", "gpt-4.1")
+        val openAiModel = localProperties.getProperty("OPENAI_MODEL", "gpt-6-astra")
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
         buildConfigField("String", "OPENAI_MODEL", "\"$openAiModel\"")

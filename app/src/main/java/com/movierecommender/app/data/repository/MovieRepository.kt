@@ -1317,18 +1317,27 @@ class MovieRepository(
     }
     
     suspend fun saveSelectedMovie(movie: Movie) {
-        movieDao.insertMovie(movie.copy(isSelected = true, isRecommended = false))
+        // Preserve flags that may have changed since the card's metadata was loaded.
+        val saved = movieDao.getMovieById(movie.id)
+        movieDao.insertMovie(movie.copy(
+            isSelected = true,
+            isRecommended = false,
+            isFavorite = saved?.isFavorite ?: movie.isFavorite
+        ))
     }
-    
+
     suspend fun removeSelectedMovie(movie: Movie) {
-        // Don't delete the movie - just update it to unselected
-        // This preserves favorites and other flags
-        movieDao.insertMovie(movie.copy(isSelected = false, isRecommended = false))
+        // An UPDATE avoids overwriting a favorite that was saved after the card was loaded.
+        movieDao.clearMovieSelection(movie.id)
     }
-    
+
     suspend fun saveRecommendedMovies(movies: List<Movie>) {
         movieDao.clearRecommendedMovies()
-        movieDao.insertMovies(movies.map { it.copy(isRecommended = true, isSelected = false) })
+        val merged = movies.map { movie ->
+            val saved = movieDao.getMovieById(movie.id)
+            movie.copy(isRecommended = true, isSelected = false, isFavorite = saved?.isFavorite ?: movie.isFavorite)
+        }
+        movieDao.insertMovies(merged)
     }
     
     suspend fun clearSelectedMovies() {
@@ -1381,8 +1390,13 @@ class MovieRepository(
     }
     
     suspend fun addToFavorites(movie: Movie) {
-        // First ensure the movie is in the database
-        movieDao.insertMovie(movie.copy(isFavorite = true))
+        // An existing row can carry a selection or recommendation flag. Do not replace it
+        // with a stale TMDB search result and silently clear those flags.
+        if (movieDao.getMovieById(movie.id) != null) {
+            movieDao.addToFavorites(movie.id)
+        } else {
+            movieDao.insertMovie(movie.copy(isFavorite = true))
+        }
     }
     
     suspend fun removeFromFavorites(movieId: Int) {

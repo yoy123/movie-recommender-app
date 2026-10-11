@@ -20,7 +20,7 @@ The former embedded Live TV guide was removed on 2026-07-25 because it depended 
 
 - Movie and TV-show genre browsing and search through TMDB.
 - Selection of 1–5 titles as recommendation inputs.
-- Local favorites collection.
+- Movie favorites in Room and persisted TV-show favorites in DataStore, both with clickable Watch Options / Delete actions.
 - Configurable recommendation preferences:
   - popularity
   - indie emphasis
@@ -70,13 +70,13 @@ flavor-specific MovieViewModel
 - Primary orchestration: `MovieRepository`
 - Reactive state: flavor-specific `MovieViewModel` using `StateFlow`
 - Local database: Room version 3
-- Settings: Preferences DataStore
+- Settings and TV favorites: Preferences DataStore
 
 ## Recommendation Engine
 
 AI is the default primary recommendation engine. The first recommendation request asks only for permission to send selected titles, enabled preferences, and a bounded TMDB candidate list to OpenAI. It does not ask the user to choose an AI or TMDB recommendation style.
 
-Production AI recommendations are bounded to verified TMDB candidates. The repository requires at least 15 safe candidates, calls the configured OpenAI model (`gpt-4.1` by default), validates exactly 15 canonical titles, and rejects generic, duplicated, excluded, malformed, or out-of-candidate output. Model-access failures automatically retry with compatible fallback models before TMDB fallback is used.
+Production AI recommendations are bounded to verified TMDB candidates. The repository requires at least 15 safe candidates, calls the configured OpenAI model (`gpt-6-astra` by default, with GPT-6/GPT-4.1 fallback), validates exactly 15 canonical titles, and rejects generic, duplicated, excluded, malformed, or out-of-candidate output. Model-access failures automatically retry with compatible fallback models before TMDB fallback is used.
 
 TMDB fallback is used when permission is declined, the OpenAI key is unavailable, the candidate pool is too small, the request fails, or validation rejects the response. The recommendation screen displays a **TMDB Fallback (Debug)** dialog with a sanitized reason. AI data permission can later be changed under Settings.
 
@@ -132,13 +132,14 @@ The app does not use destructive migration fallback.
 
 ### DataStore
 
-DataStore currently defines 26 keys covering:
+DataStore currently defines 27 keys covering:
 
 - onboarding and appearance
 - AI consent
 - recommendation preferences
 - database cleanup timestamp
 - Plex connection/library settings
+- saved TV favorites
 
 ### Cleanup
 
@@ -160,6 +161,7 @@ Torrent cache behavior:
 - preserves at least 500 MB of actually available device storage
 - measures allocated filesystem blocks so sparse-file length does not overstate disk use
 - rejects a source that cannot safely fit before starting playback
+- does not currently support rolling chunk-only storage when the entire video cannot fit; adding this requires engine support and device validation
 - retains the active torrent, position, and duration for 60 minutes after accidental player backout
 - continues downloading during the resume window
 - deletes on 60-minute inactivity, root app/task exit, previous-process termination detected at next launch, device reboot, explicit clear, or source switch
@@ -179,7 +181,7 @@ API keys are loaded from untracked `local.properties` into `BuildConfig`.
 
 ## Verification
 
-Verified on 2026-07-25:
+Verified for current changes on 2026-10-11:
 
 ```bash
 ./gradlew \
@@ -191,7 +193,7 @@ Verified on 2026-07-25:
 
 Result: `BUILD SUCCESSFUL`.
 
-Each flavor currently reports 33 tests: 32 executed successfully and one skipped `LlmSmokeTest`. The shared deterministic suite covers recommendation fallback/result policy, Bayesian recommendation ranking, model-specific OpenAI request construction, torrent buffer policy, Torznab parsing/caching, Torrentio/Knaben adapters, magnet file selection, Internet Archive results, and Public Domain Torrents parsing. The opt-in live OpenAI smoke test succeeds with the configured project when enabled. UI, Room migration, repository orchestration, and real-device lifecycle behavior still lack automated coverage.
+Both flavor unit-test suites pass; the live OpenAI `LlmSmokeTest` is skipped by default. The shared deterministic suite covers recommendation fallback/result policy, Bayesian recommendation ranking, model-specific OpenAI request construction, torrent buffer policy, Torznab parsing/caching, Torrentio/Knaben adapters, magnet file selection, Internet Archive results, and Public Domain Torrents parsing. The new GPT-6-first model chain has not been tested against a live OpenAI API account during this update; access and response quality remain to be verified. UI, Room migration, repository orchestration, and real-device lifecycle behavior still lack automated coverage.
 
 ## Current Engineering Risks
 
