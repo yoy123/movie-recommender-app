@@ -125,6 +125,16 @@ class PopcornApiService {
      * dead swarm. Prefer torrents with live seeds/peers, then break ties with a
      * streaming-friendly quality and smaller size.
      */
+    /** Preserve each available encode instead of choosing without a device storage budget. */
+    fun getAvailableTorrents(movie: PopcornMovie): List<TorrentInfo> =
+        movie.torrents?.get("en").orEmpty()
+            .mapNotNull { (quality, torrent) ->
+                torrent.takeIf { it.magnetUrl.isNotBlank() }?.copy(
+                    quality = torrent.quality?.takeIf { it.isNotBlank() } ?: quality,
+                    provider = torrent.provider?.takeIf { it.isNotBlank() } ?: "Popcorn"
+                )
+            }
+
     fun getSmallestTorrent(movie: PopcornMovie): TorrentInfo? {
         val torrents = movie.torrents?.get("en") ?: return null
 

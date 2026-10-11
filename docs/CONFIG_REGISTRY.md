@@ -158,12 +158,15 @@ Favorites are never deleted by orphan cleanup.
 Defined across `TorrentStreamService`, `TorrentBufferPolicy`, and `TorrentCachePolicy`:
 
 - reserved device space: 500 MB
-- minimum protected startup buffer: 256 MB, capped by remaining media bytes
-- peak-rate headroom: 10 minutes
+- minimum protected startup buffer: 64 MB, capped by remaining media bytes
+- maximum protected startup buffer: 256 MB
+- peak-rate headroom: 3 minutes
 - peak bitrate factor: 1.5
 - measured-speed safety factor: 0.65
 - active-session retention after player exit: 60 minutes
-- no-progress failure threshold before playback: 3 minutes
+- metadata retrieval timeout: 60 seconds
+- total per-source startup deadline: 4 minutes
+- initial-piece and adaptive-buffer no-progress threshold: 3 minutes
 - piece-priority lookahead: 15 minutes
 - Media3 minimum/maximum buffers: 60 seconds / 300 seconds
 

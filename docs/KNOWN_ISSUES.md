@@ -1,6 +1,7 @@
 # OpenStream+ Known Issues
 
-**Last verified:** 2026-07-25  
+**Last code review:** 2026-10-11
+
 **Status:** Current active issue inventory
 
 ## Current Summary
@@ -11,7 +12,7 @@ There are no known compile-blocking issues in either debug flavor. The largest r
 
 ### 1. Automated coverage is still narrow
 
-Each flavor currently executes 32 deterministic tests successfully and skips the opt-in `LlmSmokeTest` by default. Coverage includes recommendation policy/request construction, torrent buffer policy, and torrent-source parsing, but still lacks broad UI and repository integration coverage.
+Both flavor unit-test suites passed on 2026-10-11 and skip the opt-in `LlmSmokeTest` by default. Coverage includes recommendation policy/request construction, torrent buffer policy, and torrent-source parsing, but still lacks broad UI and repository integration coverage.
 
 Impact:
 
@@ -93,11 +94,11 @@ Recommended action: extract shared state/reducer/use-case code while preserving 
 
 ### 6. Torrent playback still depends on external swarm and network stability
 
-The service now rejects sources that cannot fit while preserving 500 MB of device storage and waits for a conservative contiguous buffer before playback. It also prioritizes missing pieces ahead of the player and retains interrupted sessions for 60 minutes.
+The service rejects sources that cannot fit while preserving 500 MB of device storage. It starts playback after the native torrent engine's initial preparation (not a second 64–256 MB prebuffer), then uses a piece-aware reader. It also prioritizes missing pieces ahead of the player and retains interrupted sessions for 60 minutes.
 
 Residual risk: no local buffering policy can guarantee uninterrupted playback if every peer disappears, the network fails, the process is killed during active playback, or the media file is malformed.
 
-Recommended action: continue device testing with slow and unstable swarms, record actual rebuffer rates, and tune the safety factors from evidence rather than reducing the startup gate speculatively.
+Recommended action: continue device testing with slow and unstable swarms, record startup time and rebuffer rates, and tune the bounded safety factors from evidence.
 
 ### 7. Plex infrastructure is unwired
 

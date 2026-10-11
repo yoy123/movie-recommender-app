@@ -10,30 +10,34 @@ import com.movierecommender.app.data.remote.TorrentInfo
 internal object MovieTorrentSelectionPolicy {
     private const val BYTES_PER_MB = 1024L * 1024L
     private val SIZE_REGEX =
-        Regex("""([0-9]+(?:\.[0-9]+)?)\s*(tb|gb|mb|kb|b)""", RegexOption.IGNORE_CASE)
+        Regex("""([0-9]+(?:\.[0-9]+)?)\s*(tib|gib|mib|kib|tb|gb|mb|kb|bytes?|b)\b""", RegexOption.IGNORE_CASE)
 
     fun parseSizeBytes(size: String?): Long? {
-        val text = size?.trim().orEmpty()
+        val text = size?.replace(",", "")?.trim().orEmpty()
         if (text.isEmpty()) return null
         // A bare byte count (e.g. a raw "filesize") is accepted directly.
         text.toLongOrNull()?.let { return if (it > 0) it else null }
         val match = SIZE_REGEX.find(text) ?: return null
         val value = match.groupValues[1].toDoubleOrNull() ?: return null
         val multiplier = when (match.groupValues[2].lowercase()) {
-            "tb" -> 1024.0 * 1024.0 * 1024.0 * 1024.0
-            "gb" -> 1024.0 * 1024.0 * 1024.0
-            "mb" -> 1024.0 * 1024.0
-            "kb" -> 1024.0
+            "tb", "tib" -> 1024.0 * 1024.0 * 1024.0 * 1024.0
+            "gb", "gib" -> 1024.0 * 1024.0 * 1024.0
+            "mb", "mib" -> 1024.0 * 1024.0
+            "kb", "kib" -> 1024.0
             else -> 1.0
         }
         val bytes = (value * multiplier).toLong()
         return if (bytes > 0) bytes else null
     }
 
+    private fun sourceSizeBytes(torrent: TorrentInfo): Long? =
+        parseSizeBytes(torrent.size) ?: parseSizeBytes(torrent.filesize)
+
     /** A known budget with an unknown source size counts as "does not fit" so known-fitting wins. */
     fun fitsBudget(torrent: TorrentInfo, safeCacheBudgetMb: Int?): Boolean {
-        if (safeCacheBudgetMb == null || safeCacheBudgetMb <= 0) return true
-        val bytes = parseSizeBytes(torrent.size ?: torrent.filesize) ?: return false
+        if (safeCacheBudgetMb == null) return true
+        if (safeCacheBudgetMb <= 0) return false
+        val bytes = sourceSizeBytes(torrent) ?: return false
         return bytes <= safeCacheBudgetMb.toLong() * BYTES_PER_MB
     }
 
@@ -52,8 +56,8 @@ internal object MovieTorrentSelectionPolicy {
             return if (score(candidate) > score(current)) candidate else current
         }
         // Neither fits: prefer the smallest known size to minimise the overage, else higher score.
-        val currentSize = parseSizeBytes(current.size ?: current.filesize)
-        val candidateSize = parseSizeBytes(candidate.size ?: candidate.filesize)
+        val currentSize = sourceSizeBytes(current)
+        val candidateSize = sourceSizeBytes(candidate)
         return when {
             currentSize != null && candidateSize != null ->
                 if (candidateSize < currentSize) candidate else current
@@ -67,11 +71,25 @@ internal object MovieTorrentSelectionPolicy {
         candidates: List<TorrentInfo>,
         safeCacheBudgetMb: Int?,
         score: (TorrentInfo) -> Int
-    ): TorrentInfo? {
-        var best: TorrentInfo? = null
-        for (candidate in candidates) {
-            best = preferred(best, candidate, safeCacheBudgetMb, score)
+    ): TorrentInfo? = rank(candidates, safeCacheBudgetMb, score).firstOrNull()
+
+    /** Returns every candidate in the same order [selectBest] would choose them successively. */
+    fun rank(
+        candidates: List<TorrentInfo>,
+        safeCacheBudgetMb: Int?,
+        score: (TorrentInfo) -> Int
+    ): List<TorrentInfo> {
+        val remaining = candidates.distinctBy { it.magnetUrl }.toMutableList()
+        return buildList {
+            while (remaining.isNotEmpty()) {
+                var best: TorrentInfo? = null
+                for (candidate in remaining) {
+                    best = preferred(best, candidate, safeCacheBudgetMb, score)
+                }
+                val selected = best ?: break
+                add(selected)
+                remaining.remove(selected)
+            }
         }
-        return best
     }
 }

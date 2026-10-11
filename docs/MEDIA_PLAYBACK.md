@@ -1,6 +1,6 @@
 # OpenStream+ Media Playback
 
-**Last verified:** 2026-07-25
+**Last code review:** 2026-10-11 (user reports on-device playback fixed; no new automated ADB verification)
 
 ## Playback Paths
 
@@ -17,11 +17,12 @@ The embedded Firestick Live TV/HLS feature was removed on 2026-07-25.
 ```text
 Title or episode
    -> MovieRepository torrent lookup
-   -> TorrentInfo / EpisodeTorrentInfo
-   -> magnet URL
+   -> ranked TorrentInfo / EpisodeTorrentInfo queue
+   -> selected magnet URL
    -> flavor-specific StreamingPlayerScreen
    -> TorrentStreamService
-   -> contiguous no-stall startup gate
+   -> automatic next-source recovery when startup fails
+   -> initial torrent-engine preparation
    -> local torrent video file
    -> Media3 ExoPlayer
 ```
@@ -31,6 +32,7 @@ Title or episode
 `TorrentStreamService` is an unexported foreground service with the `mediaPlayback` service type. It owns one active torrent session and is responsible for:
 
 - initializing TorrentStream-Android
+- advancing through ranked torrent candidates after recoverable startup failures
 - reusing cached pieces for the same magnet
 - tracking download progress, speed, peers, and allocated disk usage
 - reading or accepting the media duration
@@ -41,26 +43,27 @@ Title or episode
 
 The service now calls the library's real `Torrent.pause()` and `Torrent.resume()` methods. The previous reflective lookup for nonexistent `pauseStream`/`resumeStream` methods was removed.
 
-## No-Stall Startup Gate
+TorrentStream posts its callbacks to Android's main thread, but native lifecycle calls can block
+inside libtorrent. The service therefore serializes start, stop, preparation, and piece queries on
+an I/O dispatcher so source switches cannot freeze input dispatch and trigger a Fire TV ANR.
 
-Playback no longer begins after a fixed byte count or arbitrary three-minute startup deadline.
+Metadata retrieval retains a 60-second timeout while a magnet is connecting without usable
+metadata. Initial torrent-piece preparation has a **three-minute idle-only watchdog**:
+downloaded bytes or increasing preparation-buffer progress reset the countdown. There is
+**no four-minute total startup deadline**, so an active download is never rejected solely
+because it has been downloading for longer than four minutes. Dead or stalled sources advance
+to the next untried ranked candidate.
 
-Before exposing the file to Media3, the service waits for a contiguous region beginning at the requested start or resume position. The required region is calculated from:
+## Single-Stage Startup Buffer
 
-- total video size
-- known or extracted duration
-- resume position
-- a conservative lower-quartile download speed
-- a 35% speed safety discount
-- a 1.5x peak-bitrate allowance
-- ten minutes of protected peak-rate headroom
-- the projected download deficit over the remaining runtime
+TorrentStream-Android prepares an initial 15 MiB buffer and reports the preparation percentage.
+OpenStream+ displays that **single buffering screen**, then hands the selected file to Media3 as
+soon as the library emits `onStreamReady`. There is **no additional 64–256 MiB prebuffer gate**.
 
-The target can increase when the swarm slows down, but a temporary speed spike cannot reduce it. On a sufficiently slow torrent, the gate may require the entire remaining video before starting. This trades startup delay for a materially lower chance of buffering during playback.
-
-If no download progress occurs for three minutes, the service stops waiting and returns an actionable source error rather than starting a stream that is expected to stall.
-
-No implementation can guarantee uninterrupted playback if the network fails, every peer disappears, the device loses power, or the media file is malformed. Those remain external failure conditions.
+Media3's piece-aware data source verifies individual downloaded torrent pieces before reading them
+and gives missing seek/playback pieces priority. This means playback can start much sooner, but
+slow swarms can still rebuffer during viewing. A bounded reader wait and source-failover path
+handle sources that cease to deliver needed pieces.
 
 ## Piece Prioritization
 
@@ -82,7 +85,7 @@ Both flavors use Media3 ExoPlayer with:
 - startup requirement: 5 seconds
 - post-rebuffer requirement: 30 seconds
 
-Media3 buffering is a secondary local-file buffer. The torrent service's contiguous startup gate remains the primary protection against mid-playback stalls.
+Media3 buffers data read from the verified local torrent pieces. There is no second contiguous startup gate. Torrent piece prioritization and the piece-aware reader reduce mid-playback stalls, but slow or unavailable peers can still cause rebuffering.
 
 ## Cache Capacity
 
@@ -148,7 +151,7 @@ External provider launch remains best-effort because Fire TV applications differ
 ## Known Limitations
 
 - Network or peer loss can still interrupt an active stream.
-- A slow source may require a long initial wait or the entire remaining file.
+- A slow source may still require a noticeable initial wait or rebuffer during playback.
 - Resume precision depends on reliable duration and container metadata.
 - No completed subtitle-selection, picture-in-picture, or playback-speed system is documented.
 - Media3 remains pinned at 1.2.1.
@@ -157,7 +160,7 @@ External provider launch remains best-effort because Fire TV applications differ
 ## Manual Playback Checklist
 
 1. Start a source with live peers and verify the foreground notification.
-2. Verify playback remains in the prebuffer screen until the contiguous gate is satisfied.
+2. Verify there is exactly one startup Buffering screen and playback opens when initial pieces are ready.
 3. Play through a high-bitrate section without mid-playback buffering.
 4. Seek forward and verify missing pieces are prioritized before recovery.
 5. Back out of the player and immediately return; verify position and cache reuse.
@@ -167,4 +170,4 @@ External provider launch remains best-effort because Fire TV applications differ
 9. Restart the Firestick and verify deletion.
 10. Select a source larger than the safe allowance and verify it is rejected before playback.
 11. Repeat the flow with a TV episode.
-12. Test a dead torrent and confirm the three-minute no-progress error.
+12. Test a dead torrent and confirm the three-minute no-progress error. Separately, verify a slowly but continuously progressing torrent is still downloading after four minutes.

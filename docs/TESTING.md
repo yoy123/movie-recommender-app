@@ -1,6 +1,6 @@
 # OpenStream+ Testing
 
-**Last verified:** 2026-07-28
+**Last verified:** 2026-09-26
 
 ## Verified Commands
 
@@ -20,10 +20,12 @@ Result: `BUILD SUCCESSFUL`.
 The shared JVM test suite runs once for each flavor.
 
 | Test class | Tests per flavor | Result |
-|---|---:|---|
+| --- | ---: | --- |
 | `InternetArchiveServiceTest` | 3 | pass |
 | `KnabenApiServiceTest` | 2 | pass |
 | `LlmSmokeTest` | 1 | skipped unless explicitly enabled |
+| `MovieTorrentSelectionPolicyTest` | 8 | pass |
+| `MovieTorrentSourceCollectorTest` | 2 | pass |
 | `OpenAiRequestFactoryTest` | 5 | pass |
 | `PirateBayEpisodeParserTest` | 1 | pass |
 | `PublicDomainTorrentsServiceTest` | 3 | pass |
@@ -31,30 +33,41 @@ The shared JVM test suite runs once for each flavor.
 | `RecommendationResultTest` | 3 | pass |
 | `TorrentBufferPolicyTest` | 5 | pass |
 | `TorrentMagnetUtilsTest` | 2 | pass |
+| `TorrentSourceRegistryTest` | 4 | pass |
 | `TorrentioServiceTest` | 2 | pass |
 | `TorznabServiceTest` | 4 | pass |
 
 Per flavor:
 
-- total discovered: 33
-- executed: 32
+- total discovered: 47
+- executed: 46
 - skipped: 1
 - failures: 0
 - errors: 0
 
-Across both variants, Gradle records 64 successful deterministic test executions and two skipped smoke-test executions. Recommendation tests cover typed fallback notices, Bayesian quality ranking, and model-specific OpenAI request construction. The opt-in smoke test now performs a real bounded candidate-rerank request and fails on API or output-validation errors. Repository orchestration, consent UI, and fallback dialogs still require broader integration/UI coverage.
+Across both variants, Gradle records 92 successful deterministic test executions and two skipped smoke-test executions. Recommendation tests cover typed fallback notices, Bayesian quality ranking, and model-specific OpenAI request construction. Torrent tests cover storage-aware ranking, ordered source registration, magnet deduplication, and file-selection identity. The opt-in smoke test performs a real bounded candidate-rerank request and fails on API or output-validation errors. Repository orchestration, consent UI, and fallback dialogs still require broader integration/UI coverage.
 
 ## Torrent Buffer Policy Coverage
 
 `TorrentBufferPolicyTest` verifies:
 
 1. The cache budget preserves the 500 MB device-storage reserve while counting existing allocated cache.
-2. A sufficiently slow torrent requires the full remaining movie before playback.
+2. A sufficiently slow torrent is capped at the maximum startup buffer instead of requiring the full remaining movie.
 3. Resume buffering does not require bytes behind the saved position.
 4. A fast torrent uses substantial peak-rate headroom without requiring the whole movie.
 5. Partial-megabyte source sizes round upward for storage admission.
 
 The Android-specific alarm, boot receiver, foreground-service lifecycle, task-removal behavior, and real torrent-piece availability still require instrumentation or device testing.
+
+## Torrent Source Failover Coverage
+
+`MovieTorrentSelectionPolicyTest` and `TorrentSourceRegistryTest` verify:
+
+1. Every unique candidate is retained in storage-aware quality order.
+2. Playback begins with the explicitly selected source before ranked alternatives.
+3. Tracker-only magnet variants are deduplicated by info-hash.
+4. Different BEP-53 selected-file indexes remain distinct episode sources.
+5. An unregistered URL remains a valid single-source playback queue.
 
 ## Remaining Automated Gaps
 
@@ -122,7 +135,10 @@ Firestick:
 - [ ] Confirm the player remains on the prebuffer screen until the contiguous gate completes.
 - [ ] Verify a high-bitrate scene plays without a mid-playback stall.
 - [ ] Verify a slow swarm waits longer rather than starting prematurely.
+- [ ] Verify metadata that does not load within 60 seconds returns an actionable error.
 - [ ] Verify a torrent with no progress for three minutes returns an actionable error.
+- [ ] Verify a source that never becomes playable switches after four total minutes despite trickle progress.
+- [ ] Close Watch Options immediately after selecting the first result and verify slower source discovery continues for failover.
 - [ ] Verify an oversized source is rejected while preserving 500 MB of device storage.
 - [ ] Confirm sparse-file logical size does not cause a false cache-full condition.
 

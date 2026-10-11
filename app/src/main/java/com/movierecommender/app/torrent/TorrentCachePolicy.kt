@@ -5,7 +5,9 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.StatFs
+import android.os.storage.StorageManager
 import android.os.SystemClock
 import android.provider.Settings
 import android.system.Os
@@ -35,21 +37,49 @@ object TorrentCachePolicy {
     private const val KEY_BOOT_COUNT = "boot_count"
     private const val KEY_PROCESS_ACTIVE = "process_active"
     private const val EXPIRY_REQUEST_CODE = 9102
+    private const val STORAGE_ROOT = "/storage"
 
     @Volatile
     private var initializedThisProcess = false
 
-    fun cacheDirectory(context: Context): File =
-        cacheDirectories(context)
-            .maxByOrNull(::safeCacheLimitMb)
-            ?: File(context.applicationContext.cacheDir, CACHE_DIRECTORY_NAME)
+    @Volatile
+    private var lastCacheSelectionSnapshot: String? = null
+
+    fun cacheDirectory(context: Context): File {
+        val appContext = context.applicationContext
+        val internalFallback = File(appContext.cacheDir, CACHE_DIRECTORY_NAME)
+        val evaluated = cacheDirectories(appContext)
+            .map { candidate -> candidate to safeCacheLimitMb(candidate) }
+
+        val selected = evaluated
+            .maxByOrNull { (_, limitMb) -> limitMb }
+            ?.takeIf { (_, limitMb) -> limitMb >= 0 }
+            ?.first
+            ?: internalFallback
+
+        maybeLogCacheSelection(selected, evaluated)
+        return selected
+    }
 
     fun cacheDirectories(context: Context): List<File> {
         val appContext = context.applicationContext
-        val external = appContext.getExternalFilesDirs(null)
+        val externalFiles = appContext.getExternalFilesDirs(null)
             .filterNotNull()
             .map { File(it, CACHE_DIRECTORY_NAME) }
-        return (external + File(appContext.cacheDir, CACHE_DIRECTORY_NAME))
+
+        val externalCache = appContext.externalCacheDirs
+            .filterNotNull()
+            .map { File(it, CACHE_DIRECTORY_NAME) }
+
+        val storageRoots = storageRoots(appContext)
+        val packageStorageCandidates = storageRoots.flatMap { root ->
+            listOf(
+                File(root, "Android/data/${appContext.packageName}/files/$CACHE_DIRECTORY_NAME"),
+                File(root, "Android/data/${appContext.packageName}/cache/$CACHE_DIRECTORY_NAME")
+            )
+        }
+
+        return (externalFiles + externalCache + packageStorageCandidates + File(appContext.cacheDir, CACHE_DIRECTORY_NAME))
             .distinctBy { it.absolutePath }
     }
 
@@ -63,6 +93,7 @@ object TorrentCachePolicy {
         initializedThisProcess = true
 
         val appContext = context.applicationContext
+        cacheDirectory(appContext)
         val prefs = appContext.getSharedPreferences(SESSION_PREFS, Context.MODE_PRIVATE)
         val currentBootCount = readBootCount(appContext)
         val storedBootCount = prefs.getInt(KEY_BOOT_COUNT, Int.MIN_VALUE)
@@ -84,6 +115,7 @@ object TorrentCachePolicy {
             .apply()
     }
 
+    @Synchronized
     fun markActive(context: Context, magnetHash: Int) {
         val appContext = context.applicationContext
         cancelExpiry(appContext)
@@ -96,6 +128,7 @@ object TorrentCachePolicy {
             .apply()
     }
 
+    @Synchronized
     fun retainForResume(context: Context, magnetHash: Int): Long {
         val appContext = context.applicationContext
         val retainUntil = System.currentTimeMillis() + RETENTION_MS
@@ -110,6 +143,7 @@ object TorrentCachePolicy {
         return retainUntil
     }
 
+    @Synchronized
     fun isExpired(context: Context, nowMs: Long = System.currentTimeMillis()): Boolean {
         val retainUntil = context.applicationContext
             .getSharedPreferences(SESSION_PREFS, Context.MODE_PRIVATE)
@@ -117,7 +151,20 @@ object TorrentCachePolicy {
         return retainUntil > 0L && nowMs >= retainUntil
     }
 
-    fun clearCacheAndPlayback(context: Context, reason: String) {
+    /** Check and delete atomically with markActive so an old alarm cannot erase resumed playback. */
+    @Synchronized
+    fun clearExpiredCache(context: Context) {
+        if (isExpired(context)) {
+            clearCacheAndPlayback(context, "60-minute inactivity alarm")
+        }
+    }
+
+    @Synchronized
+    fun clearCacheAndPlayback(
+        context: Context,
+        reason: String,
+        clearPlaybackState: Boolean = true
+    ) {
         val appContext = context.applicationContext
         cancelExpiry(appContext)
         val sessionPrefs = appContext.getSharedPreferences(SESSION_PREFS, Context.MODE_PRIVATE)
@@ -129,7 +176,7 @@ object TorrentCachePolicy {
             }
         }
 
-        if (activeHash != Int.MIN_VALUE) {
+        if (clearPlaybackState && activeHash != Int.MIN_VALUE) {
             appContext.getSharedPreferences(PLAYBACK_PREFS, Context.MODE_PRIVATE)
                 .edit()
                 .remove("position_$activeHash")
@@ -182,6 +229,41 @@ object TorrentCachePolicy {
             }
     }
 
+    private fun storageRoots(context: Context): List<File> {
+        val volumeRoots = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            runCatching {
+                context.getSystemService(StorageManager::class.java)
+                    ?.storageVolumes
+                    ?.mapNotNull { volume -> volume.directory }
+                    .orEmpty()
+            }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
+
+        val fallbackRoots = runCatching {
+            File(STORAGE_ROOT).listFiles()
+                ?.filter { file -> file.isDirectory && file.name != "self" }
+                .orEmpty()
+        }.getOrDefault(emptyList())
+
+        return (volumeRoots + fallbackRoots)
+            .distinctBy { it.absolutePath }
+    }
+
+    private fun maybeLogCacheSelection(selected: File, evaluated: List<Pair<File, Int>>) {
+        val snapshot = evaluated
+            .sortedByDescending { (_, limitMb) -> limitMb }
+            .joinToString(separator = " | ") { (path, limitMb) ->
+                "${path.absolutePath}=${limitMb}MB"
+            }
+        if (snapshot == lastCacheSelectionSnapshot) return
+
+        lastCacheSelectionSnapshot = snapshot
+        Log.i(TAG, "Torrent cache selected: ${selected.absolutePath}")
+        Log.i(TAG, "Torrent cache candidates: $snapshot")
+    }
+
     private const val BYTES_PER_MB = 1024L * 1024L
     private fun scheduleExpiry(context: Context) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
@@ -223,12 +305,10 @@ object TorrentCachePolicy {
 class TorrentCacheExpiryReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action != TorrentCachePolicy.ACTION_EXPIRE_CACHE) return
-        if (!TorrentCachePolicy.isExpired(context)) return
-
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                TorrentCachePolicy.clearCacheAndPlayback(context, "60-minute inactivity alarm")
+                TorrentCachePolicy.clearExpiredCache(context)
             } finally {
                 pendingResult.finish()
             }

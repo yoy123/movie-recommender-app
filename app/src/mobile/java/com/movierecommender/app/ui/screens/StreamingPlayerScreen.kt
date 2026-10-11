@@ -30,6 +30,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.common.PlaybackException
+import android.net.Uri
+import java.io.File
+import com.movierecommender.app.torrent.TorrentPieceAwareDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.ui.PlayerView
 import com.movierecommender.app.torrent.TorrentStreamService
@@ -51,6 +56,8 @@ fun StreamingPlayerScreen(
     var isBound by remember { mutableStateOf(false) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var isPlayerReady by remember { mutableStateOf(false) }
+    var playingSourceId by remember { mutableLongStateOf(-1L) }
+    var resumeAfterLifecyclePause by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
@@ -88,7 +95,7 @@ fun StreamingPlayerScreen(
     }
     
     // Service connection
-    val serviceConnection = remember {
+    val serviceConnection = remember(magnetUrl) {
         object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
                 val serviceBinder = binder as TorrentStreamService.TorrentBinder
@@ -107,17 +114,15 @@ fun StreamingPlayerScreen(
     }
     
     // Bind to service on composition
-    DisposableEffect(Unit) {
+    DisposableEffect(magnetUrl) {
         val intent = TorrentStreamService.getIntent(context)
-        context.startService(intent)
-        context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+        androidx.core.content.ContextCompat.startForegroundService(context, intent)
+        val bindingCreated = context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         
         onDispose {
             retainPlaybackSession()
-            if (isBound) {
-                context.unbindService(serviceConnection)
-                isBound = false
-            }
+            if (bindingCreated) context.unbindService(serviceConnection)
+            isBound = false
             exoPlayer?.release()
             exoPlayer = null
         }
@@ -128,8 +133,27 @@ fun StreamingPlayerScreen(
     
     // Initialize ExoPlayer when stream is ready
     LaunchedEffect(streamState) {
-        if (streamState is TorrentStreamState.Ready && exoPlayer == null) {
+        if (streamState is TorrentStreamState.SwitchingSource ||
+            streamState is TorrentStreamState.Error ||
+            (streamState is TorrentStreamState.Connecting && playingSourceId >= 0L)
+        ) {
+            exoPlayer?.release()
+            exoPlayer = null
+            isPlayerReady = false
+        }
+        if (streamState is TorrentStreamState.Ready &&
+            (exoPlayer == null || playingSourceId != streamState.sourceId)
+        ) {
             val videoPath = streamState.videoPath
+            val service = torrentService ?: return@LaunchedEffect
+            val resumeFrom = currentPosition.takeIf { it > 0L } ?: savedPosition
+            exoPlayer?.release()
+            isPlayerReady = false
+            val source = ProgressiveMediaSource.Factory(
+                TorrentPieceAwareDataSource.Factory(service, streamState.sourceId)
+            ).createMediaSource(MediaItem.fromUri(Uri.fromFile(File(videoPath))))
+            playingSourceId = streamState.sourceId
+            val playbackSourceId = streamState.sourceId
             val loadControl = DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
                     60_000,
@@ -139,13 +163,7 @@ fun StreamingPlayerScreen(
                 )
                 .build()
             exoPlayer = ExoPlayer.Builder(context).setLoadControl(loadControl).build().apply {
-                val mediaItem = MediaItem.fromUri("file://$videoPath")
-                // Resume from saved position if available
-                if (savedPosition > 0L) {
-                    setMediaItem(mediaItem, savedPosition)
-                } else {
-                    setMediaItem(mediaItem)
-                }
+                setMediaSource(source, resumeFrom)
                 prepare()
                 playWhenReady = true
                 addListener(object : Player.Listener {
@@ -163,11 +181,7 @@ fun StreamingPlayerScreen(
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         when (playbackState) {
                             Player.STATE_BUFFERING -> {
-                                // Ensure playWhenReady stays true during buffering
-                                // This handles seeks into unbuffered regions
-                                if (!playWhenReady) {
-                                    playWhenReady = true
-                                }
+                                // Media3 resumes automatically if playback was requested.
                             }
                             Player.STATE_READY -> {
                                 // Resume playback when ready after buffering
@@ -201,6 +215,16 @@ fun StreamingPlayerScreen(
                     }
                     
                     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        if (error.errorCode != PlaybackException.ERROR_CODE_IO_UNSPECIFIED &&
+                            error.errorCode != PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE &&
+                            error.errorCode != PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
+                        ) {
+                            torrentService?.reportPlaybackFailure(
+                                "Unsupported or damaged video: " + (error.message ?: error.errorCodeName),
+                                playbackSourceId
+                            )
+                            return
+                        }
                         // Torrent file may have incomplete data causing codec/source errors.
                         // Use lastGoodPosition with safety margin — NOT player.currentPosition
                         android.util.Log.e("StreamingPlayer", "Player error: ${error.message}", error)
@@ -254,6 +278,7 @@ fun StreamingPlayerScreen(
         if (dataWaitTrigger == 0) return@LaunchedEffect
         
         val resumePos = pendingResumePosition
+        val expectedSourceId = playingSourceId
         android.util.Log.d("StreamingPlayer", "Waiting for data at position $resumePos ms (trigger #$dataWaitTrigger)")
         
         // Save position immediately in case of crash/kill
@@ -278,6 +303,7 @@ fun StreamingPlayerScreen(
         // Wait until the torrent has downloaded the specific bytes we need.
         // Check: bytes at resumePos and resumePos + 60 seconds ahead.
         var elapsed = 0
+        var readyToRetry = false
         val aheadMs = 60000L * backoffMultiplier.coerceAtMost(3)
         while (elapsed < maxWaitSeconds) {
             delay(2000)
@@ -289,20 +315,38 @@ fun StreamingPlayerScreen(
             android.util.Log.d("StreamingPlayer", "Rebuffering... hasResumeBytes=$hasResumeBytes, hasAheadBytes=$hasAheadBytes, progress=$currentProg% (${elapsed}s elapsed, backoff=${backoffMultiplier}x)")
             
             if (elapsed >= minWaitSeconds && hasResumeBytes && hasAheadBytes) {
+                readyToRetry = true
                 break
             }
             if (currentProg >= 100f) {
+                readyToRetry = true
                 break
             }
         }
+        if (!readyToRetry) {
+            isWaitingForData = false
+            torrentService?.reportPlaybackFailure("Playback could not buffer within 60 seconds", expectedSourceId)
+            return@LaunchedEffect
+        }
         
+        // If a fallback has started while waiting, do not resurrect the previous file.
+        if (expectedSourceId != torrentService?.getActiveSourceId() ||
+            expectedSourceId != playingSourceId
+        ) {
+            isWaitingForData = false
+            return@LaunchedEffect
+        }
+
         // Re-prepare player from the (now more complete) file
         val videoPath = torrentService?.getVideoFilePath()
         if (videoPath != null && exoPlayer != null) {
             exoPlayer?.let { player ->
-                val newMediaItem = MediaItem.fromUri("file://$videoPath")
+                val service = torrentService ?: return@let
+                val source = ProgressiveMediaSource.Factory(
+                    TorrentPieceAwareDataSource.Factory(service, playingSourceId)
+                ).createMediaSource(MediaItem.fromUri(Uri.fromFile(File(videoPath))))
                 android.util.Log.d("StreamingPlayer", "Re-preparing player at position $resumePos after waiting ${elapsed}s (backoff=${backoffMultiplier}x)")
-                player.setMediaItem(newMediaItem, resumePos)
+                player.setMediaSource(source, resumePos)
                 player.prepare()
                 player.playWhenReady = true
             }
@@ -314,8 +358,14 @@ fun StreamingPlayerScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_PAUSE -> exoPlayer?.pause()
-                Lifecycle.Event.ON_RESUME -> if (isPlayerReady) exoPlayer?.play()
+                Lifecycle.Event.ON_PAUSE -> {
+                    resumeAfterLifecyclePause = exoPlayer?.playWhenReady == true
+                    exoPlayer?.pause()
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    if (isPlayerReady && resumeAfterLifecyclePause) exoPlayer?.play()
+                    resumeAfterLifecyclePause = false
+                }
                 Lifecycle.Event.ON_DESTROY -> {
                     exoPlayer?.release()
                     exoPlayer = null
@@ -362,6 +412,13 @@ fun StreamingPlayerScreen(
                         subtitle = "Finding peers"
                     )
                 }
+
+                is TorrentStreamState.SwitchingSource -> {
+                    LoadingOverlay(
+                        title = "Trying another source...",
+                        subtitle = "Source ${streamState.attempt} of ${streamState.total}"
+                    )
+                }
                 
                 is TorrentStreamState.Buffering -> {
                     LoadingOverlay(
@@ -373,16 +430,6 @@ fun StreamingPlayerScreen(
                     )
                 }
 
-                is TorrentStreamState.PreBuffering -> {
-                    LoadingOverlay(
-                        title = "Preparing playback...",
-                        subtitle = "Building a larger buffer for smoother streaming",
-                        progress = streamState.bufferProgress,
-                        seeds = seeds,
-                        speed = downloadSpeed
-                    )
-                }
-                
                 is TorrentStreamState.Streaming, is TorrentStreamState.Ready -> {
                     // Show video player
                     if (exoPlayer != null) {
@@ -399,7 +446,8 @@ fun StreamingPlayerScreen(
                                     )
                                 }
                             },
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            update = { it.player = exoPlayer }
                         )
                         
                         // Show streaming stats overlay

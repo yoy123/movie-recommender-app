@@ -376,7 +376,7 @@ fun MovieCard(
                             coroutineScope.launch {
                                 try {
                                     val year = movie.releaseDate?.take(4)
-                                    val options = viewModel.getMovieWatchOptions(movie.id, movie.title, year)
+                                    val options = viewModel.getMovieWatchOptions(movie.id, movie.title, year, viewModel.safeCacheBudgetMb(context))
                                     watchOptions = options
                                 } catch (e: Exception) {
                                     watchOptions = emptyList()

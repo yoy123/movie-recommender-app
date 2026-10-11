@@ -43,6 +43,8 @@ import com.movierecommender.app.data.remote.PopcornEpisode
 import com.movierecommender.app.data.remote.PopcornEpisodeTorrent
 import com.movierecommender.app.data.model.Video
 import com.movierecommender.app.data.remote.LlmRecommendationService
+import com.movierecommender.app.torrent.TorrentPlaybackSource
+import com.movierecommender.app.torrent.TorrentSourceRegistry
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -50,6 +52,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.joinAll
@@ -1813,10 +1816,10 @@ class MovieRepository(
                     isLoading = !providersComplete || !torrentComplete
                 )
             }
-            send(snapshot)
+            trySend(snapshot)
         }
 
-        send(WatchOptionsLoadState(options = emptyList(), isLoading = true))
+        trySend(WatchOptionsLoadState(options = emptyList(), isLoading = true))
 
         val providersJob = launch(Dispatchers.IO) {
             val countryProviders = try {
@@ -1846,20 +1849,22 @@ class MovieRepository(
 
         val torrentJob = launch(Dispatchers.IO) {
             val finalTorrent = try {
-                getTorrentInfo(title, year, safeCacheBudgetMb) { candidate ->
-                    val changed = stateMutex.withLock {
-                        val current = bestTorrent
-                        val chosen = MovieTorrentSelectionPolicy.preferred(
-                            current, candidate, safeCacheBudgetMb, ::movieTorrentSelectionScore
-                        )
-                        if (chosen !== current) {
-                            bestTorrent = chosen
-                            true
-                        } else {
-                            false
+                withContext(NonCancellable) {
+                    getTorrentInfo(title, year, safeCacheBudgetMb) { candidate ->
+                        val changed = stateMutex.withLock {
+                            val current = bestTorrent
+                            val chosen = MovieTorrentSelectionPolicy.preferred(
+                                current, candidate, safeCacheBudgetMb, ::movieTorrentSelectionScore
+                            )
+                            if (chosen !== current) {
+                                bestTorrent = chosen
+                                true
+                            } else {
+                                false
+                            }
                         }
+                        if (changed) publish()
                     }
-                    if (changed) publish()
                 }
             } catch (error: Exception) {
                 android.util.Log.e("MovieRepository", "Failed to fetch torrent for $title", error)
@@ -2160,6 +2165,48 @@ class MovieRepository(
         return qualityScore + torrent.seeds.coerceAtMost(500) * 4 + torrent.peers.coerceAtMost(200) * 2
     }
 
+    private fun registerMovieTorrentCandidates(
+        candidates: List<TorrentInfo>,
+        safeCacheBudgetMb: Int?
+    ): List<TorrentInfo> {
+        val ranked = MovieTorrentSelectionPolicy.rank(
+            candidates,
+            safeCacheBudgetMb,
+            ::movieTorrentSelectionScore
+        )
+        TorrentSourceRegistry.register(
+            ranked.map { torrent ->
+                TorrentPlaybackSource(
+                    url = torrent.magnetUrl,
+                    provider = torrent.provider,
+                    quality = torrent.quality,
+                    seeds = torrent.seeds
+                )
+            }
+        )
+        return ranked
+    }
+
+    private fun registerEpisodeTorrentCandidates(
+        candidates: List<EpisodeTorrentInfo>,
+        preferredQuality: String
+    ): List<EpisodeTorrentInfo> {
+        val ranked = candidates
+            .distinctBy { it.magnetUrl }
+            .sortedByDescending { episodeTorrentSelectionScore(it, preferredQuality) }
+        TorrentSourceRegistry.register(
+            ranked.map { torrent ->
+                TorrentPlaybackSource(
+                    url = torrent.magnetUrl,
+                    provider = torrent.provider,
+                    quality = torrent.quality,
+                    seeds = torrent.seeds
+                )
+            }
+        )
+        return ranked
+    }
+
     /**
      * Get torrent information for a movie by title and year.
      * Tries multiple sources (YTS, Popcorn API) with fallback.
@@ -2184,7 +2231,11 @@ class MovieRepository(
                     } else {
                         ytsApi.searchMovie(title, year)
                     }
-                    movie?.let(ytsApi::getSmallestTorrent)
+                    movie?.let(ytsApi::getAvailableTorrents)?.let { candidates ->
+                        MovieTorrentSelectionPolicy.selectBest(
+                            candidates.filter(::hasLivePeers), safeCacheBudgetMb, ::movieTorrentSelectionScore
+                        )
+                    }
                 } catch (e: Exception) {
                     android.util.Log.w("MovieRepository", "YTS search failed: ${e.message}")
                     null
@@ -2197,7 +2248,11 @@ class MovieRepository(
                     } else {
                         popcornApi.searchMovie(title, year)
                     }
-                    movie?.let(popcornApi::getSmallestTorrent)
+                    movie?.let(popcornApi::getAvailableTorrents)?.let { candidates ->
+                        MovieTorrentSelectionPolicy.selectBest(
+                            candidates.filter(::hasLivePeers), safeCacheBudgetMb, ::movieTorrentSelectionScore
+                        )
+                    }
                 } catch (e: Exception) {
                     android.util.Log.w("MovieRepository", "Popcorn API search failed: ${e.message}")
                     null
@@ -2220,17 +2275,23 @@ class MovieRepository(
                 }
             }
         )
-        val primaryTorrent = MovieTorrentSelectionPolicy.selectBest(
-            MovieTorrentSourceCollector.collectAll(
-                sources = primarySources,
-                onResult = { candidate ->
-                    if (hasLivePeers(candidate)) onLiveCandidate(candidate)
+        val livePrimaryCandidates = mutableListOf<TorrentInfo>()
+        MovieTorrentSourceCollector.collectAll(
+            sources = primarySources,
+            onResult = { candidate ->
+                if (hasLivePeers(candidate)) {
+                    livePrimaryCandidates += candidate
+                    registerMovieTorrentCandidates(livePrimaryCandidates, safeCacheBudgetMb)
+                    onLiveCandidate(candidate)
                 }
-            ).filter(::hasLivePeers),
-            safeCacheBudgetMb,
-            ::movieTorrentSelectionScore
+            }
         )
-        if (primaryTorrent != null) {
+        val primaryTorrent = registerMovieTorrentCandidates(
+            livePrimaryCandidates,
+            safeCacheBudgetMb
+        ).firstOrNull()
+        if (primaryTorrent != null && (safeCacheBudgetMb == null ||
+                MovieTorrentSelectionPolicy.fitsBudget(primaryTorrent, safeCacheBudgetMb))) {
             android.util.Log.d(
                 "MovieRepository",
                 "Best primary torrent from ${primaryTorrent.provider}: ${primaryTorrent.quality} " +
@@ -2239,100 +2300,86 @@ class MovieRepository(
             return@withContext primaryTorrent
         }
 
-        // Configurable Torznab endpoints can aggregate multiple authorized indexers.
-        if (torznabApi.isConfigured) {
-            try {
-                val torznabTorrent = torznabApi.searchMovie(title, year, imdbId)
-                if (torznabTorrent != null && hasLivePeers(torznabTorrent)) {
-                    android.util.Log.d("MovieRepository", "Found ${torznabTorrent.provider} torrent: ${torznabTorrent.quality} with ${torznabTorrent.seeds} seeds")
-                    onLiveCandidate(torznabTorrent)
-                    return@withContext torznabTorrent
+        // If no primary source succeeds, query every fallback concurrently so playback can retain
+        // alternatives rather than discarding them after selecting the first successful result.
+        val fallbackSources: List<suspend () -> TorrentInfo?> = listOf(
+            {
+                if (!torznabApi.isConfigured) return@listOf null
+                try {
+                    torznabApi.searchMovie(title, year, imdbId)?.takeIf(::hasLivePeers)
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "Torznab search failed: ${e.message}")
+                    null
                 }
-                android.util.Log.d("MovieRepository", "No Torznab torrent found")
-            } catch (e: Exception) {
-                android.util.Log.w("MovieRepository", "Torznab search failed: ${e.message}")
-            }
-        }
-
-        // Internet Archive torrents include HTTP web seeds but do not expose swarm counts.
-        try {
-            val archiveTorrent = internetArchiveApi.searchMovie(title, year)
-            if (archiveTorrent != null) {
-                android.util.Log.d(
-                    "MovieRepository",
-                    "Found Internet Archive torrent: ${archiveTorrent.quality} (${archiveTorrent.size})"
-                )
-                onLiveCandidate(archiveTorrent)
-                return@withContext archiveTorrent
-            }
-            android.util.Log.d("MovieRepository", "No Internet Archive torrent found")
-        } catch (e: Exception) {
-            android.util.Log.w("MovieRepository", "Internet Archive search failed: ${e.message}")
-        }
-
-        // Public Domain Torrents also hosts HTTPS torrent files without swarm-count metadata.
-        try {
-            val publicDomainTorrent = publicDomainTorrentsApi.searchMovie(title, imdbId)
-            if (publicDomainTorrent != null) {
-                android.util.Log.d(
-                    "MovieRepository",
-                    "Found Public Domain Torrents download: ${publicDomainTorrent.quality} (${publicDomainTorrent.size})"
-                )
-                onLiveCandidate(publicDomainTorrent)
-                return@withContext publicDomainTorrent
-            }
-            android.util.Log.d("MovieRepository", "No Public Domain Torrents download found")
-        } catch (e: Exception) {
-            android.util.Log.w("MovieRepository", "Public Domain Torrents search failed: ${e.message}")
-        }
-
-        // Fallback to PirateBay
-        try {
-            val pirateBayTorrent = if (imdbId != null) {
-                pirateBayApi.searchByImdbId(imdbId) ?: pirateBayApi.searchMovie(title, year)
-            } else {
-                pirateBayApi.searchMovie(title, year)
-            }
-            if (pirateBayTorrent != null) {
-                if (hasLivePeers(pirateBayTorrent)) {
-                    android.util.Log.d("MovieRepository", "Found PirateBay torrent: ${pirateBayTorrent.quality} (${pirateBayTorrent.size}) with ${pirateBayTorrent.seeds} seeds")
-                    onLiveCandidate(pirateBayTorrent)
-                    return@withContext pirateBayTorrent
+            },
+            {
+                try {
+                    internetArchiveApi.searchMovie(title, year)
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "Internet Archive search failed: ${e.message}")
+                    null
+                }
+            },
+            {
+                try {
+                    publicDomainTorrentsApi.searchMovie(title, imdbId)
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "Public Domain Torrents search failed: ${e.message}")
+                    null
+                }
+            },
+            {
+                try {
+                    val torrent = if (imdbId != null) {
+                        pirateBayApi.searchByImdbId(imdbId) ?: pirateBayApi.searchMovie(title, year)
+                    } else {
+                        pirateBayApi.searchMovie(title, year)
+                    }
+                    torrent?.takeIf(::hasLivePeers)
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "PirateBay search failed: ${e.message}")
+                    null
+                }
+            },
+            {
+                try {
+                    torrentGalaxyApi.searchMovie(title, year)?.takeIf(::hasLivePeers)
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "TorrentGalaxy search failed: ${e.message}")
+                    null
+                }
+            },
+            {
+                try {
+                    leetxApi.searchMovie(title, year)?.takeIf(::hasLivePeers)
+                } catch (e: Exception) {
+                    android.util.Log.w("MovieRepository", "1337x search failed: ${e.message}")
+                    null
                 }
             }
-            android.util.Log.d("MovieRepository", "No PirateBay torrent found, trying TorrentGalaxy...")
-        } catch (e: Exception) {
-            android.util.Log.w("MovieRepository", "PirateBay search failed: ${e.message}")
-        }
-
-        // Fallback to TorrentGalaxy
-        try {
-            val tgxTorrent = torrentGalaxyApi.searchMovie(title, year)
-            if (tgxTorrent != null && hasLivePeers(tgxTorrent)) {
-                android.util.Log.d("MovieRepository", "Found TorrentGalaxy torrent: ${tgxTorrent.quality} (${tgxTorrent.size}) with ${tgxTorrent.seeds} seeds")
-                onLiveCandidate(tgxTorrent)
-                return@withContext tgxTorrent
+        )
+        val fallbackCandidates = mutableListOf<TorrentInfo>()
+        MovieTorrentSourceCollector.collectAll(
+            sources = fallbackSources,
+            onResult = { candidate ->
+                fallbackCandidates += candidate
+                registerMovieTorrentCandidates(fallbackCandidates, safeCacheBudgetMb)
+                onLiveCandidate(candidate)
             }
-            android.util.Log.d("MovieRepository", "No TorrentGalaxy torrent found, trying 1337x...")
-        } catch (e: Exception) {
-            android.util.Log.w("MovieRepository", "TorrentGalaxy search failed: ${e.message}")
+        )
+        val fallbackTorrent = registerMovieTorrentCandidates(
+            fallbackCandidates,
+            safeCacheBudgetMb
+        ).firstOrNull()
+        if (fallbackTorrent == null) {
+            android.util.Log.w("MovieRepository", "No torrent source found for: $title")
+        } else {
+            android.util.Log.d(
+                "MovieRepository",
+                "Best fallback torrent from ${fallbackTorrent.provider}: ${fallbackTorrent.quality}"
+            )
         }
-
-        // Fallback to 1337x
-        try {
-            val leetxTorrent = leetxApi.searchMovie(title, year)
-            if (leetxTorrent != null && hasLivePeers(leetxTorrent)) {
-                android.util.Log.d("MovieRepository", "Found 1337x torrent: ${leetxTorrent.quality} (${leetxTorrent.size}) with ${leetxTorrent.seeds} seeds")
-                onLiveCandidate(leetxTorrent)
-                return@withContext leetxTorrent
-            }
-            android.util.Log.d("MovieRepository", "No 1337x torrent found")
-        } catch (e: Exception) {
-            android.util.Log.w("MovieRepository", "1337x search failed: ${e.message}")
-        }
-
-        android.util.Log.w("MovieRepository", "No torrent source found for: $title")
-        null
+        fallbackTorrent
     }
     
     /**
@@ -2493,15 +2540,17 @@ class MovieRepository(
             val torznabResult = torznabJob.await()
             val pirateBayResult = pirateBayJob.await()
 
-            // Compare source quality and swarm health instead of choosing by seeds alone.
-            val best = listOfNotNull(
+            // Preserve the full ranked result set so playback can advance when metadata or
+            // startup-piece retrieval fails for the selected source.
+            val ranked = registerEpisodeTorrentCandidates(listOfNotNull(
                 popcornResult,
                 eztvResult,
                 torrentioResult,
                 knabenResult,
                 torznabResult,
                 pirateBayResult
-            ).maxByOrNull { episodeTorrentSelectionScore(it, preferredQuality) }
+            ), preferredQuality)
+            val best = ranked.firstOrNull()
             if (best != null) {
                 android.util.Log.d("MovieRepository", "Best torrent for $showTitle S${season}E${episode}: ${best.provider} ${best.quality} (${best.seeds} seeds)")
             } else {

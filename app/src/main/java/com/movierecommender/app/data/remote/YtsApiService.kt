@@ -120,6 +120,23 @@ class YtsApiService {
      * still have seeds/peers, then break ties with streaming-friendly quality and
      * smaller size.
      */
+    /** All advertised encodes, so device storage and swarm strength decide the best fit. */
+    fun getAvailableTorrents(movie: YtsMovie): List<TorrentInfo> =
+        movie.torrents.orEmpty()
+            .filter { it.hash.isNotBlank() }
+            .map { torrent ->
+                val exactSize = torrent.sizeBytes?.takeIf { it > 0L }?.toString()
+                TorrentInfo(
+                    magnetUrl = buildMagnetUrl(torrent.hash, movie.title, TRACKERS),
+                    quality = torrent.quality,
+                    seeds = torrent.seeds,
+                    peers = torrent.peers,
+                    size = exactSize ?: torrent.size,
+                    filesize = exactSize ?: torrent.size,
+                    provider = "YTS"
+                )
+            }
+
     fun getSmallestTorrent(movie: YtsMovie): TorrentInfo? {
         val torrents = movie.torrents ?: return null
 

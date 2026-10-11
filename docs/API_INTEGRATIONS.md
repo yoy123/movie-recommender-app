@@ -144,20 +144,26 @@ Because IMDb HTML is not a stable API contract, scraper failure must remain non-
 3. Torrentio, when an IMDb ID is available
 4. Knaben
 
-The repository compares quality, seeders, and peers instead of accepting the first adequate result. When the primary group has no live result, the fallback chain continues through:
+The repository compares quality, seeders, peers, and device cache fit instead of accepting the first adequate result. Every usable result in the winning tier is retained as a ranked playback queue. When the primary group has no live result, all fallback providers are queried concurrently:
 
-5. Configured Torznab endpoints
-6. Internet Archive Feature Films
-7. Public Domain Torrents
-8. Pirate Bay adapter
-9. TorrentGalaxy adapter
-10. 1337x adapter (`LeetxService`)
+1. Configured Torznab endpoints
+2. Internet Archive Feature Films
+3. Public Domain Torrents
+4. Pirate Bay adapter
+5. TorrentGalaxy adapter
+6. 1337x adapter (`LeetxService`)
 
 IMDb ID is resolved through TMDB where useful. Swarm API results must report at least one seed or peer. Internet Archive and Public Domain Torrents instead return verified HTTPS `.torrent` files; Archive-generated torrents include HTTP web seeds and neither catalog exposes live swarm counts.
 
 ### Selection objective
 
 The primary group ranks requested-quality releases with healthy swarms above merely early responses. YTS and Popcorn still expose their compact encodes, while Torrentio and Knaben broaden index coverage. Internet Archive requires a close title match and rejects dark items. Public Domain Torrents requires an exact normalized title, cross-checks IMDb IDs when available, and prefers its largest MP4 variant for player compatibility.
+
+Playback starts with the selected/best source. If metadata cannot be retrieved, startup pieces stop progressing, or the source cannot satisfy storage admission, `TorrentStreamService` clears that partial session and advances automatically through the remaining ranked candidates. Only an exhausted queue produces a terminal playback error.
+
+Torrent discovery continues on the repository I/O context after the Watch Options dialog closes.
+This prevents Compose disposal from canceling slower provider requests before they can join the
+active playback queue.
 
 Torrentio results may include a BEP-53 `so` file index. The app preserves that selection in the magnet so a requested TV episode inside a multi-file torrent is selected before downloading instead of defaulting to the largest file.
 
@@ -212,7 +218,7 @@ Uses the existing Pirate Bay API adapter's TV and HD TV categories. Strict `SxxE
 
 ### Repository behavior
 
-For a specific episode, Popcorn TV, EZTV, Torrentio, Knaben, configured Torznab endpoints, and Pirate Bay TV are queried concurrently when possible. Results are ranked by preferred quality, seeders, and peers. Torrentio and Knaben also participate in S01E01 quick-play fallback.
+For a specific episode, Popcorn TV, EZTV, Torrentio, Knaben, configured Torznab endpoints, and Pirate Bay TV are queried concurrently when possible. The full result set is ranked by preferred quality, seeders, and peers and registered for automatic playback failover. Torrentio and Knaben also participate in S01E01 quick-play fallback.
 
 Season and episode lists continue to merge the inventory-capable sources, with Popcorn metadata preferred when several sources describe the same episode. Torznab follows advertised result offsets across every configured endpoint, up to a 2,000-release safety limit per endpoint.
 

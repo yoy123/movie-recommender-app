@@ -89,20 +89,21 @@ Retry excludes all titles already returned during the current session in both br
 4. Merge episodes for the selected season.
 5. User selects an episode.
 6. Query Popcorn TV, EZTV, Torrentio, Knaben, configured Torznab, and Pirate Bay concurrently.
-7. Rank results by preferred quality, seeders, and peers.
-8. Start torrent playback.
+7. Rank results by preferred quality, seeders, and peers and retain alternatives.
+8. Start torrent playback with automatic source failover.
 
 ## 9. Torrent Playback Flow
 
-1. Pass magnet URL to `StreamingPlayerScreen`.
+1. Register the ranked torrent candidates and pass the selected URL to `StreamingPlayerScreen`.
 2. Bind/start `TorrentStreamService`.
 3. Parse torrent metadata.
-4. Apply a valid `so` file index when the provider identified an exact file; otherwise keep the library's largest-file selection.
-5. Calculate adaptive prebuffer target.
-6. Begin Media3 playback from the local file.
-7. Reprioritize pieces after seeks.
-8. Keep the screen awake.
-9. Request cache cleanup when leaving playback.
+4. On a recoverable startup failure, clear the failed partial session and try the next untried candidate.
+5. Apply a valid `so` file index when the provider identified an exact file; otherwise keep the library's largest-file selection.
+6. Calculate adaptive prebuffer target.
+7. Begin Media3 playback from the local file.
+8. Reprioritize pieces after seeks.
+9. Keep the screen awake.
+10. Request cache cleanup when leaving playback.
 
 ## 10. Firestick Navigation Flow
 

@@ -21,7 +21,7 @@ The embedded Firestick Live TV guide was removed on 2026-07-25 because it depend
 - View trailers and TMDB watch-provider availability.
 - Launch supported streaming applications through mapped package names and deep links.
 - Store exact provider-content links in a Room-backed crosswalk.
-- Find movie torrents through a multi-source fallback chain.
+- Find movie torrents through a multi-source fallback chain, with device-storage-aware source selection and a quality/swarm-health balance.
 - Browse TV seasons and episodes across Popcorn TV, EZTV, configured Torznab endpoints, and Pirate Bay TV.
 - Play torrent-backed media through Media3 ExoPlayer and `TorrentStreamService`.
 
@@ -77,7 +77,7 @@ Release builds require the signing properties documented in [`docs/DEPLOYMENT.md
 ./gradlew :app:testFirestickDebugUnitTest
 ```
 
-Both flavor suites currently discover 23 tests: 22 execute successfully and the opt-in `LlmSmokeTest` remains skipped. Coverage includes recommendation result/ranking policy, torrent buffer policy, OpenAI request construction, and several torrent-source parsers; UI, Room migration, repository orchestration, and Android lifecycle behavior still require broader testing.
+Both flavor unit-test suites passed on 2026-10-11, including storage-budget, provider-variant, torrent-read, and recommendation tests. The opt-in `LlmSmokeTest` remains skipped; Android lifecycle and device playback still require instrumentation testing.
 
 ## Documentation
 
@@ -92,4 +92,4 @@ Current code is authoritative whenever an older document or Git history conflict
 
 ## Current Verification
 
-On 2026-07-25, both debug flavors compiled and both flavor unit-test tasks completed successfully after removal of the embedded Live TV feature.
+On 2026-10-11, both debug flavors compiled and both flavor unit-test tasks passed. Playback was reported working on-device; no new automated ADB playback test was performed.

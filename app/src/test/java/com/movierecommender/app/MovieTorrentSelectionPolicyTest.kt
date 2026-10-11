@@ -112,7 +112,46 @@ class MovieTorrentSelectionPolicyTest {
     }
 
     @Test
+    fun parseSizeBytes_supportsBinaryUnitsAndCommas() {
+        assertEquals(1536L * 1024 * 1024, MovieTorrentSelectionPolicy.parseSizeBytes("1.5 GiB"))
+        assertEquals(1024L * 1024 * 1024, MovieTorrentSelectionPolicy.parseSizeBytes("1,024 MB"))
+    }
+
+    @Test
+    fun fitsBudget_whenNoSpaceRemainsRejectsEveryPositiveSize() {
+        val source = torrent("NoSpace", "720p", "600 MB", seeds = 10)
+        assertEquals(false, MovieTorrentSelectionPolicy.fitsBudget(source, 0))
+        assertEquals(false, MovieTorrentSelectionPolicy.fitsBudget(source, -1))
+        assertEquals(true, MovieTorrentSelectionPolicy.fitsBudget(source, null))
+    }
+
+    @Test
+    fun fitsBudget_usesFileSizeWhenSizeIsBlank() {
+        val source = torrent("FallbackField", "720p", "", seeds = 10)
+            .copy(filesize = "1.4 GB")
+        assertEquals(true, MovieTorrentSelectionPolicy.fitsBudget(source, 1800))
+        assertEquals(false, MovieTorrentSelectionPolicy.fitsBudget(source, 1000))
+    }
+
+    @Test
     fun selectBest_returnsNullForEmpty() {
         assertNull(MovieTorrentSelectionPolicy.selectBest(emptyList(), 1800, ::score))
+    }
+
+    @Test
+    fun rank_ordersEveryUniqueCandidateForAutomaticFailover() {
+        val oversized = torrent("Huge", "1080p", "8 GB", seeds = 6000)
+        val lowerScore = torrent("Lower", "720p", "1.2 GB", seeds = 10)
+        val best = torrent("Best", "1080p", "1.5 GB", seeds = 100)
+        val duplicateBest = best.copy(provider = "Duplicate")
+
+        assertEquals(
+            listOf(best, lowerScore, oversized),
+            MovieTorrentSelectionPolicy.rank(
+                listOf(oversized, lowerScore, best, duplicateBest),
+                safeCacheBudgetMb = 1800,
+                ::score
+            )
+        )
     }
 }

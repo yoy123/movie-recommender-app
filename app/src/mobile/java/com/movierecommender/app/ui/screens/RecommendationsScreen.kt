@@ -653,14 +653,14 @@ private fun RecommendationRow(
                                 val options = if (isTvMode) {
                                     viewModel.getTvShowWatchOptions(tmdbId, item.title, item.year)
                                 } else {
-                                    viewModel.getMovieWatchOptions(tmdbId, item.title, item.year)
+                                    viewModel.getMovieWatchOptions(tmdbId, item.title, item.year, viewModel.safeCacheBudgetMb(context))
                                 }
                                 watchOptions = options
                             } else {
                                 // Fallback: try torrent only for movies
                                 if (!isTvMode) {
                                     val torrentResult = try {
-                                        viewModel.getTorrentMagnetUrlForContent(item.title, item.year, false)
+                                        viewModel.getTorrentMagnetUrlForContent(item.title, item.year, false, viewModel.safeCacheBudgetMb(context))
                                     } catch (e: Exception) { null }
                                     watchOptions = if (torrentResult != null) {
                                         listOf(com.movierecommender.app.data.model.WatchOption(

@@ -1,6 +1,6 @@
 # OpenStream+ Current State
 
-**Last verified:** 2026-07-26
+**Last code review:** 2026-10-11
 **Status:** Primary source-of-truth summary
 
 ## Product
@@ -92,7 +92,7 @@ Candidate and fallback ranking use Bayesian-adjusted ratings so very small vote 
 
 ### Movie torrent discovery
 
-Primary movie search queries YTS, Popcorn, Torrentio, and Knaben concurrently and ranks the live results by quality and swarm health. When that group has no usable result, fallback continues through configured Torznab endpoints, Internet Archive, Public Domain Torrents, Pirate Bay, TorrentGalaxy, and 1337x.
+Primary movie search queries YTS, Popcorn, Torrentio, and Knaben concurrently and ranks live results by available storage, quality, and swarm health. YTS and Popcorn now expose their available encodes for device-aware selection rather than preselecting a file without the storage budget. If no primary result fits the known device budget, lookup continues through configured Torznab endpoints, Internet Archive, Public Domain Torrents, Pirate Bay, TorrentGalaxy, and 1337x. Unknown-size sources remain subject to the playback service's metadata-based storage preflight.
 
 Swarm API results must report live peers. The public-domain catalogs provide verified HTTPS `.torrent` downloads without peer-count metadata.
 
@@ -148,10 +148,11 @@ On application startup, orphaned movie rows older than 30 days are removed when 
 
 - Media3 ExoPlayer renders local torrent-streamed files.
 - `TorrentStreamService` runs as a media-playback foreground service.
-- Playback begins only after a contiguous no-stall buffer is available from the start or saved resume position.
-- Buffer sizing uses file size, duration, conservative observed speed, peak-rate headroom, and the projected remaining download deficit.
+- Playback begins after a bounded contiguous buffer is available from the start or saved resume position.
+- Buffer sizing uses file size, duration, conservative observed speed, peak-rate headroom, and the projected remaining download deficit, capped at 256 MB.
 - Media3 keeps 60 seconds minimum and up to five minutes of local read-ahead after playback starts.
 - Torrent pieces are prioritized from the first missing piece ahead of the player.
+- Recoverable metadata, startup-piece, and storage-admission failures advance automatically through the ranked source queue.
 - The screen is kept awake during playback.
 
 Torrent cache behavior:

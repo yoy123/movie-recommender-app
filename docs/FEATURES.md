@@ -118,7 +118,7 @@ Resolved values are persisted and preferred over generic search links on future 
 
 ## Movie Torrent Streaming
 
-Movie torrent search queries YTS, Popcorn, Torrentio, and Knaben concurrently, then ranks live results by quality, seeders, and peers. If no primary result is usable, it falls back through configured Torznab endpoints, Internet Archive, Public Domain Torrents, Pirate Bay, TorrentGalaxy, and 1337x.
+Movie torrent search queries YTS, Popcorn, Torrentio, and Knaben concurrently, then ranks live results by cache fit, quality, seeders, and peers. If no primary result is usable, it queries configured Torznab endpoints, Internet Archive, Public Domain Torrents, Pirate Bay, TorrentGalaxy, and 1337x concurrently. Ranked alternatives are retained for automatic playback failover.
 
 Swarm API results must report live peers. Public-domain catalog results use verified HTTPS `.torrent` downloads.
 
@@ -143,6 +143,7 @@ Media3 ExoPlayer renders the local file managed by `TorrentStreamService`.
 Playback includes:
 
 - adaptive prebuffering
+- automatic source failover during metadata and startup failures
 - seek-piece prioritization
 - foreground-service notification
 - screen-awake behavior

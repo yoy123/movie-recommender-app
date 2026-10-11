@@ -138,6 +138,10 @@ Check:
 - available cache space
 - live peers
 
+The player now reports an error if metadata does not load within 60 seconds or if initial torrent
+pieces make no progress for three minutes. A permanent `Connecting` or `Buffering` spinner is a
+bug; capture `TorrentStreamService` logs if either deadline does not surface an error.
+
 ### Stalls after starting
 
 The source may be slower than the media bitrate. Adaptive prebuffering reduces but cannot eliminate this condition.

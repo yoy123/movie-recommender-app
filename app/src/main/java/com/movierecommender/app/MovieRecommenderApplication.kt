@@ -30,8 +30,8 @@ class MovieRecommenderApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // Clears a torrent cache left by a reboot or an expired resume window.
-        TorrentCachePolicy.initialize(this)
+        // Cache cleanup can delete large torrent directories; never run it on the UI thread.
+        applicationScope.launch { TorrentCachePolicy.initialize(this@MovieRecommenderApplication) }
 
         // Run database cleanup on app startup (non-blocking)
         performDatabaseCleanupIfNeeded()
