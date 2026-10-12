@@ -82,6 +82,15 @@ TMDB fallback is used when permission is declined, the OpenAI key is unavailable
 
 Candidate and fallback ranking use Bayesian-adjusted ratings so very small vote counts cannot dominate the list. Retry exclusions are applied to both AI and TMDB paths.
 
+## Outstanding user-reported regressions / design changes (2026-10-12)
+
+1. OpenAI recommendations show **"unauthorized"** on the Firestick and instead use TMDB fallback. Investigate the real sanitized API error, key/project/model access and request compatibility; validate a live AI result.
+2. The Favorites card options must offer **Select for Recommendations / Remove from Selections** for movie and TV favorites, in addition to Watch Options and Delete. Maintain up to five selections and exclude saved favorites from output.
+3. The Favorites screen must **look like the front menu**, with **horizontal poster-card rows scrolling left to right** rather than its current vertical Compose grid. Use separate Movie and TV rails, matching home browse card styling, focus, Left/Right navigation, Up/Down row switching and focus restoration. Mobile should have equivalent swipeable Compose rows.
+4. Completely different title selections reportedly produce the **same TMDB fallback list**. Test selected IDs/mode, candidate discovery, cache/session state, ranking sensitivity and exclusion logic using controlled comparisons.
+
+All four items are OPEN. The mandatory-features list and DESIGN_FEATURES_2_PROGRESS.md specify acceptance criteria; updating documentation is not implementing or testing these fixes.
+
 ## External Services
 
 ### Metadata and recommendations

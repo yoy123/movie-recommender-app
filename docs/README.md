@@ -1,6 +1,6 @@
 # OpenStream+ Documentation
 
-**Last updated:** 2026-07-25
+**Last updated:** 2026-10-12
 
 ## Start Here
 
@@ -9,6 +9,11 @@
 3. [FEATURES.md](FEATURES.md) — current user-facing behavior
 4. [KNOWN_ISSUES.md](KNOWN_ISSUES.md) — active risks and resolved history
 5. [TESTING.md](TESTING.md) — actual automated and manual test state
+
+## Active requirements
+
+- Mandatory-Design-Features-2.txt (project root): includes OpenAI authorization, favorite selection, horizontal Favorites poster rails like the front menu, and identical TMDB fallback results.
+- DESIGN_FEATURES_2_PROGRESS.md: tracks acceptance criteria; these four new issues are open.
 
 ## Technical References
 
@@ -35,7 +40,7 @@ When documents disagree, use this order:
 
 - Product flavors: `mobile` and `firestick`
 - Room database: version 3
-- OpenAI model: configurable; `gpt-4.1` default with `gpt-4.1-mini` and `gpt-4o-mini` fallbacks
+- OpenAI model: configured code default is gpt-6-astra with GPT-6/GPT-4.1 fallbacks, but live API access is unverified; the Firestick reports an unauthorized error
 - Recommendations: AI-first after data-sharing permission; automatic TMDB fallback with debug reason
 - Torrent cache: one active source, 500 MB device reserve, bounded contiguous startup gate, and 60-minute resume retention
 - Embedded Live TV: removed on 2026-07-25

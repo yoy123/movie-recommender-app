@@ -1,0 +1,35 @@
+## Non-exhausted feature list
+
+This list is to be checked frequently.
+It isn't a full feature list at all.
+This are notes that the user compiles on the go and should be implemented.
+
+## New Features/Notes to be implemented
+
+1. Prior to implementing anything on this list, double check the entire project for potential bugs, design weaknesses, duplicate code, unused code, feature flaws, etc...
+
+2. Make the torrent feature be storage aware. Have it check for available free storage before choosing a torrent to download, this way it can make sure the torrent can fit. Either that, or it could download the file in chunks to avoid downloading the entire torrent at once. If playing in chunks is a suitable feature, it should only be used as a fallback to downloading the entire file, in the event there is no suitable file small enough to fit its entire contents on available free space.
+
+3. If free space isn't an issue, torrent selection should be prioritized by finding the highest quality source balanced with the fastest download. (This is optional. The current torrent priority may already be the best way. You choose)
+
+4. double check that all recommendation features are working and optimized.
+
+5. Make sure the best available openai model is being used for recommendations
+
+6. Make sure that recommendations never included movies or shows that are saved in the favorites menu.
+
+7. Make sure that AI recommendations are always set to default and TMDB metadata recommendations are only used as fallback. Also, make sure there is an alert message for when AI recommendations fails/when TMDB recommendations are being used.
+
+8. In the favorites menu, make the movies/shows that are saved there be clickable. When clicked, there should be options available. Options should be 1. Watch Options, 2. Delete from favorites
+
+## New reported issues and required changes — 2026-10-12
+
+9. Fix OpenAI-powered recommendations. On the Firestick, the recommendation request reports "unauthorized" and falls back to TMDB. Determine whether this is a missing/incorrect configured API key, a key or project permission/billing problem, an inaccessible or unsupported model, or another API response. Log useful sanitized failure categories/status codes for debugging without displaying or exposing secret keys. Restore reliable AI-first recommendations using an API-accessible supported model and compatible requests, retaining TMDB fallback with a clearly identified reason when AI actually fails. Verify with a real request and an on-device test; do not treat compilation as proof of authorization.
+
+10. In Favorites, add "Select for Recommendations" to each movie/show's card options alongside "Watch Options" and "Delete from Favorites". Support both adding and removing a selection, show its selected state, respect the maximum of five recommendation inputs and movie/TV mode, and ensure Firestick DPAD/OK can reach and activate the action. Selecting an existing favorite as an input does not mean it may be returned as a recommendation; saved favorites must still be excluded from recommendation results.
+
+11. Redesign Favorites to visually match the Firestick front/home browse menu: use separate labeled Movies and TV Shows rows with horizontally scrolling left-to-right poster cards, NOT a vertical grid. Match home card artwork, sizes, spacing, typography and focus. DPAD Left/Right moves between cards; Up/Down changes rows; OK opens Watch Options, Select for Recommendations / Remove from Selections, and Delete from Favorites; Back returns to the same card with focus/scroll retained. Keep search, selected-state indicators and the five-item limit. The mobile UI should use comparable swipeable horizontal Compose rails. This is an outstanding design and functionality requirement, not a completed fix.
+
+12. Diagnose and fix TMDB fallback producing exactly the same recommendation list for completely different sets of selected titles. Verify that the correct selected IDs/titles and content mode reach candidate discovery and scoring on every request; check for stale ViewModel state, cache reuse, broad/global candidate pools, hard-coded ranking, and missing similarity weighting. Results should reflect the actual selections, preferences, and exclusions without pointless randomness. Add controlled A-vs-B input tests and on-device regression checks so materially different selections do not produce an identical full list unless legitimately unavoidable; keep session deduplication and favorites exclusions working.
+
+These four points are reported requirements/bugs, not confirmed fixes. Do not mark them completed until validated in the affected Firestick UI and relevant automated/live API tests.

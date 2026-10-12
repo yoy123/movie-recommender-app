@@ -63,6 +63,14 @@ Current Firestick Compose screens include:
 
 `ComposeActivity` accepts intent extras to choose a start screen and restore content-mode/selection context.
 
+## Required Favorites redesign — outstanding (2026-10-12)
+
+The user wants Favorites to resemble the Fire TV **front/home browse menu**: **horizontal left-to-right poster-card rails**, not the current vertical grid. Present saved Movies and TV Shows in separate labeled horizontally scrolling rows, using matching artwork, card size, typography, spacing and focus effects.
+
+DPAD Left/Right traverses cards; Up/Down switches rows or top-level controls; OK opens Watch Options, Select for Recommendations / Remove from Selections, and Delete. Back restores focus and scroll position; support search and empty states. Mobile should use consistent swipeable horizontal Compose rails.
+
+This design has not yet been implemented or verified on a device.
+
 ## DPAD Focus Contract
 
 Every interactive control must be reachable and visibly focused with a Fire TV remote.

@@ -1,6 +1,6 @@
 # OpenStream+ Recommendation Engine
 
-**Last verified:** 2026-07-26
+**Last code review:** 2026-10-11; **Firestick bug reports:** 2026-10-12
 
 ## Current Policy
 
@@ -12,6 +12,14 @@ OpenStream+ has one primary recommendation strategy:
 4. Use deterministic TMDB ranking when AI cannot be used safely.
 
 There is no user-selectable AI-versus-TMDB recommendation style. AI is the default primary engine. TMDB is the fallback.
+
+## User-reported production bugs (2026-10-12)
+
+OpenAI recommendations reportedly show "unauthorized" on the Firestick and fall back to TMDB. The actual HTTP status/root cause is not yet verified; investigate sanitized API errors, configured key/project/model access and request parameters, then validate with a real on-device AI recommendation.
+
+TMDB fallback reportedly returned an identical complete list for entirely different selected movies/shows. Confirm each request receives the correct seed TMDB IDs/titles, content mode, genre and exclusions; audit candidate retrieval, caching, ViewModel state and whether similarity scoring adequately reflects the seeds. Add controlled A/B seed-input tests without artificial randomness.
+
+Favorites should be usable as recommendation inputs, but excluded from recommended outputs. The descriptions below are intended/code-level behavior, not proof these bugs are fixed.
 
 ## Privacy Permission
 
@@ -85,7 +93,7 @@ AI is attempted only when:
 - an OpenAI API key is configured
 - at least 15 safe TMDB candidates remain
 
-The OpenAI request uses the Chat Completions endpoint with a configurable model. `gpt-4.1` is the default; model-access failures retry through `gpt-4.1`, `gpt-4.1-mini`, and `gpt-4o-mini` without requiring user configuration.
+The OpenAI request uses the Chat Completions endpoint with a configurable model. Current code defaults to gpt-6-astra, with gpt-6.1-sol, gpt-6-luna, gpt-4.1 and gpt-4.1-mini fallback options. These configured names do not prove that the deployed API account is authorized for those models.
 
 ## Prompt Rules
 

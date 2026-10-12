@@ -1,4 +1,4 @@
-# Design Features 2 — Implementation Audit (2026-10-11)
+# Design Features 2 — Implementation Audit (2026-10-11; reports added 2026-10-12)
 
 This is the implementation tracker for the user's non-exhaustive Design Features 2 checklist. It describes the code that exists now; it is not a claim of successful end-to-end device playback or a live OpenAI account test.
 
@@ -12,6 +12,19 @@ This is the implementation tracker for the user's non-exhaustive Design Features
 | 6. Exclude favorites | Movie favorites already excluded by repository by TMDB ID/title in both AI and fallback. Added TV favorites persistence via DataStore and TV recommendation exclusions. | TV exclusions are by normalized title rather than stable TMDB ID; TV favorites DataStore migration/performance tests should be added. |
 | 7. AI primary / TMDB fallback alert | Existing: AI-first request with automatic TMDB fallback, explicit debug dialog and reason. No recommendation-style choice. | Verify both flavor dialogs under live failure cases. |
 | 8. Favorites actions | Movie and TV cards now open an action dialog on mobile and Fire TV with Watch Options and Delete from Favorites. Separate icons retain selection for recommendations. Existing watch-provider/torrent movie player navigation reused. | Favorites TV watch dialog lists streaming providers; direct TV torrent episode-picker launch remains on the selection screen. Test Fire TV DPAD focus and content selection on a device. |
+
+## Open Firestick issues and requirements — reported October 12, 2026
+
+The following four user-reported issues are OPEN. Prior code-completion claims do not demonstrate successful device behavior.
+
+| Feature | User report | Required verification |
+| --- | --- | --- |
+| OpenAI authorization | Recommendations report "unauthorized" and fall back to TMDB. | Diagnose sanitized HTTP response, key/project/model access, billing and request compatibility; verify one successful real AI request on the Firestick. |
+| Favorite selection | Favorites cannot be selected for recommendations from card options. | Add Select for Recommendations / Remove from Selections next to Watch Options and Delete, for movies and TV; show state, enforce five-input cap, ensure DPAD activation. Favorites remain excluded from recommended results. |
+| Favorites layout | Favorites must look like the FRONT menu: cards scrolling LEFT TO RIGHT, not a vertical grid. | Use home-style horizontally scrolling poster rails for saved Movies and TV Shows. DPAD Left/Right navigates cards, Up/Down changes rows, OK opens actions, Back preserves focus; mobile swipeable horizontal rows. |
+| TMDB relevance | Completely different input selections returned exactly the same fallback recommendations. | Check selected IDs/mode propagation, TMDB candidate discovery, cache/state, similarity scoring and exclusions; add distinct-seed A/B tests and device verification. |
+
+Do not mark any of these fixed until implementation and verification are complete.
 
 ## Build verification
 

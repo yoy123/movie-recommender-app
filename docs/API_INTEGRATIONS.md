@@ -1,6 +1,6 @@
 # OpenStream+ API Integrations
 
-**Last verified:** 2026-07-28
+**Last code review:** 2026-10-11; **Firestick API failure reported:** 2026-10-12
 **Status:** Current integration reference
 
 ## Integration Summary
@@ -87,18 +87,22 @@ The client uses Android network security configuration. It does not install a tr
 
 ```properties
 OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-4.1 # optional; this is the default
+OPENAI_MODEL=gpt-6-astra # current code default; verify actual API model access
 ```
 
 ### Endpoint and model
 
 ```text
 POST https://api.openai.com/v1/chat/completions
-primary model: gpt-4.1
-fallback models: gpt-4.1, gpt-4.1-mini, gpt-4o-mini
+configured default model: gpt-6-astra
+configured fallback models: gpt-6.1-sol, gpt-6-luna, gpt-4.1, gpt-4.1-mini
 ```
 
 The request body is adapted to the configured model family. GPT-4.1-family requests use `max_completion_tokens` plus bounded temperature; optional reasoning models use supported reasoning-effort and verbosity fields. A model-access failure automatically advances to a compatible fallback model before the repository falls back to TMDB.
+
+### Firestick authorization error — open 2026-10-12
+
+OpenAI recommendations reportedly show "unauthorized" and revert to TMDB fallback. Verify the actual API status/error, APK configuration, project and model entitlement, billing and request compatibility without exposing credentials or full raw response bodies. Confirm a successful live request on Firestick before marking fixed. Model identifiers configured in code do not establish actual account access.
 
 ### Consent
 

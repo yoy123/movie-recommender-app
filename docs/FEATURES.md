@@ -9,8 +9,8 @@
 | Movie genres and search | Yes | Yes | TMDB |
 | TV genres and search | Yes | Yes | TMDB |
 | Select 1–5 titles | Yes | Yes | Recommendation input |
-| Favorites | Yes | Yes | Movies in Room, TV shows in DataStore; card action menus |
-| AI recommendations | Yes | Yes | Opt-in OpenAI path |
+| Favorites | Yes | Yes | Persisted movie/TV favorites; horizontal rails and recommendation card action still pending |
+| AI recommendations | Code path | Code path | Firestick reports unauthorized live OpenAI requests |
 | TMDB-only recommendations | Yes | Yes | No OpenAI data transfer |
 | Preference controls | Yes | Yes | Six preference groups |
 | Movie trailers | Yes | Yes | TMDB, IMDb fallback |
@@ -80,13 +80,21 @@ Each preference has a value and enable toggle:
 
 Preferences are ranking priorities rather than mutually exclusive hard filters.
 
+## Outstanding recommendation defects (reported 2026-10-12)
+
+The Firestick reports an OpenAI "unauthorized" error followed by TMDB fallback, and completely different selection sets reportedly yield identical fallback lists. Neither issue is verified fixed; see KNOWN_ISSUES.md.
+
 ## Favorites
 
 Movie favorites are persisted in Room through the `isFavorite` flag.
 
-Favorites can be selected as recommendation inputs. The favorites route uses pseudo-genre ID `-1`.
+Favorites are intended to be selectable as recommendation inputs, but the user reports that the required selection action is missing from card options. Add Select for Recommendations / Remove from Selections next to Watch Options and Delete from Favorites. The favorites route uses pseudo-genre ID `-1`.
 
 TV-show favorites are persisted as TMDB metadata in Preferences DataStore, separately from movie IDs. Both types appear in Favorites with Watch Options and Delete actions; saved titles are excluded from matching recommendations. TV-show episode torrent selection remains on the TV selection screen, not in the Favorites watch dialog.
+
+### Planned Favorites layout correction
+
+Replace the existing vertical grid with the **front-menu-style horizontal poster-card rows**: saved movies and saved TV shows on distinct rails scrolling left to right. Fire TV DPAD Left/Right changes cards, Up/Down switches rails, OK opens card actions, and Back retains focus; mobile uses horizontal swipes. Preserve search and selection state. This is outstanding, not complete.
 
 ## Trailers
 
