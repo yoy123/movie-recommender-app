@@ -7,7 +7,7 @@
 | Symptom | Likely cause |
 | --- | --- |
 | App fails at launch or content is empty | missing/invalid TMDB key or network failure |
-| AI recommendations fail | missing OpenAI key, consent disabled, API/network error, invalid model output |
+| AI recommendations fail | missing OpenAI key, insufficient safe candidates, API/network error, invalid model output |
 | Recommendations still appear without AI | expected TMDB-only fallback behavior |
 | Favorites missing after reinstall/clear data | local application data was removed |
 | Movie torrent unavailable | no source match or no live peers |
@@ -61,9 +61,9 @@ Reduce repeated requests and retry later.
 
 ## OpenAI Problems
 
-### AI data sharing blocked or declined
+### AI unexpectedly uses TMDB fallback
 
-This is not an error. The repository should use TMDB-only recommendations.
+The old AI Data Sharing switch and initial consent gate have been removed. AI should be attempted automatically. Inspect the sanitized fallback reason for missing key, insufficient candidates, request error, or invalid model output. The user confirmed the OpenAI API worked after enabling the former switch.
 
 ### Missing API key
 
@@ -209,7 +209,7 @@ Include:
 - device/Fire OS or Android version
 - exact navigation steps
 - relevant Logcat section
-- whether AI data sharing was allowed
+- fallback debug reason and whether the installed APK includes the always-on AI update
 - title/year/episode involved
 - provider/torrent source if shown
 - whether the problem reproduces after a clean launch

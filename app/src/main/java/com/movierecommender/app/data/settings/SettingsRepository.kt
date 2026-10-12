@@ -24,11 +24,6 @@ class SettingsRepository(private val context: Context) {
         val IS_FIRST_RUN = booleanPreferencesKey("is_first_run")
         val DARK_MODE = booleanPreferencesKey("dark_mode")
         
-        // LLM Consent - GDPR/CCPA compliance
-        // When true, user has consented to sending movie selections to OpenAI
-        // When false, app uses TMDB-only fallback recommendations
-        val LLM_CONSENT_GIVEN = booleanPreferencesKey("llm_consent_given")
-        val LLM_CONSENT_ASKED = booleanPreferencesKey("llm_consent_asked")
         
         // Database cleanup - last time orphaned movies were cleaned
         val LAST_DB_CLEANUP = longPreferencesKey("last_db_cleanup")
@@ -102,9 +97,6 @@ class SettingsRepository(private val context: Context) {
     val isFirstRun: Flow<Boolean> = context.dataStore.data.map { it[Keys.IS_FIRST_RUN] ?: true }
     val darkMode: Flow<Boolean> = context.dataStore.data.map { it[Keys.DARK_MODE] ?: true }
     
-    // LLM consent flows - false by default (opt-in required for GDPR)
-    val llmConsentGiven: Flow<Boolean> = context.dataStore.data.map { it[Keys.LLM_CONSENT_GIVEN] ?: false }
-    val llmConsentAsked: Flow<Boolean> = context.dataStore.data.map { it[Keys.LLM_CONSENT_ASKED] ?: false }
     
     // Database cleanup - 0 means never cleaned
     val lastDbCleanup: Flow<Long> = context.dataStore.data.map { it[Keys.LAST_DB_CLEANUP] ?: 0L }
@@ -173,16 +165,6 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.DARK_MODE] = isDark }
     }
     
-    /**
-     * Record user's LLM consent decision.
-     * @param consented true if user accepts sending data to OpenAI, false if declined
-     */
-    suspend fun setLlmConsent(consented: Boolean) {
-        context.dataStore.edit { 
-            it[Keys.LLM_CONSENT_GIVEN] = consented
-            it[Keys.LLM_CONSENT_ASKED] = true
-        }
-    }
 
     suspend fun setIndiePreference(value: Float) {
         context.dataStore.edit { it[Keys.INDIE_PREFERENCE] = value }

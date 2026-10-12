@@ -59,7 +59,7 @@ Current Firestick Compose screens include:
 - watch options
 - trailer
 - streaming player
-- consent dialog
+- static informational text for always-on OpenAI data transfer in Settings
 
 `ComposeActivity` accepts intent extras to choose a start screen and restore content-mode/selection context.
 
@@ -142,7 +142,7 @@ Minimum manual checks:
 - picker selection of 1–5 titles
 - card entry and nested-action navigation
 - AI-first recommendation generation and automatic TMDB fallback
-- AI data-sharing permission navigation
+- automatic AI-first requests and static data-sharing notice
 - trailer playback
 - watch-option dialog
 - external provider launch failure/success

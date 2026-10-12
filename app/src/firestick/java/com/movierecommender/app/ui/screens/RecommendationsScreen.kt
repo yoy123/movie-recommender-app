@@ -52,7 +52,6 @@ import com.movierecommender.app.ui.leanback.LeanbackPanel
 import com.movierecommender.app.ui.leanback.LeanbackTextButton
 import com.movierecommender.app.ui.leanback.LeanbackTopBar
 import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
-import com.movierecommender.app.ui.dialogs.firestick.LlmConsentDialog
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavController
 import androidx.compose.ui.window.Dialog
@@ -81,14 +80,6 @@ fun RecommendationsScreen(
         }
     }
 
-    // LLM Consent Dialog (GDPR/CCPA compliance)
-    if (uiState.showLlmConsentDialog) {
-        LlmConsentDialog(
-            onAccept = { viewModel.onLlmConsentResponse(consented = true) },
-            onDecline = { viewModel.onLlmConsentResponse(consented = false) },
-            onDismiss = viewModel::dismissLlmConsentDialog
-        )
-    }
 
     uiState.recommendationFallbackNotice?.let { notice ->
         Dialog(

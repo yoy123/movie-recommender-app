@@ -442,7 +442,6 @@ class LeanbackPickerFragment : BrowseSupportFragment() {
             putExtra(ComposeActivity.EXTRA_GENRE_ID, genreId)
             putExtra(ComposeActivity.EXTRA_GENRE_NAME, genreName)
             putExtra(ComposeActivity.EXTRA_CONTENT_MODE, contentMode.name)
-            putExtra(ComposeActivity.EXTRA_LLM_CONSENT_GIVEN, latestState.llmConsentGiven)
             if (contentMode == ContentMode.TV_SHOWS) {
                 putExtra(ComposeActivity.EXTRA_SELECTED_TV_SHOWS_JSON, com.google.gson.Gson().toJson(latestState.selectedTvShows))
             }

@@ -40,7 +40,6 @@ import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.TvShow
 import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.ui.viewmodel.MovieViewModel
-import com.movierecommender.app.ui.dialogs.LlmConsentDialog
 import com.movierecommender.app.data.remote.PopcornEpisode
 
 @Composable
@@ -167,13 +166,9 @@ fun MovieSelectionScreen(
             if (selectedCount > 0) {
                 ExtendedFloatingActionButton(
                     onClick = {
-                        if (!uiState.llmConsentAsked) {
-                            viewModel.checkAndShowLlmConsentIfNeeded()
-                        } else {
-                            if (isTvMode) viewModel.generateTvRecommendations()
-                            else viewModel.generateRecommendations()
-                            onGenerateRecommendations()
-                        }
+                        if (isTvMode) viewModel.generateTvRecommendations()
+                        else viewModel.generateRecommendations()
+                        onGenerateRecommendations()
                     },
                     icon = { Icon(Icons.Default.Check, "Generate") },
                     text = { Text("Get Recommendations") }
@@ -265,8 +260,6 @@ fun MovieSelectionScreen(
             currentUserName = uiState.userName,
             onPreferenceChange = { viewModel.updateIndiePreference(it) },
             onUserNameChange = { viewModel.updateUserName(it) },
-            aiDataSharingAllowed = uiState.llmConsentGiven,
-            onAiDataSharingAllowedChange = { viewModel.updateAiDataSharingConsent(it) },
             useIndiePreference = uiState.useIndiePreference,
             usePopularityPreference = uiState.usePopularityPreference,
             releaseYearStart = uiState.releaseYearStart,
@@ -298,19 +291,6 @@ fun MovieSelectionScreen(
     }
     
     // LLM Consent Dialog (GDPR/CCPA compliance)
-    if (uiState.showLlmConsentDialog) {
-        LlmConsentDialog(
-            onAccept = {
-                viewModel.onLlmConsentResponse(consented = true)
-                onGenerateRecommendations()
-            },
-            onDecline = {
-                viewModel.onLlmConsentResponse(consented = false)
-                onGenerateRecommendations()
-            },
-            onDismiss = viewModel::dismissLlmConsentDialog
-        )
-    }
 }
 
 @Composable

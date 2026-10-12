@@ -10,7 +10,7 @@ There are no known compile-blocking issues in either debug flavor. The largest r
 
 ## New Firestick defects reported October 12, 2026 — open
 
-- **OpenAI "unauthorized":** AI recommendations cannot complete, causing TMDB fallback. Verify the actual sanitized error, compiled API key, project/model entitlement, billing and model request compatibility. Do not expose keys.
+- **AI enable switch caused fallback (code fixed, device verification pending):** User confirmed OpenAI worked when enabled. Removed the switch, gating and consent dialog from both flavors, so AI is always attempted. TMDB remains an operational fallback. Updated APK verification is needed.
 - **Favorites missing selection action:** Add Select for Recommendations / Remove from Selections to both movie and TV card action menus, alongside Watch Options and Delete, with DPAD/OK support, selection state and maximum-five enforcement. Saved favorites must not appear in results.
 - **Favorites front-menu style not matched:** Replace the vertically scrolling favorites grid with **horizontal left-to-right scrolling poster-card rails like the front/home menu**, with separate Movies and TV Shows rows. Match home card design and visible focus; Left/Right traverses cards and Up/Down traverses rows. Keep scroll/focus and dialogs stable. Mobile should support swiping through horizontal rows.
 - **TMDB fallback identical for different seeds:** Audit input propagation, candidate pool, stale state and caching, similarity weighting and exclusions; add controlled A/B different-selection tests. Do not conceal defects with arbitrary random ranking.
@@ -21,7 +21,7 @@ These are user-reported problems, not verified root causes or implemented fixes.
 
 ### 1. Automated coverage is still narrow
 
-Both flavor unit-test suites passed on 2026-10-11 and skip the opt-in `LlmSmokeTest` by default. Coverage includes recommendation policy/request construction, torrent buffer policy, and torrent-source parsing, but still lacks broad UI and repository integration coverage.
+Both flavor unit-test suites passed on 2026-10-12 and skip the opt-in `LlmSmokeTest` by default. Coverage includes recommendation policy/request construction, torrent buffer policy, and torrent-source parsing, but still lacks broad UI and repository integration coverage.
 
 Impact:
 

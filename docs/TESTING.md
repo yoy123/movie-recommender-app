@@ -45,7 +45,7 @@ Per flavor:
 - failures: 0
 - errors: 0
 
-Across both variants, Gradle records 92 successful deterministic test executions and two skipped smoke-test executions. Recommendation tests cover typed fallback notices, Bayesian quality ranking, and model-specific OpenAI request construction. Torrent tests cover storage-aware ranking, ordered source registration, magnet deduplication, and file-selection identity. The opt-in smoke test performs a real bounded candidate-rerank request and fails on API or output-validation errors. Repository orchestration, consent UI, and fallback dialogs still require broader integration/UI coverage.
+Across both variants, Gradle records 92 successful deterministic test executions and two skipped smoke-test executions. Recommendation tests cover typed fallback notices, Bayesian quality ranking, and model-specific OpenAI request construction. Torrent tests cover storage-aware ranking, ordered source registration, magnet deduplication, and file-selection identity. The opt-in smoke test performs a real bounded candidate-rerank request and fails on API or output-validation errors. Repository orchestration and fallback dialogs still require broader integration/UI coverage.
 
 ## Torrent Buffer Policy Coverage
 
@@ -77,7 +77,7 @@ Add fake-service/DAO tests for:
 
 - AI success and two-attempt retry
 - AI validation failure to TMDB fallback
-- blocked AI data sharing means no OpenAI request and produces TMDB fallback
+- old stored AI consent values no longer gate requests; AI is always attempted first
 - movie torrent fallback order
 - one failed source does not stop the provider chain
 - TV episode result selection
@@ -113,7 +113,7 @@ Add instrumentation tests for:
 Mobile:
 
 - genre to selection to recommendation
-- consent accepted/declined
+- always-on AI path and fallback error alert
 - favorites
 - trailer and watch-option navigation
 - playback resume/error recovery
@@ -175,7 +175,7 @@ Firestick:
 - [ ] search
 - [ ] select one to five titles
 - [ ] reject a sixth title
-- [ ] AI consent accepted and declined
+- [ ] AI used by default without Settings switch or first-use dialog
 - [ ] AI-disabled TMDB path
 - [ ] session recommendation deduplication
 - [ ] add/remove favorites

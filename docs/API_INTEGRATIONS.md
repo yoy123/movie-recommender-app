@@ -8,7 +8,7 @@
 | Integration | Purpose | Auth | Current status |
 | --- | --- | --- | --- |
 | TMDB | Movies, TV, genres, videos, recommendations, external IDs, watch providers | API key | Active |
-| OpenAI | Personalized recommendation text/reranking | API key | Active, opt-in |
+| OpenAI | Personalized recommendation text/reranking | API key | Active, always primary when available |
 | IMDb scraper | Trailer fallback from IMDb pages | None | Active fallback |
 | YTS | Movie torrent lookup | None | Active |
 | Popcorn movie API | Movie torrent lookup | None | Active |
@@ -102,13 +102,11 @@ The request body is adapted to the configured model family. GPT-4.1-family reque
 
 ### Firestick authorization error — open 2026-10-12
 
-OpenAI recommendations reportedly show "unauthorized" and revert to TMDB fallback. Verify the actual API status/error, APK configuration, project and model entitlement, billing and request compatibility without exposing credentials or full raw response bodies. Confirm a successful live request on Firestick before marking fixed. Model identifiers configured in code do not establish actual account access.
+The user confirmed the API worked after manually enabling the old Settings switch. The switch and consent gate have been removed so OpenAI is always attempted first. Updated Firestick verification is still pending; real API errors still trigger sanitized fallback notices.
 
-### Consent
+### Always-on AI and disclosure
 
-OpenAI calls are permitted only when `llm_consent_given` is true. The prompt is a data-sharing permission, not a recommendation-style selector. Settings exposes the same permission as **AI Data Sharing**.
-
-When permission is declined, the repository uses deterministic TMDB fallback and displays a sanitized debug reason.
+AI is attempted automatically when a key and safe candidates are available, regardless of legacy stored consent values. The Settings switch and first-use consent dialog were removed. A static Settings text explains that selected titles and preferences are sent to OpenAI. TMDB is an operational fallback only.
 
 ### Retry behavior
 

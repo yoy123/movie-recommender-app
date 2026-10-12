@@ -10,7 +10,7 @@
 | TV genres and search | Yes | Yes | TMDB |
 | Select 1–5 titles | Yes | Yes | Recommendation input |
 | Favorites | Yes | Yes | Persisted movie/TV favorites; horizontal rails and recommendation card action still pending |
-| AI recommendations | Code path | Code path | Firestick reports unauthorized live OpenAI requests |
+| AI recommendations | Yes | Yes | Always on, no Settings switch; TMDB on genuine AI failure |
 | TMDB-only recommendations | Yes | Yes | No OpenAI data transfer |
 | Preference controls | Yes | Yes | Six preference groups |
 | Movie trailers | Yes | Yes | TMDB, IMDb fallback |
@@ -48,9 +48,9 @@ Firestick uses a Leanback browse screen and picker. Mobile uses Compose screens.
 
 ### AI-first engine
 
-OpenStream+ has one primary recommendation strategy. It collects and ranks verified TMDB candidates, then uses AI to analyze the selected titles and rerank exactly 15 candidates after data-sharing permission is granted.
+OpenStream+ has one primary recommendation strategy. It collects and ranks verified TMDB candidates, then always attempts OpenAI to analyze selected titles and rerank exactly 15 candidates.
 
-There is no AI-versus-TMDB style selector. The one-time prompt is a privacy permission only. Settings exposes **AI Data Sharing** so a previous decline can be changed later.
+There is no engine selector, AI enable switch, or first-use consent dialog. Settings shows a static OpenAI data-sharing notice.
 
 AI output is validated for:
 
@@ -63,7 +63,7 @@ AI output is validated for:
 
 ### TMDB fallback
 
-TMDB fallback is automatic when AI permission or a safe AI response is unavailable. It uses Bayesian-adjusted quality ranking plus enabled year, popularity, production-scale, and tone preferences.
+TMDB fallback occurs only when an API key, usable candidates or a valid AI result is unavailable. It uses Bayesian-adjusted quality ranking plus enabled year, popularity, production-scale, and tone preferences.
 
 A **TMDB Fallback (Debug)** dialog reports why fallback occurred without exposing API keys, prompts, raw model responses, or full response bodies.
 
@@ -82,7 +82,7 @@ Preferences are ranking priorities rather than mutually exclusive hard filters.
 
 ## Outstanding recommendation defects (reported 2026-10-12)
 
-The Firestick reports an OpenAI "unauthorized" error followed by TMDB fallback, and completely different selection sets reportedly yield identical fallback lists. Neither issue is verified fixed; see KNOWN_ISSUES.md.
+User confirmed OpenAI worked after enabling the old switch; its gate has now been removed in code, with new device validation pending. The separate issue of identical TMDB fallback lists for different selections is still open.
 
 ## Favorites
 

@@ -14,11 +14,11 @@
 1. Select movie mode, a genre or favorites, and 1-5 movies.
 2. Configure optional preference weights.
 3. Request recommendations.
-4. On first use, answer the AI data-sharing permission prompt.
+4. AI is always the default; no settings switch or initial consent gate.
 5. Collect verified TMDB similar/recommended/discovery candidates.
 6. Apply selected, favorite, historical, and session exclusions.
 7. Rank candidates locally with Bayesian-adjusted quality and preferences.
-8. When permission and at least 15 safe candidates are available, AI reranks the bounded list.
+8. With key and at least 15 safe candidates, always request OpenAI reranking.
 9. Validate the response before display.
 10. When AI cannot be used safely, display TMDB fallback plus a debug-reason dialog.
 
@@ -48,7 +48,7 @@ Generate
    |
 collect, exclude, and rank verified TMDB candidates
    |
-AI data sharing allowed + key available + at least 15 safe candidates?
+OpenAI key available + at least 15 safe candidates? (always AI first)
    ├─ yes -> bounded OpenAI rerank -> strict validation
    │                                  |
    │                         invalid/request failure
@@ -132,7 +132,7 @@ The Live TV row was removed on 2026-07-25.
 
 ## 11. Settings Flow
 
-Current user-facing settings include AI data-sharing permission and recommendation preference values/toggles. Recommendation-engine style is not selectable.
+Current settings expose recommendation preference values/toggles and an informational OpenAI data-sharing notice, not an AI on/off switch. TMDB is an automatic fallback only.
 
 Plex settings exist in DataStore but are not connected to a completed UI workflow.
 

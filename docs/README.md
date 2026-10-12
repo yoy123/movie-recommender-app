@@ -40,8 +40,8 @@ When documents disagree, use this order:
 
 - Product flavors: `mobile` and `firestick`
 - Room database: version 3
-- OpenAI model: configured code default is gpt-6-astra with GPT-6/GPT-4.1 fallbacks, but live API access is unverified; the Firestick reports an unauthorized error
-- Recommendations: AI-first after data-sharing permission; automatic TMDB fallback with debug reason
+- OpenAI model: configurable with GPT-6/GPT-4.1 fallbacks; user confirmed OpenAI worked after enabling former switch, which has now been removed
+- Recommendations: always AI-first without on/off setting or consent dialog; TMDB fallback only for operational problems
 - Torrent cache: one active source, 500 MB device reserve, bounded contiguous startup gate, and 60-minute resume retention
 - Embedded Live TV: removed on 2026-07-25
 - Automated tests: 32 executed successfully per flavor; `LlmSmokeTest` remains skipped by default

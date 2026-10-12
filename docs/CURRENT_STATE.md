@@ -28,7 +28,7 @@ The former embedded Live TV guide was removed on 2026-07-25 because it depended 
   - tone
   - international content
   - experimental content
-- AI-first recommendations through OpenAI after data-sharing permission.
+- AI-first recommendations always attempt OpenAI without a setting switch; selected titles/preferences are shared with OpenAI and disclosed via static Settings text.
 - Deterministic TMDB fallback with a visible debug reason when AI cannot be used safely.
 - No user-selectable recommendation-engine style.
 - Movie and TV trailer lookup.
@@ -74,17 +74,17 @@ flavor-specific MovieViewModel
 
 ## Recommendation Engine
 
-AI is the default primary recommendation engine. The first recommendation request asks only for permission to send selected titles, enabled preferences, and a bounded TMDB candidate list to OpenAI. It does not ask the user to choose an AI or TMDB recommendation style.
+AI is always the primary engine. The old Settings AI Data Sharing switch and first-use consent dialog are removed. Generating recommendations sends selected titles, preferences and bounded candidates to OpenAI; Settings displays a static disclosure.
 
 Production AI recommendations are bounded to verified TMDB candidates. The repository requires at least 15 safe candidates, calls the configured OpenAI model (`gpt-6-astra` by default, with GPT-6/GPT-4.1 fallback), validates exactly 15 canonical titles, and rejects generic, duplicated, excluded, malformed, or out-of-candidate output. Model-access failures automatically retry with compatible fallback models before TMDB fallback is used.
 
-TMDB fallback is used when permission is declined, the OpenAI key is unavailable, the candidate pool is too small, the request fails, or validation rejects the response. The recommendation screen displays a **TMDB Fallback (Debug)** dialog with a sanitized reason. AI data permission can later be changed under Settings.
+TMDB fallback occurs only if the OpenAI key is absent, safe candidate pool is too small, the API fails, or output validation rejects the result. The existing fallback debug dialog remains. There is no engine or AI permission toggle.
 
 Candidate and fallback ranking use Bayesian-adjusted ratings so very small vote counts cannot dominate the list. Retry exclusions are applied to both AI and TMDB paths.
 
 ## Outstanding user-reported regressions / design changes (2026-10-12)
 
-1. OpenAI recommendations show **"unauthorized"** on the Firestick and instead use TMDB fallback. Investigate the real sanitized API error, key/project/model access and request compatibility; validate a live AI result.
+1. User confirmed OpenAI worked after manually enabling the Settings switch. The toggle and gates are now removed; both variants request AI by default. New Firestick installation and validation are pending.
 2. The Favorites card options must offer **Select for Recommendations / Remove from Selections** for movie and TV favorites, in addition to Watch Options and Delete. Maintain up to five selections and exclude saved favorites from output.
 3. The Favorites screen must **look like the front menu**, with **horizontal poster-card rows scrolling left to right** rather than its current vertical Compose grid. Use separate Movie and TV rails, matching home browse card styling, focus, Left/Right navigation, Up/Down row switching and focus restoration. Mobile should have equivalent swipeable Compose rows.
 4. Completely different title selections reportedly produce the **same TMDB fallback list**. Test selected IDs/mode, candidate discovery, cache/session state, ranking sensitivity and exclusion logic using controlled comparisons.
@@ -144,7 +144,7 @@ The app does not use destructive migration fallback.
 DataStore currently defines 27 keys covering:
 
 - onboarding and appearance
-- AI consent
+- legacy AI consent keys are no longer used
 - recommendation preferences
 - database cleanup timestamp
 - Plex connection/library settings

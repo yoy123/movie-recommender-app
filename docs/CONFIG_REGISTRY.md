@@ -56,17 +56,15 @@ Default keystore path: `app/signing/release.jks`.
 
 ## DataStore Registry
 
-`SettingsRepository` defines 26 preference keys.
+`SettingsRepository` defines 24 active preference keys; legacy stored AI consent values no longer gate requests.
 
-### General and consent
+### General
 
 | Key | Type | Default |
 | --- | --- | --- |
 | `user_name` | String | empty |
 | `is_first_run` | Boolean | `true` |
 | `dark_mode` | Boolean | `true` |
-| `llm_consent_given` | Boolean | `false` |
-| `llm_consent_asked` | Boolean | `false` |
 | `last_db_cleanup` | Long | `0` |
 
 ### Recommendation controls

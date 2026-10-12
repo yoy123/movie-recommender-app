@@ -15,17 +15,15 @@ There is no user-selectable AI-versus-TMDB recommendation style. AI is the defau
 
 ## User-reported production bugs (2026-10-12)
 
-OpenAI recommendations reportedly show "unauthorized" on the Firestick and fall back to TMDB. The actual HTTP status/root cause is not yet verified; investigate sanitized API errors, configured key/project/model access and request parameters, then validate with a real on-device AI recommendation.
+User confirmed the OpenAI API worked after enabling the old Settings AI switch. The application-side gate has been removed in both flavors; always request AI first. Rebuild and verify on Firestick.
 
 TMDB fallback reportedly returned an identical complete list for entirely different selected movies/shows. Confirm each request receives the correct seed TMDB IDs/titles, content mode, genre and exclusions; audit candidate retrieval, caching, ViewModel state and whether similarity scoring adequately reflects the seeds. Add controlled A/B seed-input tests without artificial randomness.
 
 Favorites should be usable as recommendation inputs, but excluded from recommended outputs. The descriptions below are intended/code-level behavior, not proof these bugs are fixed.
 
-## Privacy Permission
+## Recommendation Data Disclosure
 
-The first recommendation request asks whether recommendation inputs may be sent to OpenAI. This is a data-sharing permission, not an engine-style selector.
-
-When permission is granted, OpenStream+ may send:
+The Settings switch and first-use opt-in dialog have been removed. Requesting recommendations automatically sends:
 
 - the selected movie or TV-show titles
 - the selected genre
@@ -34,7 +32,7 @@ When permission is granted, OpenStream+ may send:
 
 The user's name, favorites list, playback history, and account information are not sent.
 
-Declining permission leaves recommendations available through the TMDB fallback. Permission can later be changed under **Settings → AI Data Sharing**.
+Settings displays a non-interactive notice of this data transfer. TMDB is not a selectable engine; it is used only if AI cannot safely complete.
 
 ## Movie Pipeline
 
@@ -89,7 +87,6 @@ The older open-ended service method has been removed. Production and the opt-in 
 
 AI is attempted only when:
 
-- data-sharing permission is granted
 - an OpenAI API key is configured
 - at least 15 safe TMDB candidates remain
 
@@ -130,7 +127,6 @@ The service makes two bounded attempts. A rejected response is never shown direc
 
 Fallback occurs when:
 
-- data-sharing permission is declined
 - the OpenAI key is missing
 - fewer than 15 safe candidates remain for AI reranking
 - the OpenAI request fails
@@ -162,4 +158,4 @@ Both flavor ViewModels expose the source and fallback notice through `MovieUiSta
 - TMDB metadata is not a complete representation of tone, production scale, international focus, or experimental style.
 - A highly restrictive genre/year combination may produce fewer than 15 fallback titles.
 - Real OpenAI behavior still requires an opt-in network smoke test.
-- Repository orchestration and Compose consent/fallback flows need broader integration and UI test coverage.
+- Repository orchestration and Compose fallback flows need broader integration and UI test coverage.

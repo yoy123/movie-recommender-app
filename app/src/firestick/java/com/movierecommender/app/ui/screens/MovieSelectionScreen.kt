@@ -59,7 +59,6 @@ import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.TvShow
 import com.movierecommender.app.data.model.ContentMode
 import com.movierecommender.app.ui.viewmodel.firestick.MovieViewModel
-import com.movierecommender.app.ui.dialogs.firestick.LlmConsentDialog
 import com.movierecommender.app.data.remote.PopcornEpisode
 import com.movierecommender.app.ui.leanback.LeanbackActionButton
 import com.movierecommender.app.ui.leanback.LeanbackPanel
@@ -197,16 +196,12 @@ fun MovieSelectionScreen(
                             LeanbackTextButton(
                                 label = "Analyze Picks",
                                 onClick = {
-                                    if (!uiState.llmConsentAsked) {
-                                        viewModel.checkAndShowLlmConsentIfNeeded()
+                                    if (isTvMode) {
+                                        viewModel.generateTvRecommendations()
                                     } else {
-                                        if (isTvMode) {
-                                            viewModel.generateTvRecommendations()
-                                        } else {
-                                            viewModel.generateRecommendations()
-                                        }
-                                        onGenerateRecommendations()
+                                        viewModel.generateRecommendations()
                                     }
+                                    onGenerateRecommendations()
                                 },
                                 emphasized = true
                             )
@@ -300,8 +295,6 @@ fun MovieSelectionScreen(
             currentUserName = uiState.userName,
             onPreferenceChange = { viewModel.updateIndiePreference(it) },
             onUserNameChange = { viewModel.updateUserName(it) },
-            aiDataSharingAllowed = uiState.llmConsentGiven,
-            onAiDataSharingAllowedChange = { viewModel.updateAiDataSharingConsent(it) },
             useIndiePreference = uiState.useIndiePreference,
             usePopularityPreference = uiState.usePopularityPreference,
             releaseYearStart = uiState.releaseYearStart,
@@ -332,20 +325,6 @@ fun MovieSelectionScreen(
         )
     }
     
-    // LLM Consent Dialog (GDPR/CCPA compliance)
-    if (uiState.showLlmConsentDialog) {
-        LlmConsentDialog(
-            onAccept = {
-                viewModel.onLlmConsentResponse(consented = true)
-                onGenerateRecommendations()
-            },
-            onDecline = {
-                viewModel.onLlmConsentResponse(consented = false)
-                onGenerateRecommendations()
-            },
-            onDismiss = viewModel::dismissLlmConsentDialog
-        )
-    }
 }
 
 @Composable

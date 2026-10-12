@@ -15,16 +15,16 @@ This is the implementation tracker for the user's non-exhaustive Design Features
 
 ## Open Firestick issues and requirements — reported October 12, 2026
 
-The following four user-reported issues are OPEN. Prior code-completion claims do not demonstrate successful device behavior.
+Item 9 (always-on OpenAI) is implemented and unit-tested; confirm on the updated Firestick APK. Items 10-12 remain OPEN.
 
 | Feature | User report | Required verification |
 | --- | --- | --- |
-| OpenAI authorization | Recommendations report "unauthorized" and fall back to TMDB. | Diagnose sanitized HTTP response, key/project/model access, billing and request compatibility; verify one successful real AI request on the Firestick. |
+| Always-on OpenAI | User confirmed AI actually worked after enabling the old Settings switch. The application-side gate caused the fallback; API credentials were not proven bad. | Removed Settings switch, legacy consent gate and dialog; movies/TV always request OpenAI; TMDB is fallback for real failures. Both flavor tests passed; verify updated APK on Firestick. |
 | Favorite selection | Favorites cannot be selected for recommendations from card options. | Add Select for Recommendations / Remove from Selections next to Watch Options and Delete, for movies and TV; show state, enforce five-input cap, ensure DPAD activation. Favorites remain excluded from recommended results. |
 | Favorites layout | Favorites must look like the FRONT menu: cards scrolling LEFT TO RIGHT, not a vertical grid. | Use home-style horizontally scrolling poster rails for saved Movies and TV Shows. DPAD Left/Right navigates cards, Up/Down changes rows, OK opens actions, Back preserves focus; mobile swipeable horizontal rows. |
 | TMDB relevance | Completely different input selections returned exactly the same fallback recommendations. | Check selected IDs/mode propagation, TMDB candidate discovery, cache/state, similarity scoring and exclusions; add distinct-seed A/B tests and device verification. |
 
-Do not mark any of these fixed until implementation and verification are complete.
+Items 10-12 remain open; item 9 requires updated on-device verification.
 
 ## Build verification
 

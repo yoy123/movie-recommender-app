@@ -141,16 +141,16 @@ TV shows are not stored in the `movies` Room table as a second entity. TV select
     |
 TMDB candidate collection + exclusions + Bayesian ranking
     |
-AI data sharing allowed and at least 15 safe candidates?
+OpenAI key configured and at least 15 safe candidates?
     ├─ yes -> bounded OpenAI candidate rerank -> strict validation
     └─ no  -> deterministic TMDB fallback
     |
 typed RecommendationResult -> flavor ViewModel -> result/fallback dialog
 ```
 
-Production code has no open-generation branch and no recommendation-engine selector. The consent state controls whether recommendation data may be sent externally; it is not a product-mode choice.
+Production code has no open-generation branch, engine selector, or AI enable/disable setting. Selected titles, preferences and candidates are sent to OpenAI automatically when recommendations are requested; TMDB is an operational fallback.
 
-The OpenAI client uses `/v1/chat/completions` with a configurable primary model. The default is `gpt-4.1`; unavailable models fall back to `gpt-4.1`, `gpt-4.1-mini`, then `gpt-4o-mini`. Request fields are selected per model family.
+The OpenAI client uses `/v1/chat/completions` with a configurable primary model. The configured default is gpt-6-astra with gpt-6.1-sol, gpt-6-luna, gpt-4.1 and gpt-4.1-mini fallbacks. Request fields are selected per model family.
 
 AI failure falls back to TMDB-based recommendation text.
 
@@ -218,7 +218,7 @@ No destructive migration fallback is configured.
 
 ### DataStore
 
-`SettingsRepository` exposes Flow-backed preferences for onboarding, appearance, AI consent, recommendation controls, cleanup timing, and Plex configuration.
+`SettingsRepository` exposes Flow-backed preferences for onboarding, appearance, recommendation controls, cleanup timing, and Plex configuration. Legacy AI consent keys are no longer active.
 
 ## Firestick Focus Contract
 
@@ -237,7 +237,7 @@ Important behavior:
 - API keys originate in untracked `local.properties`.
 - Keys are compiled into `BuildConfig` and are extractable from an APK.
 - Release traffic uses normal platform TLS validation.
-- OpenAI use requires explicit consent.
+- OpenAI is the primary engine on every recommendation request, with a static data-sharing disclosure in Settings.
 - Provider/torrent services must be treated as untrusted network inputs.
 
 ## Architectural Debt

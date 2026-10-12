@@ -64,10 +64,6 @@ data class MovieUiState(
     val userName: String = "", // User's name for personalized favorites
     val isFirstRun: Boolean = true, // Show welcome dialog on first run
     val isDarkMode: Boolean = true, // Dark mode preference (default: dark)
-    // LLM consent for GDPR/CCPA compliance
-    val llmConsentGiven: Boolean = false, // User consented to send data to OpenAI
-    val llmConsentAsked: Boolean = false, // Consent dialog has been shown
-    val showLlmConsentDialog: Boolean = false // Show consent dialog now
 )
 
 class MovieViewModel(
@@ -80,7 +76,6 @@ class MovieViewModel(
 
     // Tracks titles recommended during this ViewModel session so user-triggered retries never return the same list again.
     private val sessionRecommendedTitles = mutableSetOf<String>()
-    private var pendingRecommendationMode: ContentMode? = null
     
     init {
         loadGenres()
@@ -144,13 +139,6 @@ class MovieViewModel(
         viewModelScope.launch {
             settings.useExperimental.collect { _uiState.value = _uiState.value.copy(useExperimentalPreference = it) }
         }
-        // LLM consent observers
-        viewModelScope.launch {
-            settings.llmConsentGiven.collect { _uiState.value = _uiState.value.copy(llmConsentGiven = it) }
-        }
-        viewModelScope.launch {
-            settings.llmConsentAsked.collect { _uiState.value = _uiState.value.copy(llmConsentAsked = it) }
-        }
     }
     
     private fun observeSelectedMovies() {
@@ -185,55 +173,10 @@ class MovieViewModel(
         }
     }
     
-    // ─────────────────────────────────────────────────────────────────────────────
-    // LLM Consent (GDPR/CCPA compliance)
-    // ─────────────────────────────────────────────────────────────────────────────
-    
-    /**
-     * Show the LLM consent dialog if user hasn't been asked yet.
-     * Call this before first LLM recommendation generation.
-     */
-    fun checkAndShowLlmConsentIfNeeded() {
-        val state = _uiState.value
-        if (!state.llmConsentAsked) {
-            pendingRecommendationMode = state.contentMode
-            _uiState.value = state.copy(showLlmConsentDialog = true)
-        }
-    }
-
-    fun onLlmConsentResponse(consented: Boolean) {
-        val pendingMode = pendingRecommendationMode
-        pendingRecommendationMode = null
-        _uiState.value = _uiState.value.copy(
-            showLlmConsentDialog = false,
-            llmConsentGiven = consented,
-            llmConsentAsked = true
-        )
-        viewModelScope.launch { settings.setLlmConsent(consented) }
-
-        when (pendingMode) {
-            ContentMode.MOVIES -> generateRecommendations()
-            ContentMode.TV_SHOWS -> generateTvRecommendations()
-            null -> Unit
-        }
-    }
-
-    fun dismissLlmConsentDialog() {
-        pendingRecommendationMode = null
-        _uiState.value = _uiState.value.copy(showLlmConsentDialog = false)
-    }
-
     fun dismissRecommendationFallbackNotice() {
         _uiState.value = _uiState.value.copy(recommendationFallbackNotice = null)
     }
 
-    fun updateAiDataSharingConsent(allowed: Boolean) {
-        _uiState.value = _uiState.value.copy(
-            llmConsentGiven = allowed,
-            llmConsentAsked = true
-        )
-        viewModelScope.launch { settings.setLlmConsent(allowed) }
-    }
 
     fun loadGenres() {
         viewModelScope.launch {
@@ -533,13 +476,6 @@ class MovieViewModel(
     fun generateTvRecommendations(additionalExcludedTitles: List<String> = emptyList()) {
         val selectedShows = _uiState.value.selectedTvShows
         if (selectedShows.isEmpty() || selectedShows.size > 5) return
-
-        val initialState = _uiState.value
-        if (!initialState.llmConsentAsked) {
-            pendingRecommendationMode = ContentMode.TV_SHOWS
-            _uiState.value = initialState.copy(showLlmConsentDialog = true)
-            return
-        }
         
         val genreName = _uiState.value.selectedGenreName ?: "TV Shows"
         val genreId = _uiState.value.selectedGenreId
@@ -564,7 +500,7 @@ class MovieViewModel(
                 experimentalPreference = state.experimentalPreference,
                 useExperimentalPreference = state.useExperimentalPreference,
                 additionalExcludedTitles = (additionalExcludedTitles + state.favoriteTvShows.map { it.name } + sessionRecommendedTitles.toList()).distinct(),
-                useLlm = state.llmConsentGiven
+                useLlm = true // AI is always the primary engine; TMDB is error fallback
             ).collect { resource ->
                 when (resource) {
                     is Resource.Loading -> {
@@ -699,12 +635,6 @@ class MovieViewModel(
         
         // Allow 1-5 movies
         if (selectedMovies.isEmpty() || selectedMovies.size > 5) return
-
-        if (!state.llmConsentAsked) {
-            pendingRecommendationMode = ContentMode.MOVIES
-            _uiState.value = state.copy(showLlmConsentDialog = true)
-            return
-        }
         
         viewModelScope.launch {
             repository.getRecommendations(
@@ -726,7 +656,7 @@ class MovieViewModel(
                 state.experimentalPreference,
                 state.useExperimentalPreference,
                 additionalExcludedTitles = (additionalExcludedTitles + sessionRecommendedTitles.toList()).distinct(),
-                useLlm = state.llmConsentGiven // Only use LLM if user has consented
+                useLlm = true // AI is always the primary engine; TMDB is error fallback
             ).collect { resource ->
                 when (resource) {
                     is Resource.Loading -> {

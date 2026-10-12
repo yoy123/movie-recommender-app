@@ -35,8 +35,6 @@ fun SettingsScreen(
                     currentUserName = uiState.userName,
                     onPreferenceChange = { viewModel.updateIndiePreference(it) },
                     onUserNameChange = { viewModel.updateUserName(it) },
-                    aiDataSharingAllowed = uiState.llmConsentGiven,
-                    onAiDataSharingAllowedChange = { viewModel.updateAiDataSharingConsent(it) },
                     useIndiePreference = uiState.useIndiePreference,
                     usePopularityPreference = uiState.usePopularityPreference,
                     releaseYearStart = uiState.releaseYearStart,

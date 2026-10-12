@@ -196,8 +196,6 @@ fun GenreSelectionScreen(
             currentUserName = uiState.userName,
             onPreferenceChange = { viewModel.updateIndiePreference(it) },
             onUserNameChange = { viewModel.updateUserName(it) },
-            aiDataSharingAllowed = uiState.llmConsentGiven,
-            onAiDataSharingAllowedChange = { viewModel.updateAiDataSharingConsent(it) },
             // Toggles and values
             useIndiePreference = uiState.useIndiePreference,
             usePopularityPreference = uiState.usePopularityPreference,
@@ -302,8 +300,6 @@ fun PreferenceSettingsDialog(
     onPreferenceChange: (Float) -> Unit,
     onUserNameChange: (String) -> Unit,
     onDismiss: () -> Unit,
-    aiDataSharingAllowed: Boolean = false,
-    onAiDataSharingAllowedChange: (Boolean) -> Unit = {},
     // All preference values
     useIndiePreference: Boolean = true,
     usePopularityPreference: Boolean = true,
@@ -397,33 +393,12 @@ fun PreferenceSettingsDialog(
                     )
                 }
                 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 24.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "AI Data Sharing",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Text(
-                            text = if (aiDataSharingAllowed) {
-                                "Allowed — AI is the primary recommendation engine"
-                            } else {
-                                "Blocked — recommendations use TMDB fallback"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = aiDataSharingAllowed,
-                        onCheckedChange = onAiDataSharingAllowedChange
-                    )
-                }
+                Text(
+                    text = "AI recommendations are always enabled. Your selected titles and recommendation preferences are sent to OpenAI. TMDB is used only when AI is unavailable.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 24.dp)
+                )
 
                 // Divider
                 Divider(modifier = Modifier.padding(bottom = 16.dp))

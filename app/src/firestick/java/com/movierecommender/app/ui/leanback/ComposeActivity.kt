@@ -37,7 +37,6 @@ class ComposeActivity : ComponentActivity() {
         const val EXTRA_TRAILER_TITLE = "extra_trailer_title"
         const val EXTRA_TRAILER_URL = "extra_trailer_url"
         const val EXTRA_SELECTED_TV_SHOWS_JSON = "extra_selected_tv_shows_json"
-        const val EXTRA_LLM_CONSENT_GIVEN = "extra_llm_consent_given"
         const val EXTRA_STREAMING_TITLE = "extra_streaming_title"
         const val EXTRA_STREAMING_MAGNET = "extra_streaming_magnet"
 
@@ -62,7 +61,6 @@ class ComposeActivity : ComponentActivity() {
         val streamingTitle = intent.getStringExtra(EXTRA_STREAMING_TITLE) ?: ""
         val streamingMagnet = intent.getStringExtra(EXTRA_STREAMING_MAGNET) ?: ""
         val selectedTvShowsJson = intent.getStringExtra(EXTRA_SELECTED_TV_SHOWS_JSON)
-        val llmConsentGiven = intent.getBooleanExtra(EXTRA_LLM_CONSENT_GIVEN, false)
 
         setContent {
             val viewModel: MovieViewModel = viewModel(
@@ -80,11 +78,6 @@ class ComposeActivity : ComponentActivity() {
                 viewModel.setContentMode(mode)
                 if (genreId != -1 || startScreen == SCREEN_FAVORITES) {
                     viewModel.selectGenre(genreId, genreName)
-                }
-                // Pre-set LLM consent from the launching activity so it's available
-                // before TV show selections trigger recommendation generation
-                if (llmConsentGiven) {
-                    viewModel.setLlmConsentGiven(true)
                 }
                 // Restore TV show selections passed from the picker
                 if (!selectedTvShowsJson.isNullOrBlank()) {
