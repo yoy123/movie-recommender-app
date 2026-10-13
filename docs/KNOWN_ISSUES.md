@@ -8,6 +8,12 @@
 
 There are no known compile-blocking issues in either debug flavor. The largest risks are test coverage, unstable third-party integrations, oversized architecture components, and client-side secret handling.
 
+## Resolved Firestick in-app trailer ad DPAD issue — 2026-10-12
+
+Problem: YouTube's desktop watch page inside the OpenStream+ Firestick WebView sometimes plays ads, but its native web Skip button cannot receive focus through standard Fire TV DPAD navigation. User requires trailers to remain inside OpenStream+, not to launch the external YouTube application.
+
+Fix: Implemented a subclass of WebView with a visible DPAD-controlled pointer and real click events from OK/Select. YouTube WebView playback remains internal; direct MP4 WebView playback is unchanged. Tests cover directional movement, viewport clamping and key repeat. Live Firestick 192.168.1.238 test showed a YouTube ad and visible Skip button, moved pointer with the DPAD, clicked Skip using OK, confirmed the movie trailer resumed and Back returned to recommendation cards. No fatal exceptions observed. Ads are not automatically skipped.
+
 ## Resolved Firestick trailer-navigation regression — 2026-10-12
 
 On the Firestick, choosing Watch Trailer from a movie recommendation's Watch Options exited to Fire TV Home rather than displaying the trailer. Root cause: RecommendationsScreen navigated to trailer/{title}/{videoUrl}, while the active ComposeActivity navigation graph only registered the separate trailer intent-extras destination. Registered the parameterized destination, decoded the Base64-encoded trailer URL and title, and connected Back to the recommendation screen. The Firestick APK built successfully and Firestick unit tests passed; it was installed on 192.168.1.238. The user confirmed that trailer playback is working again after the fix. The app uses its internal trailer player; this fix does not change the launch to an external YouTube app.

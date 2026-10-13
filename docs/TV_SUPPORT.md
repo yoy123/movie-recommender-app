@@ -71,6 +71,12 @@ DPAD Left/Right traverses cards; Up/Down switches rows or top-level controls; OK
 
 Favorites now opens a dedicated native LeanbackFavoritesActivity with a BrowseSupportFragment and ListRows (not the old Compose dashboard). PickerMediaCardPresenter / FocusBorderImageCardView supply the same poster art, dimensions and focus treatment as the front-menu picker. The Firestick build and unit tests passed; the revised APK was installed on Firestick 192.168.1.238 and a live screenshot confirmed horizontal Actions and Selected for Recommendations rails. User confirmed the screen looks much better. Entering Favorites no longer produced the prior InflateException. Select for Recommendations / Remove from Recommendations, Watch Options and Delete are implemented in movie/TV card menus; Clear Selections is in the action row. Full DPAD card-menu, search, five-pick limit and focus-restoration verification remain to be completed. Mobile styling is unchanged.
 
+## In-app YouTube trailer DPAD pointer — verified 2026-10-12
+
+Firestick trailers sourced from YouTube remain in OpenStream+'s internal WebView, not the YouTube application. The video page is desktop-oriented, so its ad-skip and playback buttons are not standard Android focus targets. The custom DpadTrailerWebView adds a high-contrast cursor when the remote is pressed: Left/Right/Up/Down move the pointer, OK simulates a real touch click at that location, and Android Back returns to recommendations. Cursor movement is bounded to the view; a held direction accelerates movement. No ad skipping is automatic. Direct MP4 playback is unaffected.
+
+**Verified on Firestick 192.168.1.238:** Real YouTube ad's visible Skip control selected through DPAD + OK, and the movie trailer began; Back restored the recommendation screen. Firestick unit tests and APK build passed.
+
 ## DPAD Focus Contract
 
 Every interactive control must be reachable and visibly focused with a Fire TV remote.

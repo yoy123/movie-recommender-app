@@ -127,7 +127,7 @@ private fun YouTubeWebViewPlayer(
     ) {
         AndroidView(
             factory = { ctx ->
-                WebView(ctx).apply {
+                DpadTrailerWebView(ctx).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -163,9 +163,9 @@ private fun YouTubeWebViewPlayer(
                         // Enable fullscreen video support
                     }
                     
-                    // Load the full YouTube watch page directly
+                    // Load in-app; directional keys operate the touch pointer.
                     loadUrl(youtubeUrl)
-                    
+                    requestFocus()
                     onWebViewCreated(this)
                 }
             },

@@ -116,6 +116,7 @@ Mobile:
 - always-on AI path and fallback error alert
 - favorites
 - trailer and watch-option navigation
+- YouTube trailer ad-skip with in-app DPAD pointer: arrows move, OK clicks a visible Skip Ad, Back restores recommendations; this passed on Firestick 192.168.1.238 on 2026-10-12. Confirm new YouTube page variants still work after UI changes; do not auto-skip ads.
 - playback resume/error recovery
 
 Firestick:
