@@ -13,7 +13,7 @@ data class PickerActionItem(
     val accentColor: Int
 )
 
-class PickerActionCardPresenter : Presenter() {
+class PickerActionCardPresenter(private val onActionClick: ((PickerActionItem) -> Unit)? = null) : Presenter() {
 
     companion object {
         private const val CARD_WIDTH = 280
@@ -35,6 +35,7 @@ class PickerActionCardPresenter : Presenter() {
 
         cardView.titleText = action.title
         cardView.contentText = action.description
+        if (onActionClick != null) cardView.setOnClickListener { onActionClick.invoke(action) }
 
         val gradient = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,

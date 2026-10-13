@@ -63,13 +63,13 @@ Current Firestick Compose screens include:
 
 `ComposeActivity` accepts intent extras to choose a start screen and restore content-mode/selection context.
 
-## Required Favorites redesign — outstanding (2026-10-12)
+## Favorites native Leanback rails — implementation (2026-10-12)
 
 The user wants Favorites to resemble the Fire TV **front/home browse menu**: **horizontal left-to-right poster-card rails**, not the current vertical grid. Present saved Movies and TV Shows in separate labeled horizontally scrolling rows, using matching artwork, card size, typography, spacing and focus effects.
 
 DPAD Left/Right traverses cards; Up/Down switches rows or top-level controls; OK opens Watch Options, Select for Recommendations / Remove from Selections, and Delete. Back restores focus and scroll position; support search and empty states. Mobile should use consistent swipeable horizontal Compose rails.
 
-This design has not yet been implemented or verified on a device.
+Favorites now opens a dedicated native LeanbackFavoritesActivity with a BrowseSupportFragment and ListRows (not the old Compose dashboard). PickerMediaCardPresenter / FocusBorderImageCardView supply the same poster art, dimensions and focus treatment as the front-menu picker. The Firestick build and unit tests passed; the revised APK was installed on Firestick 192.168.1.238 and a live screenshot confirmed horizontal Actions and Selected for Recommendations rails. User confirmed the screen looks much better. Entering Favorites no longer produced the prior InflateException. Select for Recommendations / Remove from Recommendations, Watch Options and Delete are implemented in movie/TV card menus; Clear Selections is in the action row. Full DPAD card-menu, search, five-pick limit and focus-restoration verification remain to be completed. Mobile styling is unchanged.
 
 ## DPAD Focus Contract
 

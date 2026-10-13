@@ -8,25 +8,17 @@
 package com.movierecommender.app.ui.screens.firestick
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
@@ -37,15 +29,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.viewinterop.AndroidView
+import android.view.ContextThemeWrapper
+import com.movierecommender.app.R
+import androidx.leanback.widget.ArrayObjectAdapter
+import androidx.leanback.widget.DiffCallback
+import androidx.leanback.widget.HorizontalGridView
+import androidx.leanback.widget.ItemBridgeAdapter
+import com.movierecommender.app.ui.leanback.PickerMediaCardPresenter
+import com.movierecommender.app.ui.leanback.PickerActionItem
+import com.movierecommender.app.ui.leanback.PickerActionCardPresenter
 import com.movierecommender.app.data.model.Movie
 import com.movierecommender.app.data.model.TvShow
 import com.movierecommender.app.data.model.ContentMode
@@ -97,288 +99,187 @@ fun FavoritesScreen(
         }
     }
 
-    val hasSelections = uiState.selectedMovies.isNotEmpty() || uiState.selectedTvShows.isNotEmpty()
-    
-    Scaffold(
-        topBar = {
-            LeanbackTopBar(
-                title = "${uiState.userName}'s Favorites",
-                subtitle = if (hasSelections) {
-                    "${uiState.selectedMovies.size + uiState.selectedTvShows.size} picks ready for recommendations"
-                } else {
-                    "Save titles here before starting analysis"
-                },
-                onBackClick = onBackClick,
-                actions = {
-                    if (uiState.selectedMovies.isNotEmpty()) {
-                        LeanbackActionButton(
-                            icon = Icons.Default.Check,
-                            label = "Recommend Movies",
-                            onClick = {
-                                viewModel.setContentMode(ContentMode.MOVIES)
-                                viewModel.generateRecommendations()
-                                onGenerateRecommendations()
-                            },
-                            emphasized = true
-                        )
-                    }
-                    if (uiState.selectedTvShows.isNotEmpty()) {
-                        LeanbackActionButton(
-                            icon = Icons.Default.Check,
-                            label = "Recommend TV",
-                            onClick = {
-                                viewModel.setContentMode(ContentMode.TV_SHOWS)
-                                viewModel.generateTvRecommendations()
-                                onGenerateRecommendations()
-                            },
-                            emphasized = true
-                        )
-                    }
+    val selectedMovieIds = uiState.selectedMovies.map { it.id }.toSet()
+    val selectedTvIds = uiState.selectedTvShows.map { it.id }.toSet()
+    val favoriteMovieIds = uiState.favoriteMovies.map { it.id }.toSet()
+    val selectedFavorites: List<Any> =
+        uiState.favoriteMovies.filter { it.id in selectedMovieIds } +
+            uiState.favoriteTvShows.filter { it.id in selectedTvIds }
+    val hasSelections = selectedMovieIds.isNotEmpty() || selectedTvIds.isNotEmpty()
 
-                    LeanbackActionButton(
-                        icon = Icons.Default.Settings,
-                        label = "Settings",
-                        onClick = { showSettingsDialog = true }
-                    )
+    val actionItems = buildList {
+        add(PickerActionItem("back", "Back", "Return to browse", 0xFF23456A.toInt()))
+        add(PickerActionItem("search", "Search Titles", "Find by name", 0xFF006B99.toInt()))
+        if (selectedMovieIds.isNotEmpty()) {
+            add(PickerActionItem("recommend_movies", "Recommend Movies", selectedMovieIds.size.toString() + " selected", 0xFF007A75.toInt()))
+        }
+        if (selectedTvIds.isNotEmpty()) {
+            add(PickerActionItem("recommend_tv", "Recommend TV", selectedTvIds.size.toString() + " selected", 0xFF007A75.toInt()))
+        }
+        if (hasSelections) {
+            add(PickerActionItem("clear", "Clear Selections", "Keep your favorites", 0xFF9A512F.toInt()))
+        }
+        add(PickerActionItem("settings", "Settings", "Recommendation preferences", 0xFF5C3BA8.toInt()))
+    }
+
+    // Use the same dark Browse/Picker background and actual native Leanback action cards
+    // as the front menu rather than a large Compose dashboard header.
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF303030))
+            .verticalScroll(rememberScrollState())
+    ) {
+        Text(
+            text = uiState.userName.takeIf { it.isNotBlank() }?.let { it + "'s Favorites" } ?: "Favorites",
+            color = Color.White,
+            style = MaterialTheme.typography.headlineLarge,
+            modifier = Modifier.padding(start = 48.dp, top = 20.dp, bottom = 6.dp)
+        )
+        Text(
+            text = "Actions",
+            style = MaterialTheme.typography.titleLarge,
+            color = Color.White,
+            modifier = Modifier.padding(start = 48.dp, top = 12.dp, bottom = 4.dp)
+        )
+        FavoriteLeanbackActionRail(actionItems) { action ->
+            when (action.id) {
+                "back" -> onBackClick()
+                "search" -> isSearchActive = true
+                "recommend_movies" -> {
+                    viewModel.setContentMode(ContentMode.MOVIES)
+                    viewModel.generateRecommendations()
+                    onGenerateRecommendations()
                 }
-            )
-        },
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            Column(
-                modifier = Modifier.fillMaxSize()
+                "recommend_tv" -> {
+                    viewModel.setContentMode(ContentMode.TV_SHOWS)
+                    viewModel.generateTvRecommendations()
+                    onGenerateRecommendations()
+                }
+                "clear" -> viewModel.clearSelections()
+                "settings" -> showSettingsDialog = true
+            }
+        }
+
+        if (isSearchActive || searchQuery.isNotBlank()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 48.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // TV-friendly Search Bar (no auto-IME on focus)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 48.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Search button
-                    run {
-                        val interaction = remember { MutableInteractionSource() }
-                        val focused by interaction.collectIsFocusedAsState()
-                        Surface(
-                            shape = MaterialTheme.shapes.small,
-                            color = if (focused) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                            border = if (focused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                        ) {
-                            IconButton(
-                                onClick = { isSearchActive = true },
-                                interactionSource = interaction,
-                                modifier = Modifier.focusable(interactionSource = interaction)
-                            ) {
-                                Icon(
-                                    Icons.Default.Search,
-                                    contentDescription = "Activate search",
-                                    tint = if (focused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    }
-
-                    TvSearchField(
-                        value = searchQuery,
-                        onValueChange = {
-                            searchQuery = it
-                            // Live search as text changes.
-                            viewModel.searchMovies(it)
-                        },
-                        isActive = isSearchActive,
-                        onActiveChange = { isSearchActive = it },
-                        onSearch = {
-                            viewModel.searchMovies(searchQuery)
-                            isSearchActive = false
-                            keyboardController?.hide()
-                        },
-                        focusableWhenInactive = false,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    // Clear button
-                    run {
-                        val interaction = remember { MutableInteractionSource() }
-                        val focused by interaction.collectIsFocusedAsState()
-                        Surface(
-                            shape = MaterialTheme.shapes.small,
-                            color = if (focused) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                            border = if (focused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    searchQuery = ""
-                                    viewModel.searchMovies("")
-                                    isSearchActive = false
-                                    keyboardController?.hide()
-                                },
-                                enabled = searchQuery.isNotBlank(),
-                                interactionSource = interaction,
-                                modifier = Modifier.focusable(interactionSource = interaction)
-                            ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Clear search",
-                                    tint = if (focused) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    }
-                }
-                
-                // Selection counter
-                if (hasSelections) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                text = "${uiState.selectedMovies.size + uiState.selectedTvShows.size} selected for recommendations",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-                    }
-                }
-                
-                // Favorites Section
-                if (uiState.favoriteMovies.isNotEmpty() || uiState.favoriteTvShows.isNotEmpty()) {
-                    Text(
-                        text = "Your Favorites (${uiState.favoriteMovies.size + uiState.favoriteTvShows.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(horizontal = 48.dp, vertical = 8.dp)
-                    )
-                    
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
-                        contentPadding = PaddingValues(
-                            start = 48.dp,
-                            top = 16.dp,
-                            end = 48.dp,
-                            bottom = if (hasSelections) 120.dp else 24.dp
-                        ),
-                        horizontalArrangement = Arrangement.spacedBy(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(20.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        items(uiState.favoriteMovies) { movie ->
-                            FavoriteMovieCard(
-                                movie = movie,
-                                isSelected = uiState.selectedMovies.any { selected: Movie -> selected.id == movie.id },
-                                onOpenActions = { activeFavorite = movie },
-                                onToggleSelection = { viewModel.toggleMovieSelection(movie) }
-                            )
-                        }
-                        items(uiState.favoriteTvShows, key = { "tv_" + it.id }) { show ->
-                            Card(
-                                onClick = { activeTvFavorite = show },
-                                modifier = Modifier.fillMaxWidth().height(280.dp),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                            ) {
-                                Box(Modifier.fillMaxSize()) {
-                                    AsyncImage(
-                                        model = show.posterPath?.let { "https://image.tmdb.org/t/p/w500" + it },
-                                        contentDescription = show.name,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                    IconButton(
-                                        onClick = { viewModel.toggleTvShowSelection(show) },
-                                        modifier = Modifier.align(Alignment.TopEnd)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Check,
-                                            contentDescription = "Select TV show for recommendations",
-                                            tint = androidx.compose.ui.graphics.Color.White
-                                        )
-                                    }
-                                    Surface(
-                                        color = androidx.compose.ui.graphics.Color(0xD0000000),
-                                        modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth()
-                                    ) {
-                                        Text(show.name, modifier = Modifier.padding(8.dp), color = androidx.compose.ui.graphics.Color.White)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    Text(
-                        text = "No favorites yet. Search and add movies and TV shows!",
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    )
-                }
-                
-                Divider()
-                
-                // Search Results Section
-                if (searchQuery.isNotEmpty()) {
-                    Text(
-                        text = "Search Results",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(horizontal = 48.dp, vertical = 8.dp)
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                    ) {
-                        when {
-                            uiState.isLoading -> {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.align(Alignment.Center)
-                                )
-                            }
-
-                            uiState.movies.isEmpty() -> {
-                                Text(
-                                    text = "No movies found",
-                                    modifier = Modifier.align(Alignment.Center)
-                                )
-                            }
-
-                            else -> {
-                                LazyVerticalGrid(
-                                    columns = GridCells.Fixed(3),
-                                    contentPadding = PaddingValues(
-                                        start = 48.dp,
-                                        top = 16.dp,
-                                        end = 48.dp,
-                                        bottom = if (hasSelections) 120.dp else 24.dp
-                                    ),
-                                    horizontalArrangement = Arrangement.spacedBy(20.dp),
-                                    verticalArrangement = Arrangement.spacedBy(20.dp)
-                                ) {
-                                    items(uiState.movies) { movie ->
-                                        SearchResultMovieCard(
-                                            movie = movie,
-                                            isFavorite = uiState.favoriteMovies.any { it.id == movie.id },
-                                            onAdd = { viewModel.addToFavorites(movie) }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                TvSearchField(
+                    value = searchQuery,
+                    onValueChange = { value ->
+                        searchQuery = value
+                        viewModel.searchMovies(value)
+                    },
+                    isActive = isSearchActive,
+                    onActiveChange = { isSearchActive = it },
+                    onSearch = {
+                        viewModel.searchMovies(searchQuery)
+                        isSearchActive = false
+                        keyboardController?.hide()
+                    },
+                    focusableWhenInactive = false,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = {
+                    searchQuery = ""
+                    viewModel.searchMovies("")
+                    isSearchActive = false
+                    keyboardController?.hide()
+                }) {
+                    Icon(Icons.Default.Close, contentDescription = "Close search", tint = Color.White)
                 }
             }
         }
+
+            if (selectedFavorites.isNotEmpty()) {
+                Text(
+                    text = "Selected for Recommendations (" + selectedFavorites.size + ")",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    modifier = Modifier.padding(start = 48.dp, top = 8.dp, bottom = 4.dp)
+                )
+                FavoriteLeanbackRail(
+                    content = selectedFavorites,
+                    selectedMovieIds = selectedMovieIds,
+                    selectedTvIds = selectedTvIds,
+                    favoriteMovieIds = favoriteMovieIds,
+                    onMovieClick = { activeFavorite = it },
+                    onTvClick = { activeTvFavorite = it }
+                )
+            }
+
+            if (uiState.favoriteMovies.isNotEmpty()) {
+                Text(
+                    text = "Movie Favorites (" + uiState.favoriteMovies.size + ")",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    modifier = Modifier.padding(start = 48.dp, top = 8.dp, bottom = 4.dp)
+                )
+                FavoriteLeanbackRail(
+                    content = uiState.favoriteMovies,
+                    selectedMovieIds = selectedMovieIds,
+                    selectedTvIds = selectedTvIds,
+                    favoriteMovieIds = favoriteMovieIds,
+                    onMovieClick = { activeFavorite = it },
+                    onTvClick = { activeTvFavorite = it }
+                )
+            }
+            if (uiState.favoriteTvShows.isNotEmpty()) {
+                Text(
+                    text = "TV Show Favorites (" + uiState.favoriteTvShows.size + ")",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    modifier = Modifier.padding(start = 48.dp, top = 8.dp, bottom = 4.dp)
+                )
+                FavoriteLeanbackRail(
+                    content = uiState.favoriteTvShows,
+                    selectedMovieIds = selectedMovieIds,
+                    selectedTvIds = selectedTvIds,
+                    favoriteMovieIds = favoriteMovieIds,
+                    onMovieClick = { activeFavorite = it },
+                    onTvClick = { activeTvFavorite = it }
+                )
+            }
+            if (uiState.favoriteMovies.isEmpty() && uiState.favoriteTvShows.isEmpty()) {
+                Text(
+                    text = "No favorites yet. Search for movies and add them to Favorites.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 48.dp, vertical = 24.dp)
+                )
+            }
+
+            if (searchQuery.isNotBlank()) {
+                Text(
+                    text = "Search Results",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    modifier = Modifier.padding(start = 48.dp, top = 12.dp, bottom = 4.dp)
+                )
+                when {
+                    uiState.isLoading ->
+                        CircularProgressIndicator(modifier = Modifier.padding(start = 48.dp, top = 12.dp))
+                    uiState.movies.isEmpty() ->
+                        Text("No movies found", modifier = Modifier.padding(horizontal = 48.dp, vertical = 12.dp))
+                    else -> FavoriteLeanbackRail(
+                        content = uiState.movies,
+                        selectedMovieIds = selectedMovieIds,
+                        selectedTvIds = selectedTvIds,
+                        favoriteMovieIds = favoriteMovieIds,
+                        onMovieClick = { movie ->
+                            if (movie.id in favoriteMovieIds) activeFavorite = movie
+                            else viewModel.addToFavorites(movie)
+                        },
+                        onTvClick = { activeTvFavorite = it }
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
     }
-    
+
     activeFavorite?.let { movie ->
         AlertDialog(
             onDismissRequest = { activeFavorite = null },
@@ -389,6 +290,18 @@ fun FavoritesScreen(
                         activeFavorite = null
                         watchFavorite = movie
                     }) { Text("Watch Options") }
+                    val isSelected = movie.id in selectedMovieIds
+                    val limitReached = !isSelected && selectedMovieIds.size >= 5
+                    TextButton(
+                        onClick = {
+                            viewModel.toggleMovieSelection(movie)
+                            activeFavorite = null
+                        },
+                        enabled = !limitReached
+                    ) {
+                        Text(if (isSelected) "Remove from Recommendations" else "Select for Recommendations")
+                    }
+                    if (limitReached) Text("Maximum of 5 movie picks", style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = {
                         viewModel.removeFromFavorites(movie.id)
                         activeFavorite = null
@@ -424,6 +337,18 @@ fun FavoritesScreen(
                         activeTvFavorite = null
                         watchTvFavorite = show
                     }) { Text("Watch Options") }
+                    val isSelected = show.id in selectedTvIds
+                    val limitReached = !isSelected && selectedTvIds.size >= 5
+                    TextButton(
+                        onClick = {
+                            viewModel.toggleTvShowSelection(show)
+                            activeTvFavorite = null
+                        },
+                        enabled = !limitReached
+                    ) {
+                        Text(if (isSelected) "Remove from Recommendations" else "Select for Recommendations")
+                    }
+                    if (limitReached) Text("Maximum of 5 TV picks", style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = {
                         viewModel.removeTvShowFromFavorites(show.id)
                         activeTvFavorite = null
@@ -505,188 +430,136 @@ fun FavoritesScreen(
     }
 }
 
-@JvmName("FirestickFavoriteMovieCard")
+
+
+/**
+ * Host the same AndroidX Leanback presenter and focus-bordered poster cards as
+ * the main picker, rather than approximating them with Compose grid tiles.
+ * RecyclerView instances are remembered by AndroidView so scrolling/focus
+ * are not reset on each StateFlow emission.
+ */
 @Composable
-fun FavoriteMovieCard(
-    movie: Movie,
-    isSelected: Boolean,
-    onOpenActions: () -> Unit,
-    onToggleSelection: () -> Unit
+private fun FavoriteLeanbackRail(
+    content: List<Any>,
+    selectedMovieIds: Set<Int>,
+    selectedTvIds: Set<Int>,
+    favoriteMovieIds: Set<Int>,
+    onMovieClick: (Movie) -> Unit,
+    onTvClick: (TvShow) -> Unit
 ) {
-    Card(
-        onClick = onOpenActions,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(280.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
-                MaterialTheme.colorScheme.primaryContainer
-            else
-                MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            AsyncImage(
-                model = movie.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
-                contentDescription = movie.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp)
+    val movieIdsState = rememberUpdatedState(selectedMovieIds)
+    val tvIdsState = rememberUpdatedState(selectedTvIds)
+    val favoritesState = rememberUpdatedState(favoriteMovieIds)
+    val movieCallbackState = rememberUpdatedState(onMovieClick)
+    val tvCallbackState = rememberUpdatedState(onTvClick)
+
+    val objectAdapter = remember {
+        ArrayObjectAdapter(
+            PickerMediaCardPresenter(
+                isMovieSelected = { it.id in movieIdsState.value },
+                isTvSelected = { it.id in tvIdsState.value },
+                isMovieFavorite = { it.id in favoritesState.value },
+                onMovieClick = { movieCallbackState.value(it) },
+                onTvClick = { tvCallbackState.value(it) }
             )
-
-            // Heart icon (favorites) - top left - ALWAYS VISIBLE
-            IconButton(
-                onClick = onOpenActions,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(8.dp)
-                    .size(48.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Favorite,
-                    contentDescription = "Favorite actions",
-                    tint = androidx.compose.ui.graphics.Color(0xFFE53935),
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-
-            // Checkbox - top right - ALWAYS VISIBLE
-            IconButton(
-                onClick = onToggleSelection,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .size(48.dp)
-            ) {
-                Icon(
-                    imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle,
-                    contentDescription = if (isSelected) "Selected" else "Not selected",
-                    tint = if (isSelected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.White,
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-
-            // Info section with semi-transparent background for readability
-            Surface(
-                color = androidx.compose.ui.graphics.Color(0xCC000000),
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = movie.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = androidx.compose.ui.graphics.Color.White,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "★ ${String.format("%.1f", movie.voteAverage)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = androidx.compose.ui.graphics.Color(0xFFFFD700)
-                        )
-                        movie.releaseDate?.let {
-                            Text(
-                                text = it.take(4),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@JvmName("FirestickSearchResultMovieCard")
-@Composable
-fun SearchResultMovieCard(
-    movie: Movie,
-    isFavorite: Boolean,
-    onAdd: () -> Unit
-) {
-    Card(
-        onClick = { if (!isFavorite) onAdd() },
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(280.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isFavorite)
-                MaterialTheme.colorScheme.secondaryContainer
-            else
-                MaterialTheme.colorScheme.surface
         )
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            AsyncImage(
-                model = movie.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
-                contentDescription = movie.title,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp),
-                contentScale = ContentScale.Crop
-            )
-
-            // Heart icon - top left - ALWAYS VISIBLE
-            IconButton(
-                onClick = { if (!isFavorite) onAdd() },
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(8.dp)
-                    .size(48.dp)
-            ) {
-                Icon(
-                    imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                    contentDescription = if (isFavorite) "Already in favorites" else "Add to favorites",
-                    tint = if (isFavorite) androidx.compose.ui.graphics.Color(0xFFE53935) else androidx.compose.ui.graphics.Color.White,
-                    modifier = Modifier.size(32.dp)
-                )
+    }
+    val bridgeAdapter = remember { ItemBridgeAdapter(objectAdapter) }
+    val diffCallback = remember {
+        object : DiffCallback<Any>() {
+            override fun areItemsTheSame(oldItem: Any, newItem: Any): Boolean = when {
+                oldItem is Movie && newItem is Movie -> oldItem.id == newItem.id
+                oldItem is TvShow && newItem is TvShow -> oldItem.id == newItem.id
+                else -> false
             }
 
-            // Info section
-            Surface(
-                color = androidx.compose.ui.graphics.Color(0xCC000000),
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = movie.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = androidx.compose.ui.graphics.Color.White,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    if (isFavorite) {
-                        Text(
-                            text = "✓ Added",
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    } else {
-                        Text(
-                            text = "Press to add",
-                            color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.8f),
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                }
-            }
+            override fun areContentsTheSame(oldItem: Any, newItem: Any): Boolean = oldItem == newItem
         }
     }
+    var previousItems by remember { mutableStateOf<List<Any>>(emptyList()) }
+    var previousMovieSelection by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    var previousTvSelection by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    var previousFavorites by remember { mutableStateOf<Set<Int>>(emptySet()) }
+
+    AndroidView(
+        factory = { context ->
+            val dp = context.resources.displayMetrics.density
+            HorizontalGridView(ContextThemeWrapper(context, R.style.Theme_MovieRecommender)).apply {
+                setNumRows(1)
+                setHorizontalSpacing((14 * dp).toInt())
+                clipToPadding = false
+                clipChildren = false
+                setPadding((48 * dp).toInt(), (8 * dp).toInt(),
+                    (48 * dp).toInt(), (8 * dp).toInt())
+                adapter = bridgeAdapter
+                descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
+            }
+        },
+        update = {
+            if (previousItems != content) {
+                objectAdapter.setItems(content, diffCallback)
+                previousItems = content.toList()
+            }
+            if (previousMovieSelection != selectedMovieIds ||
+                previousTvSelection != selectedTvIds ||
+                previousFavorites != favoriteMovieIds
+            ) {
+                if (objectAdapter.size() > 0) {
+                    objectAdapter.notifyArrayItemRangeChanged(0, objectAdapter.size())
+                }
+                previousMovieSelection = selectedMovieIds
+                previousTvSelection = selectedTvIds
+                previousFavorites = favoriteMovieIds
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(274.dp)
+    )
 }
 
+
+/** The action row is the same native Leanback ImageCardView rail used in the picker. */
+@Composable
+private fun FavoriteLeanbackActionRail(
+    actions: List<PickerActionItem>,
+    onActionClick: (PickerActionItem) -> Unit
+) {
+    val currentClick = rememberUpdatedState(onActionClick)
+    val adapter = remember {
+        ArrayObjectAdapter(PickerActionCardPresenter { currentClick.value(it) })
+    }
+    val bridge = remember { ItemBridgeAdapter(adapter) }
+    val diff = remember {
+        object : DiffCallback<PickerActionItem>() {
+            override fun areItemsTheSame(oldItem: PickerActionItem, newItem: PickerActionItem): Boolean =
+                oldItem.id == newItem.id
+            override fun areContentsTheSame(oldItem: PickerActionItem, newItem: PickerActionItem): Boolean =
+                oldItem == newItem
+        }
+    }
+    var previous by remember { mutableStateOf<List<PickerActionItem>>(emptyList()) }
+
+    AndroidView(
+        factory = { context ->
+            val dp = context.resources.displayMetrics.density
+            HorizontalGridView(ContextThemeWrapper(context, R.style.Theme_MovieRecommender)).apply {
+                setNumRows(1)
+                setHorizontalSpacing((14 * dp).toInt())
+                clipChildren = false
+                clipToPadding = false
+                setPadding((48 * dp).toInt(), (8 * dp).toInt(),
+                    (48 * dp).toInt(), (8 * dp).toInt())
+                this.adapter = bridge
+                descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
+            }
+        },
+        update = {
+            if (previous != actions) {
+                adapter.setItems(actions, diff)
+                previous = actions.toList()
+            }
+        },
+        modifier = Modifier.fillMaxWidth().height(145.dp)
+    )
+}

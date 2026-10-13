@@ -85,8 +85,8 @@ Candidate and fallback ranking use Bayesian-adjusted ratings so very small vote 
 ## Outstanding user-reported regressions / design changes (2026-10-12)
 
 1. User confirmed OpenAI worked after manually enabling the Settings switch. The toggle and gates are now removed; both variants request AI by default. New Firestick installation and validation are pending.
-2. The Favorites card options must offer **Select for Recommendations / Remove from Selections** for movie and TV favorites, in addition to Watch Options and Delete. Maintain up to five selections and exclude saved favorites from output.
-3. The Favorites screen must **look like the front menu**, with **horizontal poster-card rows scrolling left to right** rather than its current vertical Compose grid. Use separate Movie and TV rails, matching home browse card styling, focus, Left/Right navigation, Up/Down row switching and focus restoration. Mobile should have equivalent swipeable Compose rows.
+2. Implemented Firestick source: favorite movie and TV cards offer Select for Recommendations / Remove from Recommendations, Watch Options and Delete; top-level Clear Selections clears both movie and TV picks without deleting favorites. Device validation pending.
+3. Firestick Favorites now opens a native BrowseSupportFragment with AndroidX Leanback ListRows (selected picks, movie favorites, TV favorites and search), reusing front-menu PickerMediaCardPresenter and FocusBorderImageCardView. Debug APK built and was installed on Firestick 192.168.1.238. Live screenshot verified horizontal rails; user confirmed visual improvement. Previous InflateException did not recur, but full DPAD/menu verification remains. Mobile continues to use the Compose vertical grid and needs a separate redesign.
 4. Completely different title selections reportedly produce the **same TMDB fallback list**. Test selected IDs/mode, candidate discovery, cache/session state, ranking sensitivity and exclusion logic using controlled comparisons.
 
 All four items are OPEN. The mandatory-features list and DESIGN_FEATURES_2_PROGRESS.md specify acceptance criteria; updating documentation is not implementing or testing these fixes.

@@ -120,13 +120,9 @@ class BrowseGenreFragment : BrowseSupportFragment() {
 
                 // Favorites uses genreId = -1
                 if (item.id == -1) {
-                    val intent = Intent(requireContext(), ComposeActivity::class.java).apply {
-                        putExtra(ComposeActivity.EXTRA_SCREEN, ComposeActivity.SCREEN_FAVORITES)
-                        putExtra(ComposeActivity.EXTRA_GENRE_ID, -1)
-                        putExtra(ComposeActivity.EXTRA_GENRE_NAME, item.name)
-                        putExtra(ComposeActivity.EXTRA_CONTENT_MODE, contentMode.name)
-                    }
-                    startActivity(intent)
+                    // Favorites is a real Leanback browse screen (not a Compose dashboard).
+                    startActivity(Intent(requireContext(),
+                        com.movierecommender.app.firestick.LeanbackFavoritesActivity::class.java))
                 } else {
                     val intent = Intent(requireContext(), LeanbackPickerActivity::class.java).apply {
                         putExtra(LeanbackPickerActivity.EXTRA_GENRE_ID, item.id)

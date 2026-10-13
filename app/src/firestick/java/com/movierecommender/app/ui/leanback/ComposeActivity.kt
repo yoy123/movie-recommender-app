@@ -1,6 +1,8 @@
 package com.movierecommender.app.ui.leanback
 
 import android.net.Uri
+import android.content.Intent
+import com.movierecommender.app.firestick.LeanbackFavoritesActivity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,7 +19,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.movierecommender.app.MovieRecommenderApplication
 import com.movierecommender.app.data.model.ContentMode
-import com.movierecommender.app.ui.screens.firestick.FavoritesScreen
 import com.movierecommender.app.ui.screens.firestick.MovieSelectionScreen
 import com.movierecommender.app.ui.screens.firestick.RecommendationsScreen
 import com.movierecommender.app.ui.screens.firestick.SettingsScreen
@@ -53,6 +54,12 @@ class ComposeActivity : ComponentActivity() {
 
         val app = application as MovieRecommenderApplication
         val startScreen = intent.getStringExtra(EXTRA_SCREEN) ?: SCREEN_MOVIE_SELECTION
+        // Legacy callers still opening "favorites" must use the native Leanback activity.
+        if (startScreen == SCREEN_FAVORITES) {
+            startActivity(Intent(this, LeanbackFavoritesActivity::class.java))
+            finish()
+            return
+        }
         val genreId = intent.getIntExtra(EXTRA_GENRE_ID, -1)
         val genreName = intent.getStringExtra(EXTRA_GENRE_NAME) ?: ""
         val contentModeName = intent.getStringExtra(EXTRA_CONTENT_MODE) ?: ContentMode.MOVIES.name
@@ -181,17 +188,11 @@ private fun ComposeNavHost(
         }
 
         composable(ComposeActivity.SCREEN_FAVORITES) {
-            FavoritesScreen(
-                viewModel = viewModel,
-                onBackClick = {
-                    if (!navController.popBackStack()) {
-                        (navController.context as? ComponentActivity)?.finish()
-                    }
-                },
-                onGenerateRecommendations = {
-                    navController.navigate("recommendations")
-                }
-            )
+            val context = androidx.compose.ui.platform.LocalContext.current
+            LaunchedEffect(Unit) {
+                context.startActivity(Intent(context, LeanbackFavoritesActivity::class.java))
+                navController.popBackStack()
+            }
         }
 
         composable(ComposeActivity.SCREEN_TRAILER) {

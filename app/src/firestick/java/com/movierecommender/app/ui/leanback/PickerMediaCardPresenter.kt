@@ -12,7 +12,9 @@ import com.movierecommender.app.data.model.TvShow
 class PickerMediaCardPresenter(
     private val isMovieSelected: (Movie) -> Boolean,
     private val isTvSelected: (TvShow) -> Boolean,
-    private val isMovieFavorite: (Movie) -> Boolean
+    private val isMovieFavorite: (Movie) -> Boolean,
+    private val onMovieClick: ((Movie) -> Unit)? = null,
+    private val onTvClick: ((TvShow) -> Unit)? = null
 ) : Presenter() {
 
     companion object {
@@ -53,6 +55,7 @@ class PickerMediaCardPresenter(
         }
 
         cardView.titleText = movie.title
+        if (onMovieClick != null) cardView.setOnClickListener { onMovieClick.invoke(movie) }
         cardView.contentText = meta.joinToString(" • ")
         cardView.setInfoAreaBackgroundColor(
             when {
@@ -73,6 +76,7 @@ class PickerMediaCardPresenter(
         }
 
         cardView.titleText = tvShow.name
+        if (onTvClick != null) cardView.setOnClickListener { onTvClick.invoke(tvShow) }
         cardView.contentText = meta.joinToString(" • ")
         cardView.setInfoAreaBackgroundColor(
             if (isTvSelected(tvShow)) 0xFF0E4F6E.toInt() else 0xFF1E1E34.toInt()
