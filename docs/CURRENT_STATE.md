@@ -14,6 +14,10 @@ The project has two product flavors:
 
 The former embedded Live TV guide was removed on 2026-07-25 because it depended on an unstable third-party playlist and EPG source. Legitimate free-live-TV services remain available through their own Fire TV applications, but OpenStream+ does not embed or proxy their channel feeds.
 
+## Firestick trailer navigation fix (2026-10-12)
+
+The movie recommendation Watch Options -> Watch Trailer action now resolves to the trailer/{title}/{videoUrl} destination in ComposeActivity, decodes the Base64 trailer URL, and returns to recommendations when backing out. The earlier missing destination caused users to land on Fire TV Home. Built and installed on Firestick 192.168.1.238; user confirmed it works again. Playback continues through OpenStream+'s internal trailer player.
+
 ## Current Feature Scope
 
 ### Shared functionality

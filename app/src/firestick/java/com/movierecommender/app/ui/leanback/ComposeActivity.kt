@@ -195,6 +195,7 @@ private fun ComposeNavHost(
             }
         }
 
+        // Launched by the front-menu picker using activity intent extras.
         composable(ComposeActivity.SCREEN_TRAILER) {
             TrailerScreen(
                 title = trailerTitle,
@@ -204,6 +205,30 @@ private fun ComposeNavHost(
                         (navController.context as? ComponentActivity)?.finish()
                     }
                 }
+            )
+        }
+
+        // Launched by RecommendationsScreen (both the direct trailer button and
+        // Watch Options -> Watch Trailer). The destination MUST be registered in
+        // this active ComposeActivity graph; otherwise navigate() throws and the
+        // user is returned to the Fire TV home screen.
+        composable("trailer/{title}/{videoUrl}") { backStackEntry ->
+            val title = backStackEntry.arguments?.getString("title").orEmpty()
+            val encodedUrl = backStackEntry.arguments?.getString("videoUrl").orEmpty()
+            val videoUrl = runCatching {
+                String(
+                    android.util.Base64.decode(
+                        encodedUrl,
+                        android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP
+                    ),
+                    Charsets.UTF_8
+                )
+            }.getOrElse { encodedUrl }
+
+            TrailerScreen(
+                title = Uri.decode(title),
+                videoUrl = videoUrl,
+                onBackClick = { navController.popBackStack() }
             )
         }
 
